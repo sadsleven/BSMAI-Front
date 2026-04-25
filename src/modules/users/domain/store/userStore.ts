@@ -22,8 +22,8 @@ export const useUserStore = create<UserState>((set) => ({
         try {
             const users = await userGateway.getAll();
             set({ users });
-        } catch (error: any) {
-            set({ error: error.message });
+        } catch (error: unknown) {
+            set({ error: error instanceof Error ? error.message : 'Error' });
         } finally {
             set({ isLoading: false });
         }
@@ -34,8 +34,8 @@ export const useUserStore = create<UserState>((set) => ({
         try {
             const newUser = await userGateway.create(userDto);
             set((state) => ({ users: [newUser, ...state.users] }));
-        } catch (error: any) {
-            set({ error: error.message });
+        } catch (error: unknown) {
+            set({ error: error instanceof Error ? error.message : 'Error' });
             throw error;
         } finally {
             set({ isLoading: false });
@@ -49,8 +49,8 @@ export const useUserStore = create<UserState>((set) => ({
             set((state) => ({
                 users: state.users.map((u) => (u.id === id ? updatedUser : u)),
             }));
-        } catch (error: any) {
-            set({ error: error.message });
+        } catch (error: unknown) {
+            set({ error: error instanceof Error ? error.message : 'Error' });
             throw error;
         } finally {
             set({ isLoading: false });
@@ -64,8 +64,8 @@ export const useUserStore = create<UserState>((set) => ({
             set((state) => ({
                 users: state.users.filter((u) => u.id !== id),
             }));
-        } catch (error: any) {
-            set({ error: error.message });
+        } catch (error: unknown) {
+            set({ error: error instanceof Error ? error.message : 'Error' });
             throw error;
         } finally {
             set({ isLoading: false });

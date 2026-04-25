@@ -13,4 +13,4 @@ export interface CreateUserDto {
     password?: string; // Optional for update, required for create logic usually handled separately
 }
 
-export interface UpdateUserDto extends Partial<CreateUserDto> { }
+export type UpdateUserDto = Partial<CreateUserDto>;

@@ -1,6 +1,8 @@
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Users, Home, LogOut } from 'lucide-react';
+import { authApi } from '@/modules/auth/infrastructure/authApi';
+import { useAuthStore } from '@/modules/auth/domain/store/authStore';
 
 const sidebarItems = [
     { icon: Home, label: 'Dashboard', href: '/' },
@@ -9,6 +11,14 @@ const sidebarItems = [
 
 export function Sidebar() {
     const location = useLocation();
+    const navigate = useNavigate();
+    const setUser = useAuthStore((s) => s.setUser);
+
+    const handleLogout = () => {
+        authApi.logout();
+        setUser(null);
+        navigate('/login', { replace: true });
+    };
 
     return (
         <aside className="w-64 bg-card border-r h-screen flex flex-col">
@@ -37,9 +47,13 @@ export function Sidebar() {
                 })}
             </nav>
             <div className="p-4 border-t">
-                <button className="flex items-center gap-3 px-4 py-3 w-full rounded-lg hover:bg-destructive/10 hover:text-destructive transition-colors">
+                <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="flex items-center gap-3 px-4 py-3 w-full rounded-lg hover:bg-destructive/10 hover:text-destructive transition-colors"
+                >
                     <LogOut className="w-5 h-5" />
-                    <span className="font-medium">Logout</span>
+                    <span className="font-medium">Cerrar sesión</span>
                 </button>
             </div>
         </aside>
