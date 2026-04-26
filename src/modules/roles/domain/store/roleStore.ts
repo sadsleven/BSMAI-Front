@@ -1,20 +1,20 @@
 import { create } from 'zustand';
-import type { PaginatedResponse, User, UsersQuery } from '../models/user';
-import { userGateway } from '../../infrastructure/userGateway';
+import type { PaginatedResponse, Role, RolesQuery } from '../models/role';
+import { roleGateway } from '../../infrastructure/roleGateway';
 
-interface UserState {
-  users: User[];
-  metadata: PaginatedResponse<User>['metadata'];
-  query: UsersQuery;
+interface RoleState {
+  roles: Role[];
+  metadata: PaginatedResponse<Role>['metadata'];
+  query: RolesQuery;
   isLoading: boolean;
   error: string | null;
-  setQuery: (query: Partial<UsersQuery>) => void;
+  setQuery: (q: Partial<RolesQuery>) => void;
   fetch: () => Promise<void>;
   remove: (id: string) => void;
 }
 
-export const useUserStore = create<UserState>((set, get) => ({
-  users: [],
+export const useRoleStore = create<RoleState>((set, get) => ({
+  roles: [],
   metadata: { total: 0, page: 1, lastPage: 1 },
   query: { page: 1, limit: 10, sortBy: 'createdAt', sortDir: 'DESC' },
   isLoading: false,
@@ -23,13 +23,13 @@ export const useUserStore = create<UserState>((set, get) => ({
   fetch: async () => {
     set({ isLoading: true, error: null });
     try {
-      const res = await userGateway.list(get().query);
-      set({ users: res.data, metadata: res.metadata });
+      const res = await roleGateway.list(get().query);
+      set({ roles: res.data, metadata: res.metadata });
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Error' });
     } finally {
       set({ isLoading: false });
     }
   },
-  remove: (id) => set({ users: get().users.filter((u) => u.id !== id) }),
+  remove: (id) => set({ roles: get().roles.filter((r) => r.id !== id) }),
 }));

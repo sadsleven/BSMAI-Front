@@ -7,28 +7,28 @@ function mapUser(data: unknown): AuthUser {
     throw new Error('Respuesta de usuario inválida');
   }
   const o = data as Record<string, unknown>;
-  const id = String(o.id ?? o.sub ?? '');
+  const id = String(o.id ?? '');
   const email = String(o.email ?? '');
   if (!id || !email) {
     throw new Error('Faltan id o email en el usuario');
   }
+  const rolesRaw = Array.isArray(o.roles) ? (o.roles as Record<string, unknown>[]) : [];
+  const roles = rolesRaw
+    .map((r) => ({ id: String(r.id ?? ''), name: String(r.name ?? '') }))
+    .filter((r) => r.id && r.name);
+  const permsRaw = Array.isArray(o.permissions) ? (o.permissions as unknown[]) : [];
+  const permissions = permsRaw.map((p) => String(p)).filter(Boolean);
   return {
     id,
     email,
-    full_name: typeof o.full_name === 'string' ? o.full_name : undefined,
-    role: o.role === 'admin' || o.role === 'user' ? o.role : undefined,
+    firstName: String(o.firstName ?? ''),
+    lastName: String(o.lastName ?? ''),
+    phoneNumber: typeof o.phoneNumber === 'string' ? o.phoneNumber : null,
+    isActive: Boolean(o.isActive),
+    isSuperAdmin: Boolean(o.isSuperAdmin),
+    roles,
+    permissions,
   };
-}
-
-function pickUserPayload(raw: Record<string, unknown>): unknown {
-  if (raw.user !== undefined) {
-    return raw.user;
-  }
-  const rest = { ...raw };
-  delete rest.accessToken;
-  delete rest.access_token;
-  delete rest.token;
-  return Object.keys(rest).length ? rest : raw;
 }
 
 async function fetchMe(): Promise<AuthUser> {
@@ -47,16 +47,43 @@ export const authApi = {
       throw new Error('El servidor no devolvió un JWT (accessToken, access_token o token)');
     }
     setAccessToken(token);
-    try {
-      return mapUser(pickUserPayload(data));
-    } catch {
-      return await fetchMe();
+    if (data.user && typeof data.user === 'object') {
+      try {
+        return mapUser(data.user);
+      } catch {
+        /* fall through */
+      }
     }
+    return await fetchMe();
   },
 
   getMe: fetchMe,
 
-  logout(): void {
-    clearAccessToken();
+  async logout(): Promise<void> {
+    try {
+      await api.post('/auth/logout');
+    } catch {
+      /* ignore network errors on logout */
+    } finally {
+      clearAccessToken();
+    }
+  },
+
+  async updateMyProfile(payload: {
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    phoneNumber?: string | null;
+  }): Promise<AuthUser> {
+    const { data } = await api.patch<unknown>('/auth/me', payload);
+    return mapUser(data);
+  },
+
+  async changeMyPassword(payload: {
+    currentPassword: string;
+    newPassword: string;
+    confirmNewPassword: string;
+  }): Promise<void> {
+    await api.patch('/auth/me/password', payload);
   },
 };

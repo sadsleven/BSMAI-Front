@@ -1,159 +1,231 @@
 # AFMI Front
 
-Frontend de la aplicación **AFMI**: interfaz de administración conectada a un **backend REST** (no usa Supabase ni BaaS). El estado de sesión se gestiona con **JWT** almacenado en el cliente; las peticiones HTTP usan **Axios** con una instancia centralizada, interceptores y contratos de rutas documentados abajo.
+Frontend de **AFMI**: panel de administración conectado al backend REST de NestJS. Stack: Vite 7 + React 19 + TypeScript + Tailwind 4 + shadcn/ui + Zustand + Axios + React Router 7.
 
 ## Requisitos
 
-- **Node.js** (LTS recomendado)
-- **npm** (el repo incluye `package-lock.json`)
+- Node.js LTS
+- npm
 
 ## Inicio rápido
 
 ```bash
 npm install
 cp .env.example .env
-# Edita .env y asigna VITE_API_BASE_URL a la URL de tu API
 npm run dev
 ```
 
-- Desarrollo: [http://localhost:5173](http://localhost:5173) (Vite por defecto)
-- Asegúrate de que el backend acepta CORS desde el origen del front si aplica
+- Desarrollo: [http://localhost:5173](http://localhost:5173)
+- El backend debe permitir CORS desde el origen del front (`CORS_ORIGIN=http://localhost:5173`).
 
 ## Variables de entorno
 
-Copia `.env.example` a `.env`. Vite solo expone al bundle las variables que empiezan por `VITE_`.
+Solo se exponen al bundle las que empiezan por `VITE_`.
 
 | Variable | Descripción |
 | -------- | ----------- |
-| `VITE_API_BASE_URL` | URL base del backend **sin barra final**. Incluye aquí prefijos de API si el servidor los usa (p. ej. `https://api.ejemplo.com` o `http://localhost:3000/api/v1`). Todas las rutas de Axios se resuelven contra este origen. |
+| `VITE_API_BASE_URL` | URL base del backend, **sin barra final**. Incluye prefijos si los usa la API. |
 
 ```env
-# .env.example
 VITE_API_BASE_URL=http://localhost:3000
 ```
-
-Si falta `VITE_API_BASE_URL`, la app lo advertirá en consola; conviene definirla antes de desplegar.
 
 ## Tecnologías
 
 | Área | Stack |
 | ---- | ----- |
-| Runtime / build | [Vite](https://vitejs.dev/) 7, [TypeScript](https://www.typescriptlang.org/) 5.9 |
-| UI | [React](https://react.dev/) 19, [React Router](https://reactrouter.com/) 7 |
-| Estilos | [Tailwind CSS](https://tailwindcss.com/) 4, [tw-animate-css](https://github.com/jamiebuilds/tw-animate-css) |
-| Componentes | [shadcn/ui](https://ui.shadcn.com/) (Radix, `class-variance-authority`, `clsx` / `tailwind-merge`) |
-| Tablas | [@tanstack/react-table](https://tanstack.com/table) |
-| Validación (disponible) | [Zod](https://zod.dev/) |
-| Estado global | [Zustand](https://zustand-demo.pmnd.rs/) |
-| HTTP | [Axios](https://axios-http.com/) (instancia en `src/lib/api/`) |
-| Fuentes | Inter (`@fontsource-variable/inter`) |
+| Runtime / build | Vite 7, TypeScript 5.9 |
+| UI | React 19, React Router 7 |
+| Estilos | Tailwind 4, tw-animate-css |
+| Componentes | shadcn/ui (Radix, `class-variance-authority`, `clsx`/`tailwind-merge`) |
+| Tablas | `@tanstack/react-table` (disponible) |
+| Forms | React Hook Form 7 |
+| Validación | Zod 4 + `@hookform/resolvers/zod` |
+| Toasts | `sonner` (mediante helper `notify`) |
+| Estado global | Zustand |
+| HTTP | Axios (instancia única en `src/lib/api/`) |
+| Iconos | `lucide-react` |
 
-## Arquitectura: módulos por feature
+## Arquitectura
 
-Cada **módulo** agrupa lógica por dominio bajo `src/modules/<nombre>/`, con capas similares:
+Feature-modular Clean Architecture. Cada feature en `src/modules/<nombre>/` con tres capas:
 
-- **`domain/`** — modelos, tipos y stores (Zustand) propios del dominio
-- **`infrastructure/`** — acceso a datos: llamadas HTTP, mapeo DTO, almacenamiento (p. ej. token)
-- **`presentation/`** — componentes, páginas y piezas de UI conectadas al enrutador
+- **`domain/`** — modelos, tipos, stores Zustand.
+- **`infrastructure/`** — gateways HTTP, mapeo DTO, persistencia (token).
+- **`presentation/`** — componentes, páginas, hooks de UI.
 
-Convención: **nuevo feature** = nueva carpeta bajo `src/modules/<feature>/` siguiendo el mismo reparto, en lugar de mezclar lógica suelta en `src/`.
+Código transversal en `src/lib/` (utilidades), `src/components/ui/` (shadcn), `src/layouts/`.
 
-### `src/modules/auth/`
+### Módulos actuales
 
-| Ruta | Rol |
-| ---- | --- |
-| `domain/models/authUser.ts` | Tipo `AuthUser` (usuario de sesión) |
-| `domain/store/authStore.ts` | `user`, `isLoading`, `setUser`, `setLoading` |
-| `infrastructure/tokenStorage.ts` | Lectura/escritura del JWT en `localStorage` (clave `afmi_access_token`) |
-| `infrastructure/authApi.ts` | `POST /auth/login`, `GET /auth/me`, `logout()` (borra token) |
-| `presentation/AuthGuard.tsx` | Comprueba token + `/auth/me`; redirige a `/login` si no hay sesión |
-| `presentation/pages/LoginPage.tsx` | Formulario de login |
+- **`auth/`** — JWT, login, logout, AuthGuard, hook `usePermissions`, componente `<Can>` para gating de UI, página `/profile` (self-service).
+- **`users/`** — CRUD usuarios, soft/hard delete, restore, change-password, paginación server-side.
+- **`roles/`** — CRUD roles, picker de permisos agrupado por recurso.
 
-### `src/modules/users/`
+## HTTP
 
-| Ruta | Rol |
-| ---- | --- |
-| `domain/models/user.ts` | `User`, `CreateUserDto`, `UpdateUserDto` |
-| `domain/store/userStore.ts` | Listado, CRUD vía gateway |
-| `infrastructure/userGateway.ts` | REST: `GET/POST /users`, `GET/PATCH/DELETE /users/:id` |
-| `presentation/pages/` | `UserList`, `UserCreate`, `UserEdit` |
-
-Código compartido que no pertenece a un solo módulo: `src/lib/` (p. ej. `src/lib/api/`), `src/components/ui/`, `src/layouts/`.
-
-## API HTTP con Axios
-
-- **Instancia única**: `src/lib/api/client.ts` exporta `api` (reexportada desde `src/lib/api/index.ts`).
-- **Base URL**: `VITE_API_BASE_URL` (ver `src/lib/api/config.ts`).
-- **Cabeceras**: `Authorization: Bearer <token>` si existe token en almacenamiento; el token lo coloca un interceptor de petición.
-- **Errores**: `getHttpErrorMessage` en `src/lib/api/httpError.ts` unifica mensajes a partir de cuerpos JSON típicos (`message`, `error`, `detail`).
-- **Módulos de negocio** no deben crear otras instancias de Axios para el mismo backend; reutilicen `import { api } from '@/lib/api'`.
+- Instancia única: `src/lib/api/client.ts` (`api`).
+- Interceptor de request: añade `Authorization: Bearer <token>` si hay token.
+- Interceptor de response: en 401 (excepto `/auth/login` y `/auth/register`) limpia el token y redirige a `/login`.
+- `getHttpErrorMessage` unifica mensajes de error (`message` / `error` / `detail`).
 
 ## Autenticación (JWT)
 
-### Flujo de login
+### Flujo
 
-1. El usuario envía email y contraseña en `LoginPage` → `authApi.login()`.
-2. `POST /auth/login` debe devolver al menos un JWT en uno de estos campos: `accessToken`, `access_token` o `token`.
-3. Tras recibirlo, se guarda con `setAccessToken` en `localStorage`.
-4. El usuario de sesión se obtiene: primero se intenta mapear un objeto de usuario de la propia respuesta; si no es posible, se hace `GET /auth/me` (ya con el `Authorization` actualizado).
+1. `LoginPage` → `authApi.login({ email, password })` → backend `POST /auth/login`.
+2. La respuesta trae `{ accessToken, user }`. El token se guarda en `localStorage` (clave `afmi_access_token`) vía `tokenStorage`.
+3. `AuthGuard`:
+   - Si no hay token o el token está vencido, limpia y redirige a `/login`.
+   - Si hay token válido, llama a `GET /auth/me` y rellena `authStore` con `AuthUser` (incluye `roles` y `permissions` resueltos del backend).
+4. `LogoutPage` (`/logout`) llama a `POST /auth/logout` (revoca el JWT en el backend) y limpia el almacenamiento local antes de redirigir a `/login`.
 
-### Sesión y rutas protegidas
+### Auto-logout por expiración
 
-- `AuthGuard` (envuelve el layout con dashboard):
-  - Si **no** hay token → deja de cargar, `user` null, redirige a `/login`.
-  - Si hay token → `GET /auth/me` y rellena `authStore` con un `AuthUser` válido.
-- Si alguien con sesión abre `/login` y aún hay token, la pantalla de login redirige al inicio (ajustar si hace falta otra UX).
+`src/modules/auth/infrastructure/jwt.ts` decodifica el JWT (sin librería externa) y expone:
 
-### Logout
+- `getJwtExpiryMs(token)` — milisegundos absolutos del `exp`.
+- `isJwtExpired(token, skewMs?)` — chequeo inmediato.
 
-- `authApi.logout()` borra el token del almacenamiento; el `Sidebar` también limpia el store y navega a `/login` con `replace: true`.
+`AuthGuard` programa un `setTimeout` que se dispara al `exp` (con un skew de 5 s) y fuerza logout. La duración del JWT se controla 100 % en el backend (`JWT_EXPIRATION`, default 7 días); el front se adapta automáticamente.
 
-### 401 (no autorizado)
+### Permisos en la UI
 
-- Un interceptor de respuesta trata el **401** fuera de intentos de `POST /auth/login` o `POST /auth/register`: limpia el token y, si no estás ya en `/login`, fuerza `window.location` a `/login` (evita dejar el estado a medias con JWT inválido o caducado).
+```tsx
+import { Can } from '@/modules/auth/presentation/components/Can';
+import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 
-### Contrato REST esperado (resumen)
+<Can permission={PERMISSIONS.USERS.CREATE}>
+  <Button>Nuevo usuario</Button>
+</Can>
 
-| Método | Ruta | Uso en el front |
-| ------ | ---- | ----------------- |
-| `POST` | `/auth/login` | Credenciales; respuesta con JWT (y preferiblemente usuario) |
-| `GET`  | `/auth/me`    | Perfil bajo `Authorization: Bearer` |
-| CRUD   | `/users` …     | Véase `userGateway` |
+// O imperativo:
+const { has, isSuperAdmin } = usePermissions();
+if (has('users.update')) { ... }
+```
 
-El gateway de usuarios acepta listas como array directo, `{ data: [] }` o `{ items: [] }`, e items sueltos con o sin envoltura `{ data: { … } }`, para alinear con respuestas habituales de APIs.
+`isSuperAdmin: true` siempre devuelve `true` en `has(...)`. Para gates con varios permisos, `<Can anyOf={[...]}>` o `hasAny([...])`.
+
+## Módulo de Usuarios (`/users`)
+
+- Listado con búsqueda global (debounce 350 ms), sort por columna, paginación server-side.
+- Toggle "Incluir eliminados" para ver soft-deleted.
+- Crear / editar con asignación de roles (chips clickables) y validación de confirmación de contraseña al crear.
+- Cambiar contraseña: ruta dedicada `/users/:id/change-password`. Si es el propio usuario pide la contraseña actual; si no, solo `newPassword` + confirmación.
+- Toggle activar/desactivar.
+- Eliminar: AlertDialog con dos acciones, "Mover a la papelera" (soft) y "Eliminar permanentemente" (hard, con doble confirmación).
+- Badge especial para Super Admin; sus acciones destructivas y de toggle quedan deshabilitadas.
+
+## Convenciones de tablas
+
+Todas las tablas de la app deben seguir este patrón — **no hay controles de sort externos** (botones arriba/abajo de la tabla).
+
+- Sort integrado en los headers vía `<SortableHeader column="..." activeColumn={...} direction={...} onSort={...}>`. Ícono triple-estado (sin sort / asc / desc).
+- Filtros server-side: pasados como query params, persistidos en la URL (`useSearchParams`), debounced 300 ms para inputs de texto.
+- Paginación server-side: `metadata.total` siempre representa entidades distintas (no filas del JOIN).
+- Tabla de usuarios: filtros estado / rol multi-select / estado de borrado (gateado por permiso `users.hard-delete` o `users.restore`).
+- Tabla de roles: filtro origen (`Sistema` / `Personalizados` / `Todos`) + estado de borrado.
+- Reglas de fila en usuarios: la lógica de qué acciones están habilitadas vive en `getRowActionsState(row, currentUser)` en `src/modules/users/presentation/rowActions.ts`. Botones deshabilitados muestran tooltip explicando por qué.
+
+## Validación de formularios
+
+- Schemas Zod centralizados en `src/lib/validations/schemas.ts`: `loginSchema`, `profileSchema`, `createUserSchema`, `updateUserSchema`, `changeOwnPasswordSchema`, `adminChangePasswordSchema`, `roleSchema`.
+- Conectados a React Hook Form via `zodResolver`. Modo de validación: `onBlur` consistente.
+- Reglas reutilizables: `emailSchema`, `nameSchema(label)`, `phoneSchema`, `passwordSchema`. Mensajes en español.
+- Reglas duras: nombre 1-150 chars solo letras/acentos/`ñ`; teléfono opcional pero exactamente 11 dígitos si presente; password 8-100 con mayúscula+minúscula+número+especial.
+
+## Notificaciones (`notify`)
+
+- `src/lib/notifications/toast.ts` expone `notify.success/error/warning/info` y `notify.fromError(err, fallback)`. **Único punto de entrada** — los componentes nunca importan `toast` de sonner directamente.
+- `<Toaster richColors closeButton position="top-right" />` se monta en `App.tsx`.
+- Errores de red (sin `response`) se notifican automáticamente desde el interceptor de Axios.
+- Disparados en login, logout, todos los CRUD de usuarios y roles, asignación de permisos, cambio de contraseña, actualización de perfil.
+
+## Roles del sistema
+
+- `Role.isSystem` viene del backend. Cuando es `true`:
+  - En `RoleList`, el rol muestra badge "Sistema" y los botones de editar/eliminar/deshabilitar quedan deshabilitados con tooltip.
+  - En `RoleEdit`, los inputs y el `PermissionsPicker` se ven en read-only y el switch "Habilitado" queda fijado en `true` (con tooltip "Los roles del sistema no se pueden deshabilitar").
+
+## Habilitar/Deshabilitar
+
+- Etiquetas de UI: **"Habilitado" / "Deshabilitado"** (vinculadas a `isActive`). En código y modelos se mantiene `isActive`. La traducción vive sólo en la presentación.
+- Toggle de usuario y rol abre un AlertDialog de confirmación con texto contextual ("¿Habilitar usuario?" / "¿Deshabilitar rol?") antes de pegarle al endpoint.
+- El JWT calcula los permisos efectivos ignorando roles con `isActive = false` o en papelera, así que un rol deshabilitado deja de conceder sus permisos sin necesidad de quitarlo del usuario.
+
+## Selector de roles en formularios de usuario
+
+- `roleGateway.listAssignable()` consume `GET /roles/assignable` y devuelve sólo roles `isActive = true` y no eliminados.
+- Roles ya asignados que dejaron de ser asignables (deshabilitados o en papelera) aparecen como badge punteado "Rol deshabilitado/papelera" — quitables, no re-agregables desde el selector.
+
+## i18n del catálogo de permisos
+
+- `Permission` tiene `label` (título corto), `description` (descripción larga) y `group` (sección). Las claves técnicas (`users.list`, etc.) viven sólo en backend.
+- `PermissionsPicker` agrupa por `group` (alfabético) y ordena dentro: `list → view → create → update → change-password → toggle-active → assign-permissions → soft-delete → hard-delete → restore`. Nunca muestra la clave técnica.
+
+## `<FormSwitch />`
+
+`src/components/ui/form-switch.tsx` — wrapper sobre `Switch` con label, descripción opcional, mensaje de error inline y tooltip opcional. **Para cualquier campo booleano editable en formularios usar `<FormSwitch />` en lugar de checkboxes.** Aplicado a `isActive`/`isSuperAdmin` en User y a `isActive` en Role. Cuando el campo está deshabilitado por regla de negocio (p.ej. rol del sistema), pasar `disabled` y `tooltip` para feedback contextual.
+
+## Mi perfil (`/profile`)
+
+Página self-service accesible desde el avatar del Navbar (dropdown "Mi perfil"). Dos secciones:
+
+- **Datos personales** → `PATCH /auth/me` (`firstName`, `lastName`, `email`, `phoneNumber`). Botón "Guardar cambios" deshabilitado si no hay diff. Tras guardar, refresca el `authStore` con la respuesta del backend.
+- **Cambiar contraseña** → `PATCH /auth/me/password` (`currentPassword`, `newPassword`, `confirmNewPassword`). Los tres campos usan `<PasswordInput>` (toggle de ojo). El backend valida que `newPassword !== currentPassword`. No desloguea al usuario tras éxito.
+
+> Estos endpoints toman el `userId` del JWT, **no requieren permisos RBAC**. Para administrar a otros usuarios usar el módulo `/users`.
+
+## UX y componentes globales
+
+- `src/components/ui/password-input.tsx` (`PasswordInput`) — input password con toggle `Eye/EyeOff` (Lucide). Usado en login, alta de usuario, cambio de password admin y `/profile`.
+- `src/index.css` aplica `cursor: pointer` global a `button`, `[role="button"]`, `[role="menuitem"]`, checkboxes/radios y switches habilitados — no es necesario repetir la utility por componente.
+- Navbar: el avatar del usuario abre un dropdown (`shadcn/ui` `DropdownMenu`) con el nombre + email, "Mi perfil" y "Cerrar sesión" (accesible por teclado, cierre por click-fuera/Escape).
+
+## Módulo de Roles (`/roles`)
+
+- Listado con búsqueda, sort por nombre, paginación, soft/hard delete + restore.
+- Crear / editar con `PermissionsPicker`: agrupa permisos por recurso, checkbox por recurso (con estado indeterminado), conteo seleccionados/total.
+- Asignación de permisos en página de edición vía `PATCH /roles/:id/permissions`.
+- El rol "Super Admin" aparece bloqueado para renombrar/eliminar y su listado de permisos es solo lectura.
 
 ## Scripts
 
 | Comando | Descripción |
 | ------- | ----------- |
 | `npm run dev` | Servidor de desarrollo Vite |
-| `npm run build` | `tsc` + build de producción |
-| `npm run preview` | Previsualizar el `dist` |
-| `npm run lint`    | ESLint |
+| `npm run build` | `tsc -b && vite build` |
+| `npm run preview` | Previsualizar `dist/` |
+| `npm run lint` | ESLint |
 
-## Estructura de directorios (resumen)
+## Estructura
 
 ```text
 src/
 ├── App.tsx
 ├── main.tsx
-├── layouts/                 # Layout del dashboard, navbar, sidebar
-├── components/ui/            # shadcn / primitivos reutilizables
-├── lib/
-│   ├── api/                  # Axios, config, manejo de errores
-│   └── utils.ts
-├── modules/
-│   ├── auth/                 # Login, guard, token, API de auth
-│   └── users/                # CRUD usuarios vía REST
-└── vite-env.d.ts            # Tipos de `import.meta.env`
+├── layouts/                    # DashboardLayout, Navbar, Sidebar
+├── components/ui/              # shadcn/ui
+├── lib/api/                    # Axios, config, manejo de errores
+└── modules/
+    ├── auth/
+    │   ├── domain/            # AuthUser, permissions catalog, store
+    │   ├── infrastructure/     # tokenStorage, authApi, jwt utils
+    │   └── presentation/       # AuthGuard, hooks, <Can>, pages
+    ├── users/
+    │   ├── domain/             # User, DTOs, store
+    │   ├── infrastructure/     # userGateway
+    │   └── presentation/       # List, Create, Edit, ChangePassword
+    └── roles/
+        ├── domain/             # Role, Permission, store
+        ├── infrastructure/     # roleGateway, permissionGateway
+        └── presentation/       # List, Create, Edit, PermissionsPicker
 ```
 
-## Guía para quien mantiene o extiende el proyecto
+## Convenciones para extender
 
-- **Mantener la estructura por módulos** (`domain` / `infrastructure` / `presentation`) y el uso de **un solo cliente** Axios.
-- **Nuevos endpoints** del mismo backend: añadirlos en el `infrastructure` del módulo correspondiente o, si es transversal, detrás de `src/lib/api/` con funciones con nombre claro.
-- **Auth**: no duplicar lógica de token; usar `tokenStorage` y `authApi`. El JWT vive en `localStorage` (clave `afmi_access_token`); si en el futuro se migra a cookies u otro esquema, el punto de cambio queda acotado a `tokenStorage` y al cliente Axios.
-- **Rutas de React** están en `App.tsx`; las rutas anidadas del dashboard cuelgan del layout envuelto por `AuthGuard`.
-- **Alias** `@/*` apunta a `src/*` (ver `tsconfig`).
-
-Con esta base, un desarrollador o un agente de IA puede añadir módulos (p. ej. `reports`, `settings`) copiando el patrón existente y sin romper el contrato de autenticación descrito arriba.
+- **Nuevo módulo** = nueva carpeta `src/modules/<nombre>/` con `domain` / `infrastructure` / `presentation`.
+- **No crear instancias nuevas de Axios**; reusar `import { api } from '@/lib/api'`.
+- **Token JWT** vive en `localStorage`. Si en el futuro se migra a `httpOnly cookie`, los puntos de cambio son `tokenStorage.ts` y `client.ts`.
+- **Gating de UI** vía `<Can>` o `usePermissions()`. No duplicar lógica de `isSuperAdmin`.
+- **Mensajes de UI** en español; nombres de identificadores (variables, métodos, archivos) en inglés.

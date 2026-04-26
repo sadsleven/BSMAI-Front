@@ -25,17 +25,25 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
-    if (error.response?.status === 401) {
-      const requestUrl = error.config?.url ?? '';
-      const isLoginAttempt =
-        requestUrl.includes('/auth/login') || requestUrl.includes('/auth/register');
-      if (!isLoginAttempt) {
-        clearAccessToken();
-        if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
-          window.location.assign('/login');
-        }
+    const status = error.response?.status;
+    const requestUrl = error.config?.url ?? '';
+    const isLoginAttempt =
+      requestUrl.includes('/auth/login') || requestUrl.includes('/auth/register');
+
+    if (status === 401 && !isLoginAttempt) {
+      clearAccessToken();
+      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+        window.location.assign('/login');
       }
     }
+
+    // Surface unhandled network errors (no response from server) globally.
+    if (!error.response && error.code !== 'ERR_CANCELED') {
+      void import('@/lib/notifications/toast').then(({ notify }) => {
+        notify.error('No se pudo conectar con el servidor. Verificá tu conexión.');
+      });
+    }
+
     return Promise.reject(error);
-  }
+  },
 );

@@ -1,99 +1,78 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useUserStore } from '../../domain/store/userStore';
+import { FormProvider, useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { userGateway } from '../../infrastructure/userGateway';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { UserForm } from '../components/UserForm';
+import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
+import { createUserSchema, type CreateUserValues } from '@/lib/validations/schemas';
+import { notify } from '@/lib/notifications/toast';
 
 export function UserCreate() {
-    const navigate = useNavigate();
-    const createUser = useUserStore((state) => state.createUser);
-    const [loading, setLoading] = useState(false);
-    const [formData, setFormData] = useState({
-        email: '',
-        full_name: '',
-        role: 'user' as 'admin' | 'user',
-        password: '',
-    });
+  const navigate = useNavigate();
+  const { isSuperAdmin } = usePermissions();
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
-        try {
-            await createUser(formData);
-            navigate('/users');
-        } catch (error) {
-            console.error('Failed to create user:', error);
-        } finally {
-            setLoading(false);
-        }
-    };
+  const methods = useForm<CreateUserValues>({
+    resolver: zodResolver(createUserSchema),
+    mode: 'onBlur',
+    defaultValues: {
+      firstName: '',
+      lastName: '',
+      email: '',
+      phoneNumber: '',
+      password: '',
+      confirmPassword: '',
+      isActive: true,
+      isSuperAdmin: false,
+      roleIds: [],
+    },
+  });
 
-    return (
-        <div className="max-w-2xl mx-auto">
-            <Card>
-                <CardHeader>
-                    <CardTitle>Create User</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="full_name">Full Name</Label>
-                            <Input
-                                id="full_name"
-                                value={formData.full_name}
-                                onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                                required
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="email">Email</Label>
-                            <Input
-                                id="email"
-                                type="email"
-                                value={formData.email}
-                                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                                required
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="role">Role</Label>
-                            <Select
-                                value={formData.role}
-                                onValueChange={(value: 'admin' | 'user') => setFormData({ ...formData, role: value })}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select role" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="user">User</SelectItem>
-                                    <SelectItem value="admin">Admin</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="password">Password</Label>
-                            <Input
-                                id="password"
-                                type="password"
-                                value={formData.password}
-                                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                                required
-                            />
-                        </div>
-                        <div className="flex justify-end gap-4 pt-4">
-                            <Button type="button" variant="outline" onClick={() => navigate('/users')}>
-                                Cancel
-                            </Button>
-                            <Button type="submit" disabled={loading}>
-                                {loading ? 'Creating...' : 'Create User'}
-                            </Button>
-                        </div>
-                    </form>
-                </CardContent>
-            </Card>
-        </div>
-    );
+  const { handleSubmit, formState } = methods;
+
+  const onSubmit = async (values: CreateUserValues) => {
+    try {
+      await userGateway.create({
+        firstName: values.firstName,
+        lastName: values.lastName,
+        email: values.email,
+        phoneNumber: values.phoneNumber || undefined,
+        password: values.password,
+        confirmPassword: values.confirmPassword,
+        isActive: values.isActive,
+        isSuperAdmin: isSuperAdmin ? values.isSuperAdmin : undefined,
+        roleIds: values.roleIds,
+      });
+      notify.success('Usuario creado exitosamente');
+      navigate('/users');
+    } catch (err) {
+      notify.fromError(err, 'No se pudo crear el usuario.');
+    }
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto">
+      <Card>
+        <CardHeader>
+          <CardTitle>Crear usuario</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <FormProvider {...methods}>
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+              <UserForm mode="create" canEditSuperAdmin={isSuperAdmin} />
+              <div className="flex justify-end gap-3 pt-4">
+                <Button type="button" variant="outline" onClick={() => navigate('/users')}>
+                  Cancelar
+                </Button>
+                <Button type="submit" disabled={formState.isSubmitting}>
+                  {formState.isSubmitting ? 'Creando...' : 'Crear'}
+                </Button>
+              </div>
+            </form>
+          </FormProvider>
+        </CardContent>
+      </Card>
+    </div>
+  );
 }

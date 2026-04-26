@@ -1,78 +1,102 @@
 import { api, getHttpErrorMessage } from '@/lib/api';
-import type { User, CreateUserDto, UpdateUserDto } from '../domain/models/user';
+import type {
+  ChangePasswordDto,
+  CreateUserDto,
+  PaginatedResponse,
+  UpdateUserDto,
+  User,
+  UsersQuery,
+} from '../domain/models/user';
 
-function extractList<T>(payload: unknown): T[] {
-  if (Array.isArray(payload)) {
-    return payload as T[];
-  }
-  if (payload && typeof payload === 'object' && 'data' in payload) {
-    const inner = (payload as { data: unknown }).data;
-    if (Array.isArray(inner)) {
-      return inner as T[];
-    }
-  }
-  if (payload && typeof payload === 'object' && 'items' in payload) {
-    const inner = (payload as { items: unknown }).items;
-    if (Array.isArray(inner)) {
-      return inner as T[];
-    }
-  }
-  return [];
-}
-
-function extractOne<T>(payload: unknown): T {
-  if (payload && typeof payload === 'object' && 'data' in payload) {
-    return (payload as { data: T }).data;
-  }
-  return payload as T;
-}
-
-function rethrowAsMessage(error: unknown): never {
+function rethrow(error: unknown): never {
   throw new Error(getHttpErrorMessage(error));
 }
 
+function buildParams(query: UsersQuery = {}): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (query.page) out.page = String(query.page);
+  if (query.limit) out.limit = String(query.limit);
+  if (query.search) out.search = query.search;
+  if (typeof query.isActive === 'boolean') out.isActive = String(query.isActive);
+  if (typeof query.isSuperAdmin === 'boolean') out.isSuperAdmin = String(query.isSuperAdmin);
+  if (query.roleId) out.roleId = query.roleId;
+  if (query.roleIds && query.roleIds.length) out.roleIds = query.roleIds.join(',');
+  if (query.sortBy) out.sortBy = query.sortBy;
+  if (query.sortDir) out.sortDir = query.sortDir;
+  if (query.withDeleted) out.withDeleted = 'true';
+  return out;
+}
+
 export const userGateway = {
-  getAll: async (): Promise<User[]> => {
+  list: async (query: UsersQuery = {}): Promise<PaginatedResponse<User>> => {
     try {
-      const { data } = await api.get<unknown>('/users');
-      return extractList<User>(data);
+      const { data } = await api.get<PaginatedResponse<User>>('/users', {
+        params: buildParams(query),
+      });
+      return data;
     } catch (e) {
-      return rethrowAsMessage(e);
+      return rethrow(e);
     }
   },
-
-  getById: async (id: string): Promise<User | null> => {
+  getById: async (id: string): Promise<User> => {
     try {
-      const { data } = await api.get<unknown>(`/users/${id}`);
-      return extractOne<User>(data);
+      const { data } = await api.get<User>(`/users/${id}`);
+      return data;
     } catch (e) {
-      return rethrowAsMessage(e);
+      return rethrow(e);
     }
   },
-
-  create: async (user: CreateUserDto): Promise<User> => {
+  create: async (dto: CreateUserDto): Promise<User> => {
     try {
-      const { data } = await api.post<unknown>('/users', user);
-      return extractOne<User>(data);
+      const { data } = await api.post<User>('/users', dto);
+      return data;
     } catch (e) {
-      return rethrowAsMessage(e);
+      return rethrow(e);
     }
   },
-
-  update: async (id: string, user: UpdateUserDto): Promise<User> => {
+  update: async (id: string, dto: UpdateUserDto): Promise<User> => {
     try {
-      const { data } = await api.patch<unknown>(`/users/${id}`, user);
-      return extractOne<User>(data);
+      const { data } = await api.patch<User>(`/users/${id}`, dto);
+      return data;
     } catch (e) {
-      return rethrowAsMessage(e);
+      return rethrow(e);
     }
   },
-
-  delete: async (id: string): Promise<void> => {
+  changePassword: async (id: string, dto: ChangePasswordDto): Promise<void> => {
+    try {
+      await api.patch(`/users/${id}/change-password`, dto);
+    } catch (e) {
+      return rethrow(e);
+    }
+  },
+  toggleActive: async (id: string): Promise<User> => {
+    try {
+      const { data } = await api.patch<User>(`/users/${id}/toggle-active`);
+      return data;
+    } catch (e) {
+      return rethrow(e);
+    }
+  },
+  softDelete: async (id: string): Promise<void> => {
     try {
       await api.delete(`/users/${id}`);
     } catch (e) {
-      return rethrowAsMessage(e);
+      return rethrow(e);
+    }
+  },
+  hardDelete: async (id: string): Promise<void> => {
+    try {
+      await api.delete(`/users/${id}/permanent`);
+    } catch (e) {
+      return rethrow(e);
+    }
+  },
+  restore: async (id: string): Promise<User> => {
+    try {
+      const { data } = await api.patch<User>(`/users/${id}/restore`);
+      return data;
+    } catch (e) {
+      return rethrow(e);
     }
   },
 };
