@@ -40,6 +40,7 @@ export interface RolesQuery {
   sortBy?: 'name' | 'createdAt' | 'updatedAt';
   sortDir?: 'ASC' | 'DESC';
   withDeleted?: boolean;
+  onlyDeleted?: boolean;
   origin?: 'system' | 'custom' | 'all';
   isActive?: boolean;
 }

@@ -24,6 +24,7 @@ function buildParams(query: UsersQuery = {}): Record<string, string> {
   if (query.sortBy) out.sortBy = query.sortBy;
   if (query.sortDir) out.sortDir = query.sortDir;
   if (query.withDeleted) out.withDeleted = 'true';
+  if (query.onlyDeleted) out.onlyDeleted = 'true';
   return out;
 }
 

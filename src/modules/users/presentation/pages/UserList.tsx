@@ -96,7 +96,8 @@ export function UserList() {
       search: filters.search || undefined,
       isActive:
         filters.status === 'all' ? undefined : filters.status === 'active' ? true : false,
-      withDeleted: filters.deletion !== 'active',
+      withDeleted: filters.deletion === 'all',
+      onlyDeleted: filters.deletion === 'deleted',
       roleIds: filters.roleIds.length ? filters.roleIds : undefined,
       sortBy: filters.sortBy,
       sortDir: filters.sortDir,
@@ -155,6 +156,7 @@ export function UserList() {
   const [hardConfirmStep, setHardConfirmStep] = useState(0);
   const [actionLoading, setActionLoading] = useState(false);
   const [toggleTarget, setToggleTarget] = useState<User | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<User | null>(null);
 
   const confirmToggleActive = async () => {
     if (!toggleTarget) return;
@@ -171,11 +173,13 @@ export function UserList() {
     }
   };
 
-  const handleRestore = async (user: User) => {
+  const confirmRestore = async () => {
+    if (!restoreTarget) return;
     try {
       setActionLoading(true);
-      await userGateway.restore(user.id);
+      await userGateway.restore(restoreTarget.id);
       notify.success('Usuario restaurado');
+      setRestoreTarget(null);
       await fetch();
     } catch (e) {
       notify.fromError(e, 'No se pudo restaurar el usuario.');
@@ -387,7 +391,7 @@ export function UserList() {
                             variant="ghost"
                             size="icon"
                             title="Restaurar"
-                            onClick={() => handleRestore(user)}
+                            onClick={() => setRestoreTarget(user)}
                             disabled={actionLoading}
                           >
                             <Undo2 className="w-4 h-4" />
@@ -552,6 +556,39 @@ export function UserList() {
               disabled={actionLoading}
             >
               {toggleTarget?.isActive ? 'Deshabilitar' : 'Habilitar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!restoreTarget}
+        onOpenChange={(open) => {
+          if (!open) setRestoreTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Restaurar usuario?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {restoreTarget ? (
+                <>
+                  El usuario <strong>{fullName(restoreTarget)}</strong> volverá a estar disponible
+                  con su configuración previa (roles, estado y permisos).
+                </>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void confirmRestore();
+              }}
+              disabled={actionLoading}
+            >
+              Restaurar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

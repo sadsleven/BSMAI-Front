@@ -41,6 +41,7 @@ import { notify } from '@/lib/notifications/toast';
 type SortBy = 'name' | 'createdAt' | 'updatedAt';
 type Origin = 'all' | 'system' | 'custom';
 type Deletion = 'active' | 'deleted' | 'all';
+type StatusFilter = 'all' | 'active' | 'inactive';
 
 const SYSTEM_TOOLTIP = 'Los roles del sistema no se pueden modificar';
 
@@ -50,6 +51,7 @@ function readQuery(sp: URLSearchParams) {
     limit: Number(sp.get('limit') ?? 10) || 10,
     search: sp.get('search') ?? '',
     origin: (sp.get('origin') as Origin) ?? 'all',
+    status: (sp.get('status') as StatusFilter) ?? 'all',
     deletion: (sp.get('deletion') as Deletion) ?? 'active',
     sortBy: (sp.get('sortBy') as SortBy) ?? 'createdAt',
     sortDir: ((sp.get('sortDir') as SortDir) ?? 'DESC') as SortDir,
@@ -66,6 +68,7 @@ export function RoleList() {
   const [hardConfirm, setHardConfirm] = useState(0);
   const [actionLoading, setActionLoading] = useState(false);
   const [toggleTarget, setToggleTarget] = useState<Role | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<Role | null>(null);
 
   const canSeeDeleted = has(PERMISSIONS.ROLES.HARD_DELETE) || has(PERMISSIONS.ROLES.RESTORE);
 
@@ -75,7 +78,10 @@ export function RoleList() {
       limit: filters.limit,
       search: filters.search || undefined,
       origin: filters.origin,
-      withDeleted: filters.deletion !== 'active',
+      isActive:
+        filters.status === 'all' ? undefined : filters.status === 'active' ? true : false,
+      withDeleted: filters.deletion === 'all',
+      onlyDeleted: filters.deletion === 'deleted',
       sortBy: filters.sortBy,
       sortDir: filters.sortDir,
     });
@@ -85,6 +91,7 @@ export function RoleList() {
     filters.limit,
     filters.search,
     filters.origin,
+    filters.status,
     filters.deletion,
     filters.sortBy,
     filters.sortDir,
@@ -118,11 +125,13 @@ export function RoleList() {
     updateParam({ sortBy: column, sortDir: dir });
   const onPage = (page: number) => updateParam({ page: String(page) }, false);
 
-  const handleRestore = async (role: Role) => {
+  const confirmRestore = async () => {
+    if (!restoreTarget) return;
     try {
       setActionLoading(true);
-      await roleGateway.restore(role.id);
+      await roleGateway.restore(restoreTarget.id);
       notify.success('Rol restaurado');
+      setRestoreTarget(null);
       await fetch();
     } catch (e) {
       notify.fromError(e, 'No se pudo restaurar el rol.');
@@ -214,6 +223,16 @@ export function RoleList() {
             <SelectItem value="custom">Personalizados</SelectItem>
           </SelectContent>
         </Select>
+        <Select value={filters.status} onValueChange={(v) => updateParam({ status: v })}>
+          <SelectTrigger className="w-44">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Estado: todos</SelectItem>
+            <SelectItem value="active">Solo habilitados</SelectItem>
+            <SelectItem value="inactive">Solo deshabilitados</SelectItem>
+          </SelectContent>
+        </Select>
         {canSeeDeleted ? (
           <Select
             value={filters.deletion}
@@ -297,7 +316,7 @@ export function RoleList() {
                             variant="ghost"
                             size="icon"
                             title="Restaurar"
-                            onClick={() => handleRestore(role)}
+                            onClick={() => setRestoreTarget(role)}
                             disabled={actionLoading}
                           >
                             <Undo2 className="w-4 h-4" />
@@ -446,6 +465,39 @@ export function RoleList() {
               disabled={actionLoading}
             >
               {toggleTarget?.isActive === false ? 'Habilitar' : 'Deshabilitar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!restoreTarget}
+        onOpenChange={(open) => {
+          if (!open) setRestoreTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Restaurar rol?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {restoreTarget ? (
+                <>
+                  El rol <strong>{restoreTarget.name}</strong> volverá a estar disponible con sus
+                  permisos previos.
+                </>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void confirmRestore();
+              }}
+              disabled={actionLoading}
+            >
+              Restaurar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

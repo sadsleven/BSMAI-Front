@@ -60,6 +60,7 @@ export interface UsersQuery {
   sortBy?: 'firstName' | 'lastName' | 'email' | 'createdAt' | 'updatedAt';
   sortDir?: 'ASC' | 'DESC';
   withDeleted?: boolean;
+  onlyDeleted?: boolean;
 }
 
 export interface PaginatedResponse<T> {
