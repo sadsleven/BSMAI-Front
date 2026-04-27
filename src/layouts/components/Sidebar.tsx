@@ -4,6 +4,10 @@ import {
   Users,
   Shield,
   LogOut,
+  Stethoscope,
+  UserRound,
+  BriefcaseMedical,
+  Hospital,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -46,6 +50,35 @@ export function Sidebar() {
       title: 'Principal',
       items: [
         { icon: Home, label: 'Inicio', href: '/', show: true },
+        {
+          icon: UserRound,
+          label: 'Pacientes',
+          href: '/patients',
+          show: has(PERMISSIONS.PATIENTS.LIST),
+        },
+        {
+          icon: BriefcaseMedical,
+          label: 'Doctores',
+          href: '/doctors',
+          show: has(PERMISSIONS.DOCTORS.LIST),
+        },
+        {
+          icon: Hospital,
+          label: 'Centros de atención',
+          href: '/care-centers',
+          show: has(PERMISSIONS.CARE_CENTERS.LIST),
+        },
+      ],
+    },
+    {
+      title: 'Catálogos',
+      items: [
+        {
+          icon: Stethoscope,
+          label: 'Especialidades',
+          href: '/specialties',
+          show: has(PERMISSIONS.SPECIALTIES.LIST),
+        },
       ],
     },
     {

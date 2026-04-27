@@ -61,6 +61,11 @@ Código transversal en `src/lib/` (utilidades), `src/components/ui/` (shadcn), `
 - **`auth/`** — JWT, login, logout, AuthGuard, hook `usePermissions`, componente `<Can>` para gating de UI, página `/profile` (self-service).
 - **`users/`** — CRUD usuarios, soft/hard delete, restore, change-password, paginación server-side.
 - **`roles/`** — CRUD roles, picker de permisos agrupado por recurso.
+- **`specialties/`** — CRUD simple de especialidades clínicas. Endpoint `assignable` para selectores.
+- **`patients/`** — CRUD pacientes con cédula, email, dirección y lista dinámica de teléfonos.
+- **`doctors/`** — CRUD doctores con RIF condicional, especialidades multi-select y métodos de pago dinámicos.
+- **`care-centers/`** — CRUD centros de atención con RIF siempre obligatorio, especialidades y métodos de pago.
+- **`banks/`** — sólo lectura: catálogo de bancos venezolanos para selectores de pago móvil/transferencia.
 
 ## HTTP
 
@@ -129,10 +134,34 @@ Todas las tablas de la app deben seguir este patrón — **no hay controles de s
 
 ## Validación de formularios
 
-- Schemas Zod centralizados en `src/lib/validations/schemas.ts`: `loginSchema`, `profileSchema`, `createUserSchema`, `updateUserSchema`, `changeOwnPasswordSchema`, `adminChangePasswordSchema`, `roleSchema`.
+- Schemas Zod centralizados en `src/lib/validations/schemas.ts`: `loginSchema`, `profileSchema`, `createUserSchema`, `updateUserSchema`, `changeOwnPasswordSchema`, `adminChangePasswordSchema`, `roleSchema`, `specialtySchema`, `patientSchema`, `doctorSchema`, `careCenterSchema`, `paymentMethodSchema`.
 - Conectados a React Hook Form via `zodResolver`. Modo de validación: `onBlur` consistente.
-- Reglas reutilizables: `emailSchema`, `nameSchema(label)`, `phoneSchema`, `passwordSchema`. Mensajes en español.
-- Reglas duras: nombre 1-150 chars solo letras/acentos/`ñ`; teléfono opcional pero exactamente 11 dígitos si presente; password 8-100 con mayúscula+minúscula+número+especial.
+- Reglas reutilizables: `emailSchema`, `nameSchema(label)`, `phoneSchema`, `passwordSchema`, `cedulaSchema`, `rifSchema`, `phoneNumberSchema`, `phoneItemSchema`, `phonesArraySchema`, `paymentMethodsArraySchema`. Mensajes en español.
+- Reglas duras: nombre 1-150 chars solo letras/acentos/`ñ`; teléfono opcional pero exactamente 11 dígitos si presente; password 8-100 con mayúscula+minúscula+número+especial; cédula `V/E-XX.XXX.XXX`; RIF `J/G/V/E-XX.XXX.XXX-D`; teléfonos para owners 11 dígitos exactos.
+- Cross-validation con `superRefine`:
+  - `doctorSchema` valida `isLegalEntity ↔ rif` (RIF requerido y formato si jurídica; ausente si natural).
+  - `paymentMethodSchema` valida campos por tipo (`mobile_payment` exige bankCode + phoneNumber + idDocument; `bank_transfer` exige bankCode + accountNumber + accountHolderName + idDocument; `other` exige description ≥3 chars).
+
+### Formatos venezolanos
+
+`src/lib/validations/ve-formats.ts` exporta `CEDULA_REGEX`, `RIF_REGEX`, `PHONE_REGEX` + helpers `formatCedula`, `formatRif`, `formatPhoneDigits`. Espejados con `afmi-backend/src/shared/validators/ve-formats.ts`.
+
+### Componentes reutilizables de input venezolano
+
+- `<CedulaInput>` (`src/components/ui/cedula-input.tsx`) — input con auto-formato `V-XX.XXX.XXX` mientras se tipea. Acepta `V`/`E`. Placeholder por defecto: `V-12.345.678`. **Usar siempre que el campo sea cédula** — no instanciar `<Input>` plano con regex local.
+- `<RifInput>` (`src/components/ui/rif-input.tsx`) — auto-formato `J-XX.XXX.XXX-D`. Acepta `J/G/V/E`. Misma regla de uso obligatorio.
+- `<PhoneListInput>` (`src/components/ui/phone-list-input.tsx`) — lista dinámica de teléfonos con `add`/`remove`. Por defecto min=1, max=10. Cada item: número 11 dígitos + label opcional. Errores per-item + arrayError. **Patient/Doctor/CareCenter** lo consumen vía `<Controller>`.
+- `<SpecialtyMultiSelect>` (`src/components/ui/specialty-multi-select.tsx`) — multi-select con búsqueda. Carga `/specialties/assignable`. Especialidades ya asignadas que dejaron de ser asignables aparecen como chip punteado, **quitables pero no re-agregables**. Pasar `existing` para mantenerlas.
+- `<PaymentMethodsInput>` (`src/components/ui/payment-methods-input.tsx`) — lista dinámica de métodos de pago. Type discriminator: `mobile_payment | bank_transfer | other`, cada uno renderiza fields propios. Carga `GET /banks` para `<Select>` de banco. Soporta `defaults` (cedula/rif/fullName/firstPhone): autocompleta al cambiar de tipo o agregar uno nuevo, **sin pisar lo ya tipeado** — el usuario puede sobreescribir manualmente.
+
+### Módulos clínicos
+
+- `specialties` — CRUD simple. Forms con `name` + `description` + `isActive`. List con icon-tile cyan-soft.
+- `patients` — Form con `<CedulaInput>` + email + nombres + birthDate + dirección + `<PhoneListInput>` + estado.
+- `doctors` — Form con `<CedulaInput>` + email + nombres + `<FormSwitch>` `isLegalEntity` + `<RifInput>` condicional + `<PhoneListInput>` + `<SpecialtyMultiSelect>` + `<PaymentMethodsInput>` (defaults desde cedula/rif/nombre/primer teléfono) + estado. List con badge "Jurídica" y filtro `entityType` server-side.
+- `care-centers` — Form con `name` + email + `<RifInput>` (siempre obligatorio) + `<PhoneListInput>` + `<SpecialtyMultiSelect>` + `<PaymentMethodsInput>` + estado.
+- `banks` — gateway sólo lectura. Único consumidor actual: `<PaymentMethodsInput>`.
+- **Replace-all en update**: el FE envía siempre el array completo de phones / paymentMethods. En edit los items existentes preservan `id` (campo opcional en el schema); los nuevos van sin id. El backend hace diff por id.
 
 ## Notificaciones (`notify`)
 
@@ -256,7 +285,6 @@ Loading → `<SkeletonTableRows>`. Empty → `<EmptyState>` con copy contextual 
 - Card 420px max-w, `rounded-2xl shadow-lg`, `p-9`.
 - Brand block: mark 56×56 con gradient cyan→blue + box-shadow azul soft. H1 22px + subtítulo 13px muted.
 - Email/password con icono left (`Mail` / `Lock`) y toggle Eye en password.
-- Row "Recordarme" + link "¿Olvidaste tu contraseña?" en `text-brand-blue-strong`.
 - Submit `size="lg" w-full h-11`.
 
 ### Empty state y skeleton

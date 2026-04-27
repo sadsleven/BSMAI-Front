@@ -164,13 +164,6 @@ export function LoginPage() {
               />
               <span className="text-foreground">Recordarme</span>
             </label>
-            <button
-              type="button"
-              className="text-brand-blue-strong font-medium hover:underline"
-              onClick={() => notify.info('Pedile a un administrador que reinicie tu contraseña.')}
-            >
-              ¿Olvidaste tu contraseña?
-            </button>
           </div>
 
           <Button

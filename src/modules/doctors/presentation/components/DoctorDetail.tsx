@@ -1,0 +1,212 @@
+import { useEffect, useState } from 'react';
+import {
+  DetailBadge,
+  DetailDialog,
+  DetailRow,
+  DetailSection,
+} from '@/components/ui/detail-dialog';
+import { Badge } from '@/components/ui/badge';
+import { BriefcaseMedical, Wallet, Banknote, FileText } from 'lucide-react';
+import { doctorGateway } from '../../infrastructure/doctorGateway';
+import { fullName, type Doctor } from '../../domain/models/doctor';
+import type { Bank } from '@/modules/banks/domain/models/bank';
+import { bankGateway } from '@/modules/banks/infrastructure/bankGateway';
+import { notify } from '@/lib/notifications/toast';
+
+const TYPE_LABEL = {
+  mobile_payment: 'Pago Móvil',
+  bank_transfer: 'Transferencia',
+  other: 'Otro',
+} as const;
+
+const TYPE_ICON = {
+  mobile_payment: Wallet,
+  bank_transfer: Banknote,
+  other: FileText,
+} as const;
+
+export type DoctorDetailProps = {
+  doctorId: string | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+};
+
+export function DoctorDetail({ doctorId, open, onOpenChange }: DoctorDetailProps) {
+  const [doctor, setDoctor] = useState<Doctor | null>(null);
+  const [banks, setBanks] = useState<Map<string, Bank>>(new Map());
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open || !doctorId) {
+      setDoctor(null);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([doctorGateway.getById(doctorId), bankGateway.list()])
+      .then(([d, bs]) => {
+        if (cancelled) return;
+        setDoctor(d);
+        const map = new Map<string, Bank>();
+        for (const b of bs) map.set(b.code, b);
+        setBanks(map);
+      })
+      .catch((e) => {
+        if (!cancelled) notify.fromError(e, 'No se pudo cargar el doctor.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [doctorId, open]);
+
+  return (
+    <DetailDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      icon={BriefcaseMedical}
+      title={doctor ? fullName(doctor) : 'Detalle del doctor'}
+      subtitle={doctor?.email}
+      loading={loading}
+    >
+      {doctor ? (
+        <div className="divide-y">
+          <DetailSection title="Datos personales">
+            <DetailRow label="Cédula" value={doctor.cedula} mono />
+            <DetailRow
+              label="Tipo"
+              value={
+                doctor.isLegalEntity ? (
+                  <Badge variant="outline">Persona jurídica</Badge>
+                ) : (
+                  <Badge variant="outline">Persona natural</Badge>
+                )
+              }
+            />
+            {doctor.isLegalEntity && <DetailRow label="RIF" value={doctor.rif} mono />}
+            <DetailRow label="Email" value={doctor.email} />
+            <DetailRow
+              label="Estado"
+              value={
+                doctor.deletedAt ? (
+                  <DetailBadge tone="destructive">En papelera</DetailBadge>
+                ) : doctor.isActive ? (
+                  <DetailBadge tone="success">Habilitado</DetailBadge>
+                ) : (
+                  <DetailBadge tone="warning">Deshabilitado</DetailBadge>
+                )
+              }
+            />
+          </DetailSection>
+
+          <DetailSection title={`Teléfonos (${doctor.phones?.length ?? 0})`}>
+            {doctor.phones?.length ? (
+              <ul className="space-y-1.5">
+                {doctor.phones.map((p) => (
+                  <li
+                    key={p.id ?? p.number}
+                    className="flex items-center justify-between text-sm"
+                  >
+                    <span className="font-mono">{p.number}</span>
+                    {p.label && (
+                      <span className="text-xs text-muted-foreground">{p.label}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground italic">Sin teléfonos.</p>
+            )}
+          </DetailSection>
+
+          <DetailSection title={`Especialidades (${doctor.specialties?.length ?? 0})`}>
+            {doctor.specialties?.length ? (
+              <div className="flex flex-wrap gap-1.5">
+                {doctor.specialties.map((s) => (
+                  <Badge key={s.id} variant="outline">
+                    {s.name}
+                  </Badge>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground italic">Sin especialidades.</p>
+            )}
+          </DetailSection>
+
+          <DetailSection title={`Métodos de pago (${doctor.paymentMethods?.length ?? 0})`}>
+            {doctor.paymentMethods?.length ? (
+              <ul className="space-y-2">
+                {doctor.paymentMethods.map((m, i) => {
+                  const Icon = TYPE_ICON[m.type];
+                  const bank = m.bankCode ? banks.get(m.bankCode) : null;
+                  return (
+                    <li
+                      key={m.id ?? i}
+                      className="border rounded-lg p-3 bg-muted/10 space-y-1.5"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-brand-blue-soft text-brand-blue flex items-center justify-center">
+                          <Icon className="w-3.5 h-3.5" />
+                        </div>
+                        <span className="text-sm font-medium">{TYPE_LABEL[m.type]}</span>
+                      </div>
+                      {m.type === 'mobile_payment' && (
+                        <>
+                          {bank && (
+                            <DetailRow
+                              label="Banco"
+                              value={`${bank.code} — ${bank.name}`}
+                            />
+                          )}
+                          <DetailRow label="Teléfono" value={m.phoneNumber} mono />
+                          <DetailRow label="Cédula/RIF" value={m.idDocument} mono />
+                        </>
+                      )}
+                      {m.type === 'bank_transfer' && (
+                        <>
+                          {bank && (
+                            <DetailRow
+                              label="Banco"
+                              value={`${bank.code} — ${bank.name}`}
+                            />
+                          )}
+                          <DetailRow label="Cuenta" value={m.accountNumber} mono />
+                          <DetailRow label="Titular" value={m.accountHolderName} />
+                          <DetailRow label="Cédula/RIF" value={m.idDocument} mono />
+                        </>
+                      )}
+                      {m.type === 'other' && (
+                        <DetailRow label="Descripción" value={m.description} />
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground italic">Sin métodos de pago.</p>
+            )}
+          </DetailSection>
+
+          {(doctor.createdAt || doctor.updatedAt) && (
+            <DetailSection title="Auditoría">
+              {doctor.createdAt && (
+                <DetailRow
+                  label="Creado"
+                  value={new Date(doctor.createdAt).toLocaleString()}
+                />
+              )}
+              {doctor.updatedAt && (
+                <DetailRow
+                  label="Actualizado"
+                  value={new Date(doctor.updatedAt).toLocaleString()}
+                />
+              )}
+            </DetailSection>
+          )}
+        </div>
+      ) : null}
+    </DetailDialog>
+  );
+}

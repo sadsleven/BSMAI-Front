@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useRoleStore } from '../../domain/store/roleStore';
-import { roleGateway } from '../../infrastructure/roleGateway';
-import type { Role } from '../../domain/models/role';
+import { useDoctorStore } from '../../domain/store/doctorStore';
+import { doctorGateway } from '../../infrastructure/doctorGateway';
+import { fullName, type Doctor } from '../../domain/models/doctor';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
   Table,
   TableBody,
@@ -13,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -38,81 +38,82 @@ import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
-import { Plus, Pencil, Trash2, Shield, Undo2, Power, Eye } from 'lucide-react';
-import { RoleDetail } from '../components/RoleDetail';
+import { Plus, Pencil, Trash2, Power, Undo2, Stethoscope, Eye } from 'lucide-react';
+import { DoctorDetail } from '../components/DoctorDetail';
 import { Can } from '@/modules/auth/presentation/components/Can';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
 import { notify } from '@/lib/notifications/toast';
-import { cn } from '@/lib/utils';
 
-type SortBy = 'name' | 'createdAt' | 'updatedAt';
-type Origin = 'all' | 'system' | 'custom';
-type Deletion = 'active' | 'deleted' | 'all';
+type SortBy = 'firstName' | 'lastName' | 'cedula' | 'email' | 'createdAt' | 'updatedAt';
 type StatusFilter = 'all' | 'active' | 'inactive';
-
-const SYSTEM_TOOLTIP = 'Los roles del sistema no se pueden modificar';
+type Deletion = 'active' | 'deleted' | 'all';
+type EntityType = 'all' | 'natural' | 'legal';
 
 function readQuery(sp: URLSearchParams) {
   return {
     page: Number(sp.get('page') ?? 1) || 1,
     limit: Number(sp.get('limit') ?? 10) || 10,
     search: sp.get('search') ?? '',
-    origin: (sp.get('origin') as Origin) ?? 'all',
     status: (sp.get('status') as StatusFilter) ?? 'all',
     deletion: (sp.get('deletion') as Deletion) ?? 'active',
+    entityType: (sp.get('entityType') as EntityType) ?? 'all',
     sortBy: (sp.get('sortBy') as SortBy) ?? 'createdAt',
     sortDir: ((sp.get('sortDir') as SortDir) ?? 'DESC') as SortDir,
   };
 }
 
-function StatusBadge({ role }: { role: Role }) {
-  if (role.deletedAt) {
+function doctorInitials(d: Pick<Doctor, 'firstName' | 'lastName'>) {
+  return `${d.firstName?.[0] ?? ''}${d.lastName?.[0] ?? ''}`.toUpperCase() || 'D';
+}
+
+function StatusBadge({ d }: { d: Doctor }) {
+  if (d.deletedAt)
     return (
       <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-destructive-soft text-destructive text-xs font-medium">
         <span className="w-1.5 h-1.5 rounded-full bg-destructive" /> En papelera
       </span>
     );
-  }
-  if (role.isActive === false) {
+  if (d.isActive)
     return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-warning-soft text-warning text-xs font-medium">
-        <span className="w-1.5 h-1.5 rounded-full bg-warning" /> Deshabilitado
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-success-soft text-success text-xs font-medium">
+        <span className="w-1.5 h-1.5 rounded-full bg-success" /> Habilitado
       </span>
     );
-  }
   return (
-    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-success-soft text-success text-xs font-medium">
-      <span className="w-1.5 h-1.5 rounded-full bg-success" /> Habilitado
+    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-warning-soft text-warning text-xs font-medium">
+      <span className="w-1.5 h-1.5 rounded-full bg-warning" /> Deshabilitado
     </span>
   );
 }
 
-export function RoleList() {
-  const { roles, metadata, isLoading, error, setQuery, fetch, remove } = useRoleStore();
+export function DoctorList() {
+  const { doctors, metadata, isLoading, error, setQuery, fetch, remove } =
+    useDoctorStore();
   const { has } = usePermissions();
   const [sp, setSp] = useSearchParams();
   const filters = useMemo(() => readQuery(sp), [sp]);
   const [searchInput, setSearchInput] = useState(filters.search);
-  const [deleteTarget, setDeleteTarget] = useState<Role | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Doctor | null>(null);
   const [hardConfirm, setHardConfirm] = useState(0);
   const [actionLoading, setActionLoading] = useState(false);
-  const [toggleTarget, setToggleTarget] = useState<Role | null>(null);
-  const [restoreTarget, setRestoreTarget] = useState<Role | null>(null);
+  const [toggleTarget, setToggleTarget] = useState<Doctor | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<Doctor | null>(null);
   const [viewTargetId, setViewTargetId] = useState<string | null>(null);
 
-  const canSeeDeleted = has(PERMISSIONS.ROLES.HARD_DELETE) || has(PERMISSIONS.ROLES.RESTORE);
+  const canSeeDeleted =
+    has(PERMISSIONS.DOCTORS.HARD_DELETE) || has(PERMISSIONS.DOCTORS.RESTORE);
 
   useEffect(() => {
     setQuery({
       page: filters.page,
       limit: filters.limit,
       search: filters.search || undefined,
-      origin: filters.origin,
       isActive:
         filters.status === 'all' ? undefined : filters.status === 'active' ? true : false,
       withDeleted: filters.deletion === 'all',
       onlyDeleted: filters.deletion === 'deleted',
+      entityType: filters.entityType,
       sortBy: filters.sortBy,
       sortDir: filters.sortDir,
     });
@@ -121,9 +122,9 @@ export function RoleList() {
     filters.page,
     filters.limit,
     filters.search,
-    filters.origin,
     filters.status,
     filters.deletion,
+    filters.entityType,
     filters.sortBy,
     filters.sortDir,
     setQuery,
@@ -158,25 +159,40 @@ export function RoleList() {
 
   const hasActiveFilters =
     Boolean(filters.search) ||
-    filters.origin !== 'all' ||
     filters.status !== 'all' ||
-    filters.deletion !== 'active';
+    filters.deletion !== 'active' ||
+    filters.entityType !== 'all';
 
   const clearFilters = () => {
     setSearchInput('');
     setSp(new URLSearchParams(), { replace: true });
   };
 
+  const confirmToggle = async () => {
+    if (!toggleTarget) return;
+    try {
+      setActionLoading(true);
+      await doctorGateway.toggleActive(toggleTarget.id);
+      notify.success(`Doctor ${toggleTarget.isActive ? 'deshabilitado' : 'habilitado'}`);
+      setToggleTarget(null);
+      await fetch();
+    } catch (e) {
+      notify.fromError(e, 'No se pudo cambiar el estado.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const confirmRestore = async () => {
     if (!restoreTarget) return;
     try {
       setActionLoading(true);
-      await roleGateway.restore(restoreTarget.id);
-      notify.success('Rol restaurado');
+      await doctorGateway.restore(restoreTarget.id);
+      notify.success('Doctor restaurado');
       setRestoreTarget(null);
       await fetch();
     } catch (e) {
-      notify.fromError(e, 'No se pudo restaurar el rol.');
+      notify.fromError(e, 'No se pudo restaurar el doctor.');
     } finally {
       setActionLoading(false);
     }
@@ -186,28 +202,13 @@ export function RoleList() {
     if (!deleteTarget) return;
     try {
       setActionLoading(true);
-      await roleGateway.softDelete(deleteTarget.id);
+      await doctorGateway.softDelete(deleteTarget.id);
       remove(deleteTarget.id);
-      notify.success('Rol movido a la papelera');
+      notify.success('Doctor movido a la papelera');
       setDeleteTarget(null);
       await fetch();
     } catch (e) {
-      notify.fromError(e, 'No se pudo eliminar el rol.');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const confirmToggleActive = async () => {
-    if (!toggleTarget) return;
-    try {
-      setActionLoading(true);
-      await roleGateway.toggleActive(toggleTarget.id);
-      notify.success(`Rol ${toggleTarget.isActive ? 'deshabilitado' : 'habilitado'}`);
-      setToggleTarget(null);
-      await fetch();
-    } catch (e) {
-      notify.fromError(e, 'No se pudo cambiar el estado del rol.');
+      notify.fromError(e, 'No se pudo eliminar el doctor.');
     } finally {
       setActionLoading(false);
     }
@@ -221,14 +222,14 @@ export function RoleList() {
     }
     try {
       setActionLoading(true);
-      await roleGateway.hardDelete(deleteTarget.id);
+      await doctorGateway.hardDelete(deleteTarget.id);
       remove(deleteTarget.id);
-      notify.success('Rol eliminado permanentemente');
+      notify.success('Doctor eliminado permanentemente');
       setDeleteTarget(null);
       setHardConfirm(0);
       await fetch();
     } catch (e) {
-      notify.fromError(e, 'No se pudo eliminar el rol.');
+      notify.fromError(e, 'No se pudo eliminar el doctor.');
     } finally {
       setActionLoading(false);
     }
@@ -240,17 +241,17 @@ export function RoleList() {
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div className="space-y-1">
           <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">
-            Roles y permisos
+            Doctores
           </h1>
           <p className="text-sm text-muted-foreground">
-            {metadata.total.toLocaleString()} roles en total
+            {metadata.total.toLocaleString()} doctores en total
           </p>
         </div>
-        <Can permission={PERMISSIONS.ROLES.CREATE}>
-          <Link to="/roles/create">
+        <Can permission={PERMISSIONS.DOCTORS.CREATE}>
+          <Link to="/doctors/create">
             <Button>
               <Plus className="w-4 h-4 mr-1.5" />
-              Nuevo rol
+              Nuevo doctor
             </Button>
           </Link>
         </Can>
@@ -260,19 +261,22 @@ export function RoleList() {
         <DataTableToolbar
           searchValue={searchInput}
           onSearchChange={setSearchInput}
-          searchPlaceholder="Buscar rol…"
+          searchPlaceholder="Buscar por nombre, cédula, email o RIF…"
           hasActiveFilters={hasActiveFilters}
           onClear={clearFilters}
           filters={
             <>
-              <Select value={filters.origin} onValueChange={(v) => updateParam({ origin: v })}>
+              <Select
+                value={filters.entityType}
+                onValueChange={(v) => updateParam({ entityType: v })}
+              >
                 <SelectTrigger className="h-9 w-44">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Origen: todos</SelectItem>
-                  <SelectItem value="system">Sistema</SelectItem>
-                  <SelectItem value="custom">Personalizados</SelectItem>
+                  <SelectItem value="all">Tipo: todos</SelectItem>
+                  <SelectItem value="natural">Persona natural</SelectItem>
+                  <SelectItem value="legal">Persona jurídica</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={filters.status} onValueChange={(v) => updateParam({ status: v })}>
@@ -315,19 +319,26 @@ export function RoleList() {
             <TableRow className="bg-[oklch(0.985_0.003_250)] hover:bg-[oklch(0.985_0.003_250)]">
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 <SortableHeader<SortBy>
-                  column="name"
+                  column="firstName"
                   activeColumn={filters.sortBy}
                   direction={filters.sortDir}
                   onSort={onSort}
                 >
-                  Rol
+                  Doctor
                 </SortableHeader>
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                Descripción
+                <SortableHeader<SortBy>
+                  column="cedula"
+                  activeColumn={filters.sortBy}
+                  direction={filters.sortDir}
+                  onSort={onSort}
+                >
+                  Cédula / RIF
+                </SortableHeader>
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                Permisos
+                Especialidades
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Estado
@@ -340,15 +351,16 @@ export function RoleList() {
           <TableBody>
             {isLoading ? (
               <SkeletonTableRows rows={5} columns={5} />
-            ) : roles.length === 0 ? (
+            ) : doctors.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="p-0">
                   <EmptyState
-                    title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay roles'}
+                    icon={Stethoscope}
+                    title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay doctores'}
                     description={
                       hasActiveFilters
                         ? 'Ajustá los filtros para ver más resultados.'
-                        : 'Creá el primer rol para asignar permisos.'
+                        : 'Creá el primer doctor para empezar a registrar atenciones.'
                     }
                     action={
                       hasActiveFilters ? (
@@ -361,142 +373,133 @@ export function RoleList() {
                 </TableCell>
               </TableRow>
             ) : (
-              roles.map((role) => {
-                const isSystem = !!role.isSystem;
-                return (
-                  <TableRow
-                    key={role.id}
-                    className="hover:bg-[oklch(0.985_0.003_250)]"
-                  >
-                    <TableCell className="py-3.5 px-4">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-8 h-8 rounded-lg bg-brand-blue-soft text-brand-blue-strong flex items-center justify-center shrink-0">
-                          <Shield className="w-4 h-4" />
+              doctors.map((d) => (
+                <TableRow key={d.id} className="hover:bg-[oklch(0.985_0.003_250)]">
+                  <TableCell className="py-3.5 px-4">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand-cyan to-brand-blue flex items-center justify-center text-white text-xs font-bold shrink-0">
+                        {doctorInitials(d)}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-semibold text-foreground truncate flex items-center gap-2">
+                          {fullName(d)}
+                          {d.isLegalEntity && (
+                            <Badge variant="outline" className="text-[10px] py-0 px-1.5">
+                              Jurídica
+                            </Badge>
+                          )}
                         </div>
-                        <div className="min-w-0 flex items-center gap-2">
-                          <span className="font-semibold text-foreground truncate">
-                            {role.name}
-                          </span>
-                          {isSystem ? <Badge variant="default">Sistema</Badge> : null}
+                        <div className="text-xs text-muted-foreground truncate">
+                          {d.email}
                         </div>
                       </div>
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm text-muted-foreground max-w-xs truncate">
-                      {role.description ?? '—'}
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4">
-                      <Badge variant="outline">{role.permissions?.length ?? 0}</Badge>
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4">
-                      <StatusBadge role={role} />
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-right">
-                      <div className="inline-flex items-center gap-0.5">
-                        <Can permission={PERMISSIONS.ROLES.VIEW}>
+                    </div>
+                  </TableCell>
+                  <TableCell className="py-3.5 px-4 text-sm font-mono text-muted-foreground">
+                    <div>{d.cedula}</div>
+                    {d.rif && <div className="text-xs">{d.rif}</div>}
+                  </TableCell>
+                  <TableCell className="py-3.5 px-4">
+                    <div className="flex flex-wrap gap-1 max-w-[280px]">
+                      {(d.specialties ?? []).slice(0, 3).map((s) => (
+                        <Badge
+                          key={s.id}
+                          variant="outline"
+                          className="text-[10px] py-0 px-1.5"
+                        >
+                          {s.name}
+                        </Badge>
+                      ))}
+                      {(d.specialties?.length ?? 0) > 3 && (
+                        <span className="text-xs text-muted-foreground">
+                          +{(d.specialties?.length ?? 0) - 3}
+                        </span>
+                      )}
+                      {(d.specialties?.length ?? 0) === 0 && (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell className="py-3.5 px-4">
+                    <StatusBadge d={d} />
+                  </TableCell>
+                  <TableCell className="py-3.5 px-4 text-right">
+                    <div className="inline-flex items-center gap-0.5">
+                      <Can permission={PERMISSIONS.DOCTORS.VIEW}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Ver detalle"
+                          onClick={() => setViewTargetId(d.id)}
+                          className="w-8 h-8"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                      </Can>
+                      {d.deletedAt ? (
+                        <Can permission={PERMISSIONS.DOCTORS.RESTORE}>
                           <Button
                             variant="ghost"
                             size="icon"
-                            title="Ver detalle"
-                            onClick={() => setViewTargetId(role.id)}
+                            title="Restaurar"
+                            onClick={() => setRestoreTarget(d)}
+                            disabled={actionLoading}
                             className="w-8 h-8"
                           >
-                            <Eye className="w-4 h-4" />
+                            <Undo2 className="w-4 h-4" />
                           </Button>
                         </Can>
-                        {role.deletedAt ? (
-                          <Can permission={PERMISSIONS.ROLES.RESTORE}>
+                      ) : (
+                        <>
+                          <Can permission={PERMISSIONS.DOCTORS.UPDATE}>
+                            <Link to={`/doctors/edit/${d.id}`}>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                title="Editar"
+                                className="w-8 h-8"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                            </Link>
+                          </Can>
+                          <Can permission={PERMISSIONS.DOCTORS.TOGGLE_ACTIVE}>
                             <Button
                               variant="ghost"
                               size="icon"
-                              title="Restaurar"
-                              onClick={() => setRestoreTarget(role)}
+                              title={d.isActive ? 'Deshabilitar' : 'Habilitar'}
+                              onClick={() => setToggleTarget(d)}
                               disabled={actionLoading}
                               className="w-8 h-8"
                             >
-                              <Undo2 className="w-4 h-4" />
+                              <Power className="w-4 h-4" />
                             </Button>
                           </Can>
-                        ) : (
-                          <>
-                            <Can permission={PERMISSIONS.ROLES.UPDATE}>
-                              {isSystem ? (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  title={SYSTEM_TOOLTIP}
-                                  disabled
-                                  className="w-8 h-8 opacity-50 cursor-not-allowed"
-                                >
-                                  <Pencil className="w-4 h-4" />
-                                </Button>
-                              ) : (
-                                <Link to={`/roles/edit/${role.id}`}>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    title="Editar"
-                                    className="w-8 h-8"
-                                  >
-                                    <Pencil className="w-4 h-4" />
-                                  </Button>
-                                </Link>
-                              )}
-                            </Can>
-                            <Can permission={PERMISSIONS.ROLES.TOGGLE_ACTIVE}>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                title={
-                                  isSystem
-                                    ? 'Los roles del sistema no se pueden deshabilitar'
-                                    : role.isActive === false
-                                      ? 'Habilitar'
-                                      : 'Deshabilitar'
-                                }
-                                onClick={() => {
-                                  if (isSystem) return;
-                                  setToggleTarget(role);
-                                }}
-                                disabled={isSystem || actionLoading}
-                                className={cn(
-                                  'w-8 h-8',
-                                  isSystem && 'opacity-50 cursor-not-allowed',
-                                )}
-                              >
-                                <Power className="w-4 h-4" />
-                              </Button>
-                            </Can>
-                            <Can
-                              anyOf={[
-                                PERMISSIONS.ROLES.SOFT_DELETE,
-                                PERMISSIONS.ROLES.HARD_DELETE,
-                              ]}
+                          <Can
+                            anyOf={[
+                              PERMISSIONS.DOCTORS.SOFT_DELETE,
+                              PERMISSIONS.DOCTORS.HARD_DELETE,
+                            ]}
+                          >
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="w-8 h-8 text-destructive hover:bg-destructive-soft hover:text-destructive"
+                              title="Eliminar"
+                              onClick={() => {
+                                setDeleteTarget(d);
+                                setHardConfirm(0);
+                              }}
                             >
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className={cn(
-                                  'w-8 h-8 text-destructive hover:bg-destructive-soft hover:text-destructive',
-                                  isSystem && 'opacity-50 cursor-not-allowed',
-                                )}
-                                title={isSystem ? SYSTEM_TOOLTIP : 'Eliminar'}
-                                onClick={() => {
-                                  if (isSystem) return;
-                                  setDeleteTarget(role);
-                                  setHardConfirm(0);
-                                }}
-                                disabled={isSystem}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </Can>
-                          </>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </Can>
+                        </>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
             )}
           </TableBody>
         </Table>
@@ -507,7 +510,7 @@ export function RoleList() {
           total={metadata.total}
           lastPage={metadata.lastPage}
           onPageChange={onPage}
-          itemLabel="roles"
+          itemLabel="doctores"
         />
       </div>
 
@@ -516,28 +519,28 @@ export function RoleList() {
         onOpenChange={(open) => {
           if (!open) setToggleTarget(null);
         }}
-        tone={toggleTarget?.isActive === false ? 'success' : 'warning'}
+        tone={toggleTarget?.isActive ? 'warning' : 'success'}
         icon={Power}
-        title={toggleTarget?.isActive === false ? '¿Habilitar rol?' : '¿Deshabilitar rol?'}
+        title={toggleTarget?.isActive ? '¿Deshabilitar doctor?' : '¿Habilitar doctor?'}
         description={
           toggleTarget ? (
-            toggleTarget.isActive === false ? (
+            toggleTarget.isActive ? (
               <>
-                Los usuarios con el rol <strong>{toggleTarget.name}</strong> volverán a recibir
-                los permisos asociados.
+                El doctor <strong>{fullName(toggleTarget)}</strong> dejará de aparecer
+                como activo en listados y nuevas atenciones.
               </>
             ) : (
               <>
-                Los usuarios con el rol <strong>{toggleTarget.name}</strong> no recibirán los
-                permisos asociados hasta que sea habilitado nuevamente.
+                El doctor <strong>{fullName(toggleTarget)}</strong> volverá a estar
+                disponible para registrar atenciones.
               </>
             )
           ) : null
         }
-        confirmLabel={toggleTarget?.isActive === false ? 'Habilitar' : 'Deshabilitar'}
-        confirmVariant={toggleTarget?.isActive === false ? 'default' : 'destructive'}
+        confirmLabel={toggleTarget?.isActive ? 'Deshabilitar' : 'Habilitar'}
+        confirmVariant={toggleTarget?.isActive ? 'destructive' : 'default'}
         loading={actionLoading}
-        onConfirm={confirmToggleActive}
+        onConfirm={confirmToggle}
       />
 
       <ConfirmDialog
@@ -547,12 +550,12 @@ export function RoleList() {
         }}
         tone="success"
         icon={Undo2}
-        title="¿Restaurar rol?"
+        title="¿Restaurar doctor?"
         description={
           restoreTarget ? (
             <>
-              El rol <strong>{restoreTarget.name}</strong> volverá a estar disponible con sus
-              permisos previos.
+              El doctor <strong>{fullName(restoreTarget)}</strong> volverá a estar
+              disponible.
             </>
           ) : null
         }
@@ -574,12 +577,12 @@ export function RoleList() {
           <DialogIconHeader
             tone="destructive"
             icon={Trash2}
-            title="¿Eliminar rol?"
+            title="¿Eliminar doctor?"
             description={
               deleteTarget ? (
                 <>
-                  Vas a eliminar el rol <strong>{deleteTarget.name}</strong>. Elegí entre mover a
-                  la papelera (reversible) o eliminar permanentemente.
+                  Vas a eliminar a <strong>{fullName(deleteTarget)}</strong>. Elegí entre
+                  mover a la papelera (reversible) o eliminar permanentemente.
                 </>
               ) : null
             }
@@ -599,7 +602,7 @@ export function RoleList() {
             <AlertDialogCancel disabled={actionLoading} className="sm:mr-auto">
               Cancelar
             </AlertDialogCancel>
-            <Can permission={PERMISSIONS.ROLES.SOFT_DELETE}>
+            <Can permission={PERMISSIONS.DOCTORS.SOFT_DELETE}>
               <AlertDialogAction
                 variant="default"
                 onClick={(e) => {
@@ -611,7 +614,7 @@ export function RoleList() {
                 Mover a la papelera
               </AlertDialogAction>
             </Can>
-            <Can permission={PERMISSIONS.ROLES.HARD_DELETE}>
+            <Can permission={PERMISSIONS.DOCTORS.HARD_DELETE}>
               <AlertDialogAction
                 variant="destructive"
                 onClick={(e) => {
@@ -627,8 +630,8 @@ export function RoleList() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <RoleDetail
-        roleId={viewTargetId}
+      <DoctorDetail
+        doctorId={viewTargetId}
         open={!!viewTargetId}
         onOpenChange={(o) => {
           if (!o) setViewTargetId(null);

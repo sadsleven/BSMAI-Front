@@ -58,7 +58,9 @@ import {
   Undo2,
   Filter,
   ChevronDown,
+  Eye,
 } from 'lucide-react';
+import { UserDetail } from '../components/UserDetail';
 import { Can } from '@/modules/auth/presentation/components/Can';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
 import { useAuthStore } from '@/modules/auth/domain/store/authStore';
@@ -210,6 +212,7 @@ export function UserList() {
   const [actionLoading, setActionLoading] = useState(false);
   const [toggleTarget, setToggleTarget] = useState<User | null>(null);
   const [restoreTarget, setRestoreTarget] = useState<User | null>(null);
+  const [viewTargetId, setViewTargetId] = useState<string | null>(null);
 
   const confirmToggleActive = async () => {
     if (!toggleTarget) return;
@@ -470,6 +473,17 @@ export function UserList() {
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-right">
                       <div className="inline-flex items-center gap-0.5">
+                        <Can permission={PERMISSIONS.USERS.VIEW}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Ver detalle"
+                            onClick={() => setViewTargetId(user.id)}
+                            className="w-8 h-8"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                        </Can>
                         {state.canRestore ? (
                           <Can permission={PERMISSIONS.USERS.RESTORE}>
                             <Button
@@ -714,6 +728,14 @@ export function UserList() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <UserDetail
+        userId={viewTargetId}
+        open={!!viewTargetId}
+        onOpenChange={(o) => {
+          if (!o) setViewTargetId(null);
+        }}
+      />
     </div>
   );
 }

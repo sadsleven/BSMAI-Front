@@ -1,4 +1,10 @@
 import { z } from 'zod';
+import {
+  cedulaSchema,
+  phoneNumberSchema,
+  phonesArraySchema,
+  rifSchema,
+} from './ve-formats';
 
 const NAME_REGEX = /^[A-Za-zÁÉÍÓÚáéíóúÑñ\s]+$/;
 const PHONE_REGEX = /^\d+$/;
@@ -117,6 +123,180 @@ export const adminChangePasswordSchema = (requireCurrent: boolean) =>
       path: ['confirmNewPassword'],
       message: 'Las contraseñas nuevas no coinciden',
     });
+
+export const patientSchema = z.object({
+  cedula: cedulaSchema,
+  email: emailSchema,
+  firstName: nameSchema('El nombre'),
+  lastName: nameSchema('El apellido'),
+  birthDate: z
+    .string({ error: 'La fecha de nacimiento es obligatoria' })
+    .min(1, 'La fecha de nacimiento es obligatoria'),
+  address: z
+    .string({ error: 'La dirección es obligatoria' })
+    .min(3, 'La dirección debe tener al menos 3 caracteres')
+    .max(500, 'La dirección no puede superar 500 caracteres'),
+  phones: phonesArraySchema,
+  isActive: z.boolean().optional(),
+});
+export type PatientValues = z.infer<typeof patientSchema>;
+
+// Re-export VE schemas for convenience
+export { cedulaSchema, rifSchema, phonesArraySchema };
+
+export const specialtySchema = z.object({
+  name: z
+    .string({ error: 'El nombre es obligatorio' })
+    .min(2, 'El nombre debe tener al menos 2 caracteres')
+    .max(120, 'El nombre no puede superar 120 caracteres'),
+  description: z
+    .string()
+    .max(500, 'La descripción no puede superar 500 caracteres')
+    .optional(),
+  isActive: z.boolean().optional(),
+});
+export type SpecialtyValues = z.infer<typeof specialtySchema>;
+
+// ---- Doctores y Centros de Atención (métodos de pago compartidos) ----
+
+const PAYMENT_METHOD_TYPES = ['mobile_payment', 'bank_transfer', 'other'] as const;
+
+const optString = (max: number) => z.string().max(max).optional();
+
+export const paymentMethodSchema = z
+  .object({
+    id: z.string().uuid().optional(),
+    type: z.enum(PAYMENT_METHOD_TYPES, { error: 'Seleccioná un tipo' }),
+    isActive: z.boolean().optional(),
+    bankCode: optString(8),
+    phoneNumber: optString(11),
+    idDocument: optString(20),
+    accountNumber: optString(40),
+    accountHolderName: optString(150),
+    description: optString(255),
+  })
+  .superRefine((val, ctx) => {
+    const trim = (v?: string) => (v ?? '').trim();
+    if (val.type === 'mobile_payment') {
+      if (!trim(val.bankCode))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['bankCode'],
+          message: 'Banco requerido',
+        });
+      if (!/^\d{11}$/.test(trim(val.phoneNumber)))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['phoneNumber'],
+          message: 'Teléfono de 11 dígitos',
+        });
+      if (!trim(val.idDocument))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['idDocument'],
+          message: 'Cédula/RIF requerido',
+        });
+    } else if (val.type === 'bank_transfer') {
+      if (!trim(val.bankCode))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['bankCode'],
+          message: 'Banco requerido',
+        });
+      if (!trim(val.accountNumber))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['accountNumber'],
+          message: 'Número de cuenta requerido',
+        });
+      if (!trim(val.accountHolderName))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['accountHolderName'],
+          message: 'Titular requerido',
+        });
+      if (!trim(val.idDocument))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['idDocument'],
+          message: 'Cédula/RIF del titular',
+        });
+    } else if (val.type === 'other') {
+      if (trim(val.description).length < 3)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['description'],
+          message: 'Descripción mínima 3 caracteres',
+        });
+    }
+  });
+export type PaymentMethodValues = z.infer<typeof paymentMethodSchema>;
+
+export const paymentMethodsArraySchema = z
+  .array(paymentMethodSchema)
+  .max(20, 'Máximo 20 métodos de pago')
+  .optional();
+
+export const doctorSchema = z
+  .object({
+    cedula: cedulaSchema,
+    email: emailSchema,
+    firstName: nameSchema('El nombre'),
+    lastName: nameSchema('El apellido'),
+    isLegalEntity: z.boolean(),
+    rif: z.string().optional().or(z.literal('')),
+    phones: phonesArraySchema,
+    specialtyIds: z
+      .array(z.string().uuid())
+      .min(1, 'Asigná al menos una especialidad')
+      .max(20, 'Máximo 20 especialidades'),
+    paymentMethods: paymentMethodsArraySchema,
+    isActive: z.boolean().optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.isLegalEntity) {
+      if (!val.rif) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['rif'],
+          message: 'El RIF es requerido cuando es persona jurídica',
+        });
+      } else if (!/^[JGVE]-\d{1,2}\.\d{3}\.\d{3}-\d$/.test(val.rif)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['rif'],
+          message: 'Formato inválido. Ej: J-12.345.678-9',
+        });
+      }
+    } else if (val.rif) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['rif'],
+        message: 'No se admite RIF para persona natural',
+      });
+    }
+  });
+export type DoctorValues = z.infer<typeof doctorSchema>;
+
+export const careCenterSchema = z.object({
+  name: z
+    .string({ error: 'El nombre es obligatorio' })
+    .min(2, 'El nombre debe tener al menos 2 caracteres')
+    .max(200, 'El nombre no puede superar 200 caracteres'),
+  email: emailSchema,
+  rif: rifSchema,
+  phones: phonesArraySchema,
+  specialtyIds: z
+    .array(z.string().uuid())
+    .min(1, 'Asigná al menos una especialidad')
+    .max(50, 'Máximo 50 especialidades'),
+  paymentMethods: paymentMethodsArraySchema,
+  isActive: z.boolean().optional(),
+});
+export type CareCenterValues = z.infer<typeof careCenterSchema>;
+
+// re-export phoneNumberSchema for convenience
+export { phoneNumberSchema };
 
 export const roleSchema = z.object({
   name: z

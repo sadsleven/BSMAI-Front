@@ -231,7 +231,6 @@ Usa `Zod` (ya instalado) para validar antes de submit.
 **Form:**
 - Email con input-group (Mail icon left).
 - Password con input-group (Lock icon left, Eye icon right toggleable).
-- Row entre form: "Recordarme" checkbox + "¿Olvidaste tu contraseña?" link azul.
 - Botón "Entrar" primary `lg` full-width.
 
 Mantener flujo JWT actual (`authApi.login` + `setAccessToken`).

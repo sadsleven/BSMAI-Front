@@ -13,6 +13,18 @@ import { RoleList } from './modules/roles/presentation/pages/RoleList';
 import { RoleCreate } from './modules/roles/presentation/pages/RoleCreate';
 import { RoleEdit } from './modules/roles/presentation/pages/RoleEdit';
 import { DashboardPage } from './modules/dashboard/presentation/pages/DashboardPage';
+import { SpecialtyList } from './modules/specialties/presentation/pages/SpecialtyList';
+import { SpecialtyCreate } from './modules/specialties/presentation/pages/SpecialtyCreate';
+import { SpecialtyEdit } from './modules/specialties/presentation/pages/SpecialtyEdit';
+import { PatientList } from './modules/patients/presentation/pages/PatientList';
+import { PatientCreate } from './modules/patients/presentation/pages/PatientCreate';
+import { PatientEdit } from './modules/patients/presentation/pages/PatientEdit';
+import { DoctorList } from './modules/doctors/presentation/pages/DoctorList';
+import { DoctorCreate } from './modules/doctors/presentation/pages/DoctorCreate';
+import { DoctorEdit } from './modules/doctors/presentation/pages/DoctorEdit';
+import { CareCenterList } from './modules/care-centers/presentation/pages/CareCenterList';
+import { CareCenterCreate } from './modules/care-centers/presentation/pages/CareCenterCreate';
+import { CareCenterEdit } from './modules/care-centers/presentation/pages/CareCenterEdit';
 
 function App() {
   return (
@@ -49,6 +61,26 @@ function App() {
             <Route index element={<RoleList />} />
             <Route path="create" element={<RoleCreate />} />
             <Route path="edit/:id" element={<RoleEdit />} />
+          </Route>
+          <Route path="specialties">
+            <Route index element={<SpecialtyList />} />
+            <Route path="create" element={<SpecialtyCreate />} />
+            <Route path="edit/:id" element={<SpecialtyEdit />} />
+          </Route>
+          <Route path="patients">
+            <Route index element={<PatientList />} />
+            <Route path="create" element={<PatientCreate />} />
+            <Route path="edit/:id" element={<PatientEdit />} />
+          </Route>
+          <Route path="doctors">
+            <Route index element={<DoctorList />} />
+            <Route path="create" element={<DoctorCreate />} />
+            <Route path="edit/:id" element={<DoctorEdit />} />
+          </Route>
+          <Route path="care-centers">
+            <Route index element={<CareCenterList />} />
+            <Route path="create" element={<CareCenterCreate />} />
+            <Route path="edit/:id" element={<CareCenterEdit />} />
           </Route>
         </Route>
 

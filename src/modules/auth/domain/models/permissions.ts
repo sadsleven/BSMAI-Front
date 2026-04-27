@@ -1,3 +1,16 @@
+function buildResource<T extends string>(resource: T) {
+  return {
+    VIEW: `${resource}.view`,
+    LIST: `${resource}.list`,
+    CREATE: `${resource}.create`,
+    UPDATE: `${resource}.update`,
+    TOGGLE_ACTIVE: `${resource}.toggle-active`,
+    SOFT_DELETE: `${resource}.soft-delete`,
+    HARD_DELETE: `${resource}.hard-delete`,
+    RESTORE: `${resource}.restore`,
+  } as const;
+}
+
 export const PERMISSIONS = {
   USERS: {
     VIEW: 'users.view',
@@ -24,4 +37,8 @@ export const PERMISSIONS = {
   PERMISSIONS: {
     LIST: 'permissions.list',
   },
+  SPECIALTIES: buildResource('specialties'),
+  PATIENTS: buildResource('patients'),
+  DOCTORS: buildResource('doctors'),
+  CARE_CENTERS: buildResource('care-centers'),
 } as const;
