@@ -182,6 +182,96 @@ Página self-service accesible desde el avatar del Navbar (dropdown "Mi perfil")
 - `src/index.css` aplica `cursor: pointer` global a `button`, `[role="button"]`, `[role="menuitem"]`, checkboxes/radios y switches habilitados — no es necesario repetir la utility por componente.
 - Navbar: el avatar del usuario abre un dropdown (`shadcn/ui` `DropdownMenu`) con el nombre + email, "Mi perfil" y "Cerrar sesión" (accesible por teclado, cierre por click-fuera/Escape).
 
+## Sistema de estilos AFMI
+
+Sistema visual unificado clínico-moderno: azul profundo + cian. Reemplaza el tema neutro de shadcn por la paleta AFMI. Todas las pantallas siguen estos lineamientos.
+
+### Tokens (en `src/index.css`)
+
+Brand:
+
+- `--brand-blue`, `--brand-blue-strong`, `--brand-blue-soft` (primary).
+- `--brand-cyan`, `--brand-cyan-strong`, `--brand-cyan-soft` (accent).
+- Estado: `--success` / `--warning` / `--destructive` con variantes `*-soft`.
+
+Mapping shadcn:
+
+- `--primary` → `--brand-blue`, `--ring` → `--brand-blue`.
+- `--accent` → `--brand-cyan-soft`, `--accent-foreground` → `--brand-blue-strong`.
+- `--sidebar-accent` → `--brand-blue-soft`, `--sidebar-accent-foreground` → `--brand-blue-strong`.
+
+Expuestos vía `@theme inline` como utilities Tailwind: `bg-brand-blue`, `bg-brand-blue-soft`, `bg-brand-cyan`, `bg-brand-cyan-soft`, `bg-success(-soft)`, `bg-warning(-soft)`, `bg-destructive-soft`, etc.
+
+### Tipografía
+
+Inter Variable. Escala:
+
+| Uso | Tailwind |
+| --- | -------- |
+| Page header | `text-[26px] font-bold tracking-[-0.02em]` |
+| Section title (Card / FormSection) | `text-[15px] font-semibold` |
+| Body | `text-sm` |
+| Caption / hint | `text-xs text-muted-foreground` |
+| Overline (column headers, KPI labels) | `text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground` |
+
+Radio base `--radius: 0.625rem`. Cards/modales `rounded-xl`, login card `rounded-2xl`. Inputs/botones `rounded-md`. Badges/pills de estado `rounded-full`. Sombras: `shadow-xs` (cards), `shadow-md` (toasts/dropdowns), `shadow-lg` (modales/login).
+
+### Layout
+
+- Fondo de aplicación (fuera de cards): `oklch(0.985 0.003 250)` — aplicado en `DashboardLayout`.
+- Sidebar: `w-64` `bg-sidebar`, items con barra cian a la izquierda en estado activo, footer con avatar gradient + logout. Secciones `Principal` / `Administración` con etiquetas `text-[10px] uppercase tracking-[0.08em]`.
+- Navbar: `h-16 bg-card border-b`. Variantes vía prop:
+  - `breadcrumbs` (default) — derivadas de `pathname` con `PATH_LABELS` map. Search 320px + bell + avatar.
+  - `search` — search 480px + acción primaria.
+  - `compact` — botón Volver + título + Cancelar/Guardar.
+
+### Patrón de listados
+
+Page header (h1 26px + subtítulo con count + acciones) + Card-style container (`bg-card rounded-xl border shadow-xs overflow-hidden`) que envuelve:
+
+1. `<DataTableToolbar>` — search 320px max, slot `filters` (Selects, dropdowns multi), slot `actions`, "Limpiar filtros" cuando `hasActiveFilters`.
+2. `<Table>` con `TableHeader` `bg-[oklch(0.985_0.003_250)]` + `text-[11px] uppercase tracking-[0.06em]`. Filas `py-3.5 px-4`, hover soft-bg. Avatar gradient (`from-brand-cyan to-brand-blue`) o icon-tile (`bg-brand-blue-soft`) en la primera columna. Estado como pill con dot (`bg-success-soft text-success`, `bg-warning-soft text-warning`, `bg-destructive-soft text-destructive`).
+3. `<DataTablePagination>` — footer `bg-muted/40 border-t` con "Mostrando X–Y de Z" y window numérico (max 7 visible: `1 … current-1 current current+1 … last`).
+
+Loading → `<SkeletonTableRows>`. Empty → `<EmptyState>` con copy contextual (filtros activos vs vacío inicial).
+
+### Patrón de formularios
+
+- Page header con botón "Volver" (`ChevronLeft`) + h1 + Cancelar/Guardar a la derecha.
+- Cuerpo: una o varias `<FormSection title description>` (cards `rounded-xl border shadow-xs` con header + body + footer opcional). Usar `<FormGrid>` (2-col responsive `gap-x-5 gap-y-[18px]`) dentro de cada section. Campos full-width con `sm:col-span-2`.
+- Labels `text-sm font-medium`. Asterisco rojo (`<span className="text-destructive">*</span>`) si requerido.
+- Inputs altura 38–40px (`h-9` o `h-10`), `rounded-md`, focus-ring azul (heredado de `--ring`).
+- Errores inline con icono `AlertTriangle` + `text-xs text-destructive`. Borde rojo + ring rojo soft cuando inválido.
+- Hint `text-xs text-muted-foreground` debajo del campo.
+- Booleanos siempre con `<FormSwitch />`, nunca checkboxes.
+- Pie del form: `<span className="text-destructive">*</span> Campos obligatorios`.
+
+### Modales (AlertDialog)
+
+- `rounded-xl shadow-lg`. Header con icon-tile 40×40 coloreado por intención: `bg-destructive-soft text-destructive` (eliminar), `bg-warning-soft text-warning` (deshabilitar), `bg-success-soft text-success` (habilitar). Texto bold mencionando la entidad por nombre. Footer con Cancel + acción coloreada (`variant="destructive"` para eliminar/deshabilitar, `default` para habilitar).
+
+### Login
+
+- Stage gradiente 135° + dos radial-gradients ambient (cyan abajo-izq, azul arriba-der) blureados.
+- Card 420px max-w, `rounded-2xl shadow-lg`, `p-9`.
+- Brand block: mark 56×56 con gradient cyan→blue + box-shadow azul soft. H1 22px + subtítulo 13px muted.
+- Email/password con icono left (`Mail` / `Lock`) y toggle Eye en password.
+- Row "Recordarme" + link "¿Olvidaste tu contraseña?" en `text-brand-blue-strong`.
+- Submit `size="lg" w-full h-11`.
+
+### Empty state y skeleton
+
+- `<EmptyState>` (`src/components/ui/empty-state.tsx`) — icon container 56×56 `rounded-2xl` con tinte (`brand-blue-soft` o `brand-cyan-soft`) + título + descripción + slot `action`. Usar como contenido cuando una lista paginada devuelve vacío.
+- `<Skeleton>` y `<SkeletonTableRows rows columns>` (`src/components/ui/skeleton.tsx`) — placeholder con animación shimmer (`@keyframes skeleton` 1.5s) declarada en `index.css`. Usar en tablas durante loading.
+
+### Componentes compartidos del sistema de estilos
+
+- `src/components/ui/data-table-toolbar.tsx` (`DataTableToolbar`).
+- `src/components/ui/data-table-pagination.tsx` (`DataTablePagination`).
+- `src/components/ui/form-section.tsx` (`FormSection`, `FormGrid`).
+- `src/components/ui/empty-state.tsx` (`EmptyState`).
+- `src/components/ui/skeleton.tsx` (`Skeleton`, `SkeletonTableRows`).
+
 ## Módulo de Roles (`/roles`)
 
 - Listado con búsqueda, sort por nombre, paginación, soft/hard delete + restore.

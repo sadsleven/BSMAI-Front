@@ -6,7 +6,6 @@ import { fullName, type User } from '../../domain/models/user';
 import { roleGateway } from '@/modules/roles/infrastructure/roleGateway';
 import type { Role } from '@/modules/roles/domain/models/role';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
   Table,
@@ -21,11 +20,13 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
-  AlertDialogDescription,
   AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  ConfirmDialog,
+  DialogIconHeader,
+  DialogBanner,
+} from '@/components/ui/confirm-dialog';
 import {
   Select,
   SelectContent,
@@ -42,13 +43,29 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { SortableHeader, type SortDir } from '@/components/ui/sortable-header';
-import { Plus, Pencil, Trash2, KeyRound, Power, Crown, Undo2, Filter } from 'lucide-react';
+import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
+import { DataTablePagination } from '@/components/ui/data-table-pagination';
+import { SkeletonTableRows } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/ui/empty-state';
+import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  KeyRound,
+  Power,
+  Crown,
+  Undo2,
+  Filter,
+  ChevronDown,
+} from 'lucide-react';
 import { Can } from '@/modules/auth/presentation/components/Can';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
 import { useAuthStore } from '@/modules/auth/domain/store/authStore';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { notify } from '@/lib/notifications/toast';
 import { getRowActionsState } from '../rowActions';
+import { cn } from '@/lib/utils';
 
 type SortBy = 'firstName' | 'lastName' | 'email' | 'createdAt' | 'updatedAt';
 type StatusFilter = 'all' | 'active' | 'inactive';
@@ -65,6 +82,32 @@ function readQuery(sp: URLSearchParams) {
     sortBy: (sp.get('sortBy') as SortBy) ?? 'createdAt',
     sortDir: ((sp.get('sortDir') as SortDir) ?? 'DESC') as SortDir,
   };
+}
+
+function userInitials(u: Pick<User, 'firstName' | 'lastName'>) {
+  return `${u.firstName?.[0] ?? ''}${u.lastName?.[0] ?? ''}`.toUpperCase() || 'U';
+}
+
+function StatusBadge({ user }: { user: User }) {
+  if (user.deletedAt) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-destructive-soft text-destructive text-xs font-medium">
+        <span className="w-1.5 h-1.5 rounded-full bg-destructive" /> En papelera
+      </span>
+    );
+  }
+  if (user.isActive) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-success-soft text-success text-xs font-medium">
+        <span className="w-1.5 h-1.5 rounded-full bg-success" /> Habilitado
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-warning-soft text-warning text-xs font-medium">
+      <span className="w-1.5 h-1.5 rounded-full bg-warning" /> Deshabilitado
+    </span>
+  );
 }
 
 export function UserList() {
@@ -140,7 +183,6 @@ export function UserList() {
   };
 
   const onSort = (column: SortBy, dir: SortDir) => updateParam({ sortBy: column, sortDir: dir });
-
   const onPage = (page: number) => updateParam({ page: String(page) }, false);
 
   const toggleRoleId = (id: string) => {
@@ -151,6 +193,17 @@ export function UserList() {
   };
 
   const filteredDeletion: DeletionFilter = canSeeDeleted ? filters.deletion : 'active';
+
+  const hasActiveFilters =
+    Boolean(filters.search) ||
+    filters.status !== 'all' ||
+    filters.roleIds.length > 0 ||
+    filters.deletion !== 'active';
+
+  const clearFilters = () => {
+    setSearchInput('');
+    setSp(new URLSearchParams(), { replace: true });
+  };
 
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
   const [hardConfirmStep, setHardConfirmStep] = useState(0);
@@ -227,144 +280,181 @@ export function UserList() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <h1 className="text-3xl font-bold">Usuarios</h1>
+      <PageBreadcrumbs />
+      {/* Page header */}
+      <div className="flex items-end justify-between gap-4 flex-wrap">
+        <div className="space-y-1">
+          <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">Usuarios</h1>
+          <p className="text-sm text-muted-foreground">
+            {metadata.total.toLocaleString()} usuarios en total
+          </p>
+        </div>
         <Can permission={PERMISSIONS.USERS.CREATE}>
           <Link to="/users/create">
             <Button>
-              <Plus className="w-4 h-4 mr-2" />
+              <Plus className="w-4 h-4 mr-1.5" />
               Nuevo usuario
             </Button>
           </Link>
         </Can>
       </div>
 
-      <div className="flex items-center gap-3 flex-wrap">
-        <Input
-          placeholder="Buscar por nombre o email..."
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          className="max-w-sm"
+      {/* Card: toolbar + table + pagination */}
+      <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
+        <DataTableToolbar
+          searchValue={searchInput}
+          onSearchChange={setSearchInput}
+          searchPlaceholder="Buscar por nombre o email…"
+          hasActiveFilters={hasActiveFilters}
+          onClear={clearFilters}
+          filters={
+            <>
+              <Select value={filters.status} onValueChange={(v) => updateParam({ status: v })}>
+                <SelectTrigger className="h-9 w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Estado: todos</SelectItem>
+                  <SelectItem value="active">Solo habilitados</SelectItem>
+                  <SelectItem value="inactive">Solo deshabilitados</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-9 gap-1.5">
+                    <Filter className="w-4 h-4" />
+                    Roles{filters.roleIds.length ? ` (${filters.roleIds.length})` : ''}
+                    <ChevronDown className="w-3.5 h-3.5 opacity-60" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="min-w-56">
+                  <DropdownMenuLabel>Filtrar por rol</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {roles.length === 0 ? (
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">Sin roles</div>
+                  ) : (
+                    roles.map((r) => (
+                      <DropdownMenuCheckboxItem
+                        key={r.id}
+                        checked={filters.roleIds.includes(r.id)}
+                        onCheckedChange={() => toggleRoleId(r.id)}
+                        onSelect={(e) => e.preventDefault()}
+                      >
+                        {r.name}
+                      </DropdownMenuCheckboxItem>
+                    ))
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {canSeeDeleted ? (
+                <Select
+                  value={filteredDeletion}
+                  onValueChange={(v) => updateParam({ deletion: v })}
+                >
+                  <SelectTrigger className="h-9 w-44">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Activos</SelectItem>
+                    <SelectItem value="deleted">En papelera</SelectItem>
+                    <SelectItem value="all">Todos</SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : null}
+            </>
+          }
         />
 
-        <Select value={filters.status} onValueChange={(v) => updateParam({ status: v })}>
-          <SelectTrigger className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Estado: todos</SelectItem>
-            <SelectItem value="active">Solo habilitados</SelectItem>
-            <SelectItem value="inactive">Solo deshabilitados</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm">
-              <Filter className="w-4 h-4 mr-2" />
-              Roles{filters.roleIds.length ? ` (${filters.roleIds.length})` : ''}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="min-w-56">
-            <DropdownMenuLabel>Filtrar por rol</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {roles.length === 0 ? (
-              <div className="px-2 py-1.5 text-xs text-muted-foreground">Sin roles</div>
-            ) : (
-              roles.map((r) => (
-                <DropdownMenuCheckboxItem
-                  key={r.id}
-                  checked={filters.roleIds.includes(r.id)}
-                  onCheckedChange={() => toggleRoleId(r.id)}
-                  onSelect={(e) => e.preventDefault()}
-                >
-                  {r.name}
-                </DropdownMenuCheckboxItem>
-              ))
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {canSeeDeleted ? (
-          <Select
-            value={filteredDeletion}
-            onValueChange={(v) => updateParam({ deletion: v })}
-          >
-            <SelectTrigger className="w-44">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="active">Activos</SelectItem>
-              <SelectItem value="deleted">En papelera</SelectItem>
-              <SelectItem value="all">Todos</SelectItem>
-            </SelectContent>
-          </Select>
+        {error ? (
+          <div className="px-4 py-2 text-sm text-destructive border-b bg-destructive-soft">
+            {error}
+          </div>
         ) : null}
 
-        {error ? <span className="text-sm text-destructive">{error}</span> : null}
-      </div>
-
-      <div className="border rounded-md">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead>
+            <TableRow className="bg-[oklch(0.985_0.003_250)] hover:bg-[oklch(0.985_0.003_250)]">
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 <SortableHeader<SortBy>
                   column="firstName"
                   activeColumn={filters.sortBy}
                   direction={filters.sortDir}
                   onSort={onSort}
                 >
-                  Nombre
+                  Usuario
                 </SortableHeader>
               </TableHead>
-              <TableHead>
-                <SortableHeader<SortBy>
-                  column="email"
-                  activeColumn={filters.sortBy}
-                  direction={filters.sortDir}
-                  onSort={onSort}
-                >
-                  Email
-                </SortableHeader>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                Teléfono
               </TableHead>
-              <TableHead>Teléfono</TableHead>
-              <TableHead>Roles</TableHead>
-              <TableHead>Estado</TableHead>
-              <TableHead className="text-right">Acciones</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                Roles
+              </TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                Estado
+              </TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">
+                Acciones
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                  Cargando...
-                </TableCell>
-              </TableRow>
+              <SkeletonTableRows rows={5} columns={5} />
             ) : users.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                  No hay usuarios.
+                <TableCell colSpan={5} className="p-0">
+                  <EmptyState
+                    title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay usuarios'}
+                    description={
+                      hasActiveFilters
+                        ? 'Ajustá los filtros para ver más resultados.'
+                        : 'Creá el primer usuario para empezar a operar.'
+                    }
+                    action={
+                      hasActiveFilters ? (
+                        <Button variant="outline" size="sm" onClick={clearFilters}>
+                          Limpiar filtros
+                        </Button>
+                      ) : undefined
+                    }
+                  />
                 </TableCell>
               </TableRow>
             ) : (
               users.map((user) => {
                 const state = getRowActionsState(user, me);
                 return (
-                  <TableRow key={user.id}>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
-                        {fullName(user)}
-                        {user.isSuperAdmin ? (
-                          <Badge variant="default" className="gap-1">
-                            <Crown className="w-3 h-3" /> Super Admin
-                          </Badge>
-                        ) : null}
+                  <TableRow
+                    key={user.id}
+                    className="hover:bg-[oklch(0.985_0.003_250)]"
+                  >
+                    <TableCell className="py-3.5 px-4">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand-cyan to-brand-blue flex items-center justify-center text-white text-xs font-bold shrink-0">
+                          {userInitials(user)}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 font-semibold text-foreground truncate">
+                            {fullName(user)}
+                            {user.isSuperAdmin ? (
+                              <Badge variant="default" className="gap-1">
+                                <Crown className="w-3 h-3" /> Super Admin
+                              </Badge>
+                            ) : null}
+                          </div>
+                          <div className="text-xs text-muted-foreground truncate">
+                            {user.email}
+                          </div>
+                        </div>
                       </div>
                     </TableCell>
-                    <TableCell>{user.email}</TableCell>
-                    <TableCell>{user.phoneNumber ?? '—'}</TableCell>
-                    <TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm text-muted-foreground">
+                      {user.phoneNumber ?? '—'}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4">
                       <div className="flex flex-wrap gap-1">
                         {user.roles?.length
                           ? user.roles.map((r) => (
@@ -372,116 +462,125 @@ export function UserList() {
                                 {r.name}
                               </Badge>
                             ))
-                          : '—'}
+                          : <span className="text-sm text-muted-foreground">—</span>}
                       </div>
                     </TableCell>
-                    <TableCell>
-                      {user.deletedAt ? (
-                        <Badge variant="destructive">Eliminado</Badge>
-                      ) : user.isActive ? (
-                        <Badge variant="secondary">Habilitado</Badge>
-                      ) : (
-                        <Badge variant="outline">Deshabilitado</Badge>
-                      )}
+                    <TableCell className="py-3.5 px-4">
+                      <StatusBadge user={user} />
                     </TableCell>
-                    <TableCell className="text-right space-x-1">
-                      {state.canRestore ? (
-                        <Can permission={PERMISSIONS.USERS.RESTORE}>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            title="Restaurar"
-                            onClick={() => setRestoreTarget(user)}
-                            disabled={actionLoading}
-                          >
-                            <Undo2 className="w-4 h-4" />
-                          </Button>
-                        </Can>
-                      ) : (
-                        <>
-                          <Can permission={PERMISSIONS.USERS.UPDATE}>
-                            {state.canEdit ? (
-                              <Link to={`/users/edit/${user.id}`}>
-                                <Button variant="ghost" size="icon" title="Editar">
+                    <TableCell className="py-3.5 px-4 text-right">
+                      <div className="inline-flex items-center gap-0.5">
+                        {state.canRestore ? (
+                          <Can permission={PERMISSIONS.USERS.RESTORE}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Restaurar"
+                              onClick={() => setRestoreTarget(user)}
+                              disabled={actionLoading}
+                              className="w-8 h-8"
+                            >
+                              <Undo2 className="w-4 h-4" />
+                            </Button>
+                          </Can>
+                        ) : (
+                          <>
+                            <Can permission={PERMISSIONS.USERS.UPDATE}>
+                              {state.canEdit ? (
+                                <Link to={`/users/edit/${user.id}`}>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    title="Editar"
+                                    className="w-8 h-8"
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </Button>
+                                </Link>
+                              ) : (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  title={state.reason ?? 'Editar'}
+                                  disabled
+                                  className="w-8 h-8 opacity-50 cursor-not-allowed"
+                                >
                                   <Pencil className="w-4 h-4" />
                                 </Button>
-                              </Link>
-                            ) : (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                title={state.reason ?? 'Editar'}
-                                disabled
-                                className="opacity-50 cursor-not-allowed"
-                              >
-                                <Pencil className="w-4 h-4" />
-                              </Button>
-                            )}
-                          </Can>
-                          <Can anyOf={[PERMISSIONS.USERS.CHANGE_PASSWORD]}>
-                            {state.canChangePassword ? (
-                              <Link to={`/users/${user.id}/change-password`}>
-                                <Button variant="ghost" size="icon" title="Cambiar contraseña">
+                              )}
+                            </Can>
+                            <Can anyOf={[PERMISSIONS.USERS.CHANGE_PASSWORD]}>
+                              {state.canChangePassword ? (
+                                <Link to={`/users/${user.id}/change-password`}>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    title="Cambiar contraseña"
+                                    className="w-8 h-8"
+                                  >
+                                    <KeyRound className="w-4 h-4" />
+                                  </Button>
+                                </Link>
+                              ) : (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  title={state.reason ?? 'Cambiar contraseña'}
+                                  disabled
+                                  className="w-8 h-8 opacity-50 cursor-not-allowed"
+                                >
                                   <KeyRound className="w-4 h-4" />
                                 </Button>
-                              </Link>
-                            ) : (
+                              )}
+                            </Can>
+                            <Can permission={PERMISSIONS.USERS.TOGGLE_ACTIVE}>
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                title={state.reason ?? 'Cambiar contraseña'}
-                                disabled
-                                className="opacity-50 cursor-not-allowed"
+                                title={
+                                  state.canToggleActive
+                                    ? user.isActive
+                                      ? 'Deshabilitar'
+                                      : 'Habilitar'
+                                    : state.reason ?? ''
+                                }
+                                onClick={() => state.canToggleActive && setToggleTarget(user)}
+                                disabled={actionLoading || !state.canToggleActive}
+                                className={cn(
+                                  'w-8 h-8',
+                                  !state.canToggleActive && 'opacity-50 cursor-not-allowed',
+                                )}
                               >
-                                <KeyRound className="w-4 h-4" />
+                                <Power className="w-4 h-4" />
                               </Button>
-                            )}
-                          </Can>
-                          <Can permission={PERMISSIONS.USERS.TOGGLE_ACTIVE}>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              title={
-                                state.canToggleActive
-                                  ? user.isActive
-                                    ? 'Deshabilitar'
-                                    : 'Habilitar'
-                                  : state.reason ?? ''
-                              }
-                              onClick={() => state.canToggleActive && setToggleTarget(user)}
-                              disabled={actionLoading || !state.canToggleActive}
-                              className={!state.canToggleActive ? 'opacity-50 cursor-not-allowed' : ''}
+                            </Can>
+                            <Can
+                              anyOf={[
+                                PERMISSIONS.USERS.SOFT_DELETE,
+                                PERMISSIONS.USERS.HARD_DELETE,
+                              ]}
                             >
-                              <Power className="w-4 h-4" />
-                            </Button>
-                          </Can>
-                          <Can
-                            anyOf={[
-                              PERMISSIONS.USERS.SOFT_DELETE,
-                              PERMISSIONS.USERS.HARD_DELETE,
-                            ]}
-                          >
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className={
-                                state.canDelete
-                                  ? 'text-destructive'
-                                  : 'opacity-50 cursor-not-allowed text-destructive'
-                              }
-                              title={state.canDelete ? 'Eliminar' : state.reason ?? ''}
-                              onClick={() => {
-                                if (!state.canDelete) return;
-                                setDeleteTarget(user);
-                                setHardConfirmStep(0);
-                              }}
-                              disabled={!state.canDelete}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </Can>
-                        </>
-                      )}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className={cn(
+                                  'w-8 h-8 text-destructive hover:bg-destructive-soft hover:text-destructive',
+                                  !state.canDelete && 'opacity-50 cursor-not-allowed',
+                                )}
+                                title={state.canDelete ? 'Eliminar' : state.reason ?? ''}
+                                onClick={() => {
+                                  if (!state.canDelete) return;
+                                  setDeleteTarget(user);
+                                  setHardConfirmStep(0);
+                                }}
+                                disabled={!state.canDelete}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </Can>
+                          </>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -489,110 +588,66 @@ export function UserList() {
             )}
           </TableBody>
         </Table>
+
+        <DataTablePagination
+          page={metadata.page}
+          pageSize={filters.limit}
+          total={metadata.total}
+          lastPage={metadata.lastPage}
+          onPageChange={onPage}
+          itemLabel="usuarios"
+        />
       </div>
 
-      <div className="flex items-center justify-between">
-        <span className="text-sm text-muted-foreground">
-          Mostrando {users.length} de {metadata.total}
-        </span>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={metadata.page <= 1 || isLoading}
-            onClick={() => onPage(metadata.page - 1)}
-          >
-            Anterior
-          </Button>
-          <span className="text-sm">
-            Página {metadata.page} de {Math.max(metadata.lastPage, 1)}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={metadata.page >= metadata.lastPage || isLoading}
-            onClick={() => onPage(metadata.page + 1)}
-          >
-            Siguiente
-          </Button>
-        </div>
-      </div>
-
-      <AlertDialog
+      <ConfirmDialog
         open={!!toggleTarget}
         onOpenChange={(open) => {
           if (!open) setToggleTarget(null);
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {toggleTarget?.isActive ? '¿Deshabilitar usuario?' : '¿Habilitar usuario?'}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {toggleTarget ? (
-                toggleTarget.isActive ? (
-                  <>
-                    El usuario <strong>{fullName(toggleTarget)}</strong> no podrá iniciar sesión
-                    hasta que sea habilitado nuevamente.
-                  </>
-                ) : (
-                  <>
-                    El usuario <strong>{fullName(toggleTarget)}</strong> podrá volver a iniciar
-                    sesión y acceder al sistema.
-                  </>
-                )
-              ) : null}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              variant={toggleTarget?.isActive ? 'destructive' : 'default'}
-              onClick={(e) => {
-                e.preventDefault();
-                void confirmToggleActive();
-              }}
-              disabled={actionLoading}
-            >
-              {toggleTarget?.isActive ? 'Deshabilitar' : 'Habilitar'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        tone={toggleTarget?.isActive ? 'warning' : 'success'}
+        icon={Power}
+        title={toggleTarget?.isActive ? '¿Deshabilitar usuario?' : '¿Habilitar usuario?'}
+        description={
+          toggleTarget ? (
+            toggleTarget.isActive ? (
+              <>
+                El usuario <strong>{fullName(toggleTarget)}</strong> no podrá iniciar sesión
+                hasta que sea habilitado nuevamente.
+              </>
+            ) : (
+              <>
+                El usuario <strong>{fullName(toggleTarget)}</strong> podrá volver a iniciar
+                sesión y acceder al sistema.
+              </>
+            )
+          ) : null
+        }
+        confirmLabel={toggleTarget?.isActive ? 'Deshabilitar' : 'Habilitar'}
+        confirmVariant={toggleTarget?.isActive ? 'destructive' : 'default'}
+        loading={actionLoading}
+        onConfirm={confirmToggleActive}
+      />
 
-      <AlertDialog
+      <ConfirmDialog
         open={!!restoreTarget}
         onOpenChange={(open) => {
           if (!open) setRestoreTarget(null);
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Restaurar usuario?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {restoreTarget ? (
-                <>
-                  El usuario <strong>{fullName(restoreTarget)}</strong> volverá a estar disponible
-                  con su configuración previa (roles, estado y permisos).
-                </>
-              ) : null}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                void confirmRestore();
-              }}
-              disabled={actionLoading}
-            >
-              Restaurar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        tone="success"
+        icon={Undo2}
+        title="¿Restaurar usuario?"
+        description={
+          restoreTarget ? (
+            <>
+              El usuario <strong>{fullName(restoreTarget)}</strong> volverá a estar disponible
+              con su configuración previa (roles, estado y permisos).
+            </>
+          ) : null
+        }
+        confirmLabel="Restaurar"
+        loading={actionLoading}
+        onConfirm={confirmRestore}
+      />
 
       <AlertDialog
         open={!!deleteTarget}
@@ -603,24 +658,35 @@ export function UserList() {
           }
         }}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Eliminar usuario</AlertDialogTitle>
-            <AlertDialogDescription>
-              {deleteTarget ? (
+        <AlertDialogContent className="sm:max-w-[460px] rounded-xl gap-4 p-0">
+          <DialogIconHeader
+            tone="destructive"
+            icon={Trash2}
+            title="¿Eliminar usuario?"
+            description={
+              deleteTarget ? (
                 <>
-                  ¿Cómo querés eliminar a <strong>{fullName(deleteTarget)}</strong>?
-                  {hardConfirmStep === 1 ? (
-                    <span className="block mt-2 text-destructive font-medium">
-                      Esta acción es irreversible. Confirmar de nuevo para continuar.
-                    </span>
-                  ) : null}
+                  Vas a eliminar a <strong>{fullName(deleteTarget)}</strong>. Elegí entre mover a
+                  la papelera (reversible) o eliminar permanentemente.
                 </>
-              ) : null}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="flex flex-col gap-2">
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              ) : null
+            }
+            onClose={() => {
+              setDeleteTarget(null);
+              setHardConfirmStep(0);
+            }}
+          />
+          {hardConfirmStep === 1 ? (
+            <div className="px-6">
+              <DialogBanner tone="destructive">
+                Esta acción es irreversible. Confirmá de nuevo para eliminar permanentemente.
+              </DialogBanner>
+            </div>
+          ) : null}
+          <AlertDialogFooter className="px-6 pb-5 pt-2 flex flex-col sm:flex-row gap-2">
+            <AlertDialogCancel disabled={actionLoading} className="sm:mr-auto">
+              Cancelar
+            </AlertDialogCancel>
             <Can permission={PERMISSIONS.USERS.SOFT_DELETE}>
               <AlertDialogAction
                 variant="default"

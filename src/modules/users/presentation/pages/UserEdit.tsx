@@ -4,12 +4,13 @@ import { FormProvider, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { userGateway } from '../../infrastructure/userGateway';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { UserForm } from '../components/UserForm';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
 import { updateUserSchema, type UpdateUserValues } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
 import type { RoleSummary } from '../../domain/models/user';
+import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
+import { ChevronLeft } from 'lucide-react';
 
 export function UserEdit() {
   const { id } = useParams<{ id: string }>();
@@ -17,6 +18,7 @@ export function UserEdit() {
   const { isSuperAdmin } = usePermissions();
   const [fetching, setFetching] = useState(true);
   const [existingRoles, setExistingRoles] = useState<RoleSummary[]>([]);
+  const [displayName, setDisplayName] = useState('');
 
   const methods = useForm<UpdateUserValues>({
     resolver: zodResolver(updateUserSchema),
@@ -47,6 +49,7 @@ export function UserEdit() {
           roleIds: user.roles?.map((r) => r.id) ?? [],
         });
         setExistingRoles(user.roles ?? []);
+        setDisplayName(`${user.firstName} ${user.lastName}`.trim());
       } catch (e) {
         notify.fromError(e, 'No se pudo cargar el usuario.');
       } finally {
@@ -75,34 +78,54 @@ export function UserEdit() {
     }
   };
 
-  if (fetching) return <div>Cargando usuario...</div>;
+  if (fetching) {
+    return <div className="text-sm text-muted-foreground">Cargando usuario…</div>;
+  }
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <Card>
-        <CardHeader>
-          <CardTitle>Editar usuario</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <FormProvider {...methods}>
-            <form onSubmit={methods.handleSubmit(onSubmit)} className="space-y-4">
-              <UserForm
-                mode="edit"
-                canEditSuperAdmin={isSuperAdmin}
-                existingRoles={existingRoles}
-              />
-              <div className="flex justify-end gap-3 pt-4">
-                <Button type="button" variant="outline" onClick={() => navigate('/users')}>
-                  Cancelar
-                </Button>
-                <Button type="submit" disabled={methods.formState.isSubmitting}>
-                  {methods.formState.isSubmitting ? 'Guardando...' : 'Guardar'}
-                </Button>
-              </div>
-            </form>
-          </FormProvider>
-        </CardContent>
-      </Card>
+    <div className="max-w-3xl mx-auto">
+      <PageBreadcrumbs />
+      <FormProvider {...methods}>
+        <form onSubmit={methods.handleSubmit(onSubmit)} className="space-y-6">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="space-y-1">
+              <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">
+                Editar usuario
+              </h1>
+              {displayName && (
+                <p className="text-sm text-muted-foreground">{displayName}</p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate('/users')}
+              className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" /> Volver a usuarios
+            </button>
+          </div>
+
+          <UserForm
+            mode="edit"
+            canEditSuperAdmin={isSuperAdmin}
+            existingRoles={existingRoles}
+          />
+
+          <div className="flex items-center justify-between gap-3 pt-2">
+            <p className="text-xs text-muted-foreground">
+              <span className="text-destructive">*</span> Campos obligatorios
+            </p>
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="outline" onClick={() => navigate('/users')}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={methods.formState.isSubmitting}>
+                {methods.formState.isSubmitting ? 'Guardando…' : 'Guardar cambios'}
+              </Button>
+            </div>
+          </div>
+        </form>
+      </FormProvider>
     </div>
   );
 }

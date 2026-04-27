@@ -4,7 +4,6 @@ import { useRoleStore } from '../../domain/store/roleStore';
 import { roleGateway } from '../../infrastructure/roleGateway';
 import type { Role } from '../../domain/models/role';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
   Table,
@@ -19,11 +18,13 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
-  AlertDialogDescription,
   AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  ConfirmDialog,
+  DialogIconHeader,
+  DialogBanner,
+} from '@/components/ui/confirm-dialog';
 import {
   Select,
   SelectContent,
@@ -32,11 +33,17 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SortableHeader, type SortDir } from '@/components/ui/sortable-header';
+import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
+import { DataTablePagination } from '@/components/ui/data-table-pagination';
+import { SkeletonTableRows } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/ui/empty-state';
+import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { Plus, Pencil, Trash2, Shield, Undo2, Power } from 'lucide-react';
 import { Can } from '@/modules/auth/presentation/components/Can';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
 import { notify } from '@/lib/notifications/toast';
+import { cn } from '@/lib/utils';
 
 type SortBy = 'name' | 'createdAt' | 'updatedAt';
 type Origin = 'all' | 'system' | 'custom';
@@ -56,6 +63,28 @@ function readQuery(sp: URLSearchParams) {
     sortBy: (sp.get('sortBy') as SortBy) ?? 'createdAt',
     sortDir: ((sp.get('sortDir') as SortDir) ?? 'DESC') as SortDir,
   };
+}
+
+function StatusBadge({ role }: { role: Role }) {
+  if (role.deletedAt) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-destructive-soft text-destructive text-xs font-medium">
+        <span className="w-1.5 h-1.5 rounded-full bg-destructive" /> En papelera
+      </span>
+    );
+  }
+  if (role.isActive === false) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-warning-soft text-warning text-xs font-medium">
+        <span className="w-1.5 h-1.5 rounded-full bg-warning" /> Deshabilitado
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-success-soft text-success text-xs font-medium">
+      <span className="w-1.5 h-1.5 rounded-full bg-success" /> Habilitado
+    </span>
+  );
 }
 
 export function RoleList() {
@@ -124,6 +153,17 @@ export function RoleList() {
   const onSort = (column: SortBy, dir: SortDir) =>
     updateParam({ sortBy: column, sortDir: dir });
   const onPage = (page: number) => updateParam({ page: String(page) }, false);
+
+  const hasActiveFilters =
+    Boolean(filters.search) ||
+    filters.origin !== 'all' ||
+    filters.status !== 'all' ||
+    filters.deletion !== 'active';
+
+  const clearFilters = () => {
+    setSearchInput('');
+    setSp(new URLSearchParams(), { replace: true });
+  };
 
   const confirmRestore = async () => {
     if (!restoreTarget) return;
@@ -194,203 +234,252 @@ export function RoleList() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <h1 className="text-3xl font-bold">Roles</h1>
+      <PageBreadcrumbs />
+      <div className="flex items-end justify-between gap-4 flex-wrap">
+        <div className="space-y-1">
+          <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">
+            Roles y permisos
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {metadata.total.toLocaleString()} roles en total
+          </p>
+        </div>
         <Can permission={PERMISSIONS.ROLES.CREATE}>
           <Link to="/roles/create">
             <Button>
-              <Plus className="w-4 h-4 mr-2" />
+              <Plus className="w-4 h-4 mr-1.5" />
               Nuevo rol
             </Button>
           </Link>
         </Can>
       </div>
 
-      <div className="flex items-center gap-3 flex-wrap">
-        <Input
-          placeholder="Buscar rol..."
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          className="max-w-sm"
+      <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
+        <DataTableToolbar
+          searchValue={searchInput}
+          onSearchChange={setSearchInput}
+          searchPlaceholder="Buscar rol…"
+          hasActiveFilters={hasActiveFilters}
+          onClear={clearFilters}
+          filters={
+            <>
+              <Select value={filters.origin} onValueChange={(v) => updateParam({ origin: v })}>
+                <SelectTrigger className="h-9 w-44">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Origen: todos</SelectItem>
+                  <SelectItem value="system">Sistema</SelectItem>
+                  <SelectItem value="custom">Personalizados</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={filters.status} onValueChange={(v) => updateParam({ status: v })}>
+                <SelectTrigger className="h-9 w-44">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Estado: todos</SelectItem>
+                  <SelectItem value="active">Solo habilitados</SelectItem>
+                  <SelectItem value="inactive">Solo deshabilitados</SelectItem>
+                </SelectContent>
+              </Select>
+              {canSeeDeleted ? (
+                <Select
+                  value={filters.deletion}
+                  onValueChange={(v) => updateParam({ deletion: v })}
+                >
+                  <SelectTrigger className="h-9 w-44">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Activos</SelectItem>
+                    <SelectItem value="deleted">En papelera</SelectItem>
+                    <SelectItem value="all">Todos</SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : null}
+            </>
+          }
         />
-        <Select value={filters.origin} onValueChange={(v) => updateParam({ origin: v })}>
-          <SelectTrigger className="w-44">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Origen: todos</SelectItem>
-            <SelectItem value="system">Sistema</SelectItem>
-            <SelectItem value="custom">Personalizados</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={filters.status} onValueChange={(v) => updateParam({ status: v })}>
-          <SelectTrigger className="w-44">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Estado: todos</SelectItem>
-            <SelectItem value="active">Solo habilitados</SelectItem>
-            <SelectItem value="inactive">Solo deshabilitados</SelectItem>
-          </SelectContent>
-        </Select>
-        {canSeeDeleted ? (
-          <Select
-            value={filters.deletion}
-            onValueChange={(v) => updateParam({ deletion: v })}
-          >
-            <SelectTrigger className="w-44">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="active">Activos</SelectItem>
-              <SelectItem value="deleted">En papelera</SelectItem>
-              <SelectItem value="all">Todos</SelectItem>
-            </SelectContent>
-          </Select>
-        ) : null}
-        {error ? <span className="text-sm text-destructive">{error}</span> : null}
-      </div>
 
-      <div className="border rounded-md">
+        {error ? (
+          <div className="px-4 py-2 text-sm text-destructive border-b bg-destructive-soft">
+            {error}
+          </div>
+        ) : null}
+
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead>
+            <TableRow className="bg-[oklch(0.985_0.003_250)] hover:bg-[oklch(0.985_0.003_250)]">
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 <SortableHeader<SortBy>
                   column="name"
                   activeColumn={filters.sortBy}
                   direction={filters.sortDir}
                   onSort={onSort}
                 >
-                  Nombre
+                  Rol
                 </SortableHeader>
               </TableHead>
-              <TableHead>Descripción</TableHead>
-              <TableHead>Permisos</TableHead>
-              <TableHead>Estado</TableHead>
-              <TableHead className="text-right">Acciones</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                Descripción
+              </TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                Permisos
+              </TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                Estado
+              </TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">
+                Acciones
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                  Cargando...
-                </TableCell>
-              </TableRow>
+              <SkeletonTableRows rows={5} columns={5} />
             ) : roles.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                  No hay roles.
+                <TableCell colSpan={5} className="p-0">
+                  <EmptyState
+                    title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay roles'}
+                    description={
+                      hasActiveFilters
+                        ? 'Ajustá los filtros para ver más resultados.'
+                        : 'Creá el primer rol para asignar permisos.'
+                    }
+                    action={
+                      hasActiveFilters ? (
+                        <Button variant="outline" size="sm" onClick={clearFilters}>
+                          Limpiar filtros
+                        </Button>
+                      ) : undefined
+                    }
+                  />
                 </TableCell>
               </TableRow>
             ) : (
               roles.map((role) => {
                 const isSystem = !!role.isSystem;
                 return (
-                  <TableRow key={role.id}>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
-                        <Shield className="w-4 h-4 text-muted-foreground" />
-                        {role.name}
-                        {isSystem ? <Badge variant="default">Sistema</Badge> : null}
+                  <TableRow
+                    key={role.id}
+                    className="hover:bg-[oklch(0.985_0.003_250)]"
+                  >
+                    <TableCell className="py-3.5 px-4">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-brand-blue-soft text-brand-blue-strong flex items-center justify-center shrink-0">
+                          <Shield className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0 flex items-center gap-2">
+                          <span className="font-semibold text-foreground truncate">
+                            {role.name}
+                          </span>
+                          {isSystem ? <Badge variant="default">Sistema</Badge> : null}
+                        </div>
                       </div>
                     </TableCell>
-                    <TableCell className="max-w-xs truncate">{role.description ?? '—'}</TableCell>
-                    <TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm text-muted-foreground max-w-xs truncate">
+                      {role.description ?? '—'}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4">
                       <Badge variant="outline">{role.permissions?.length ?? 0}</Badge>
                     </TableCell>
-                    <TableCell>
-                      {role.deletedAt ? (
-                        <Badge variant="destructive">Eliminado</Badge>
-                      ) : role.isActive === false ? (
-                        <Badge variant="outline">Deshabilitado</Badge>
-                      ) : (
-                        <Badge variant="secondary">Habilitado</Badge>
-                      )}
+                    <TableCell className="py-3.5 px-4">
+                      <StatusBadge role={role} />
                     </TableCell>
-                    <TableCell className="text-right space-x-1">
-                      {role.deletedAt ? (
-                        <Can permission={PERMISSIONS.ROLES.RESTORE}>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            title="Restaurar"
-                            onClick={() => setRestoreTarget(role)}
-                            disabled={actionLoading}
-                          >
-                            <Undo2 className="w-4 h-4" />
-                          </Button>
-                        </Can>
-                      ) : (
-                        <>
-                          <Can permission={PERMISSIONS.ROLES.UPDATE}>
-                            {isSystem ? (
+                    <TableCell className="py-3.5 px-4 text-right">
+                      <div className="inline-flex items-center gap-0.5">
+                        {role.deletedAt ? (
+                          <Can permission={PERMISSIONS.ROLES.RESTORE}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Restaurar"
+                              onClick={() => setRestoreTarget(role)}
+                              disabled={actionLoading}
+                              className="w-8 h-8"
+                            >
+                              <Undo2 className="w-4 h-4" />
+                            </Button>
+                          </Can>
+                        ) : (
+                          <>
+                            <Can permission={PERMISSIONS.ROLES.UPDATE}>
+                              {isSystem ? (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  title={SYSTEM_TOOLTIP}
+                                  disabled
+                                  className="w-8 h-8 opacity-50 cursor-not-allowed"
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </Button>
+                              ) : (
+                                <Link to={`/roles/edit/${role.id}`}>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    title="Editar"
+                                    className="w-8 h-8"
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </Button>
+                                </Link>
+                              )}
+                            </Can>
+                            <Can permission={PERMISSIONS.ROLES.TOGGLE_ACTIVE}>
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                title={SYSTEM_TOOLTIP}
-                                disabled
-                                className="opacity-50 cursor-not-allowed"
+                                title={
+                                  isSystem
+                                    ? 'Los roles del sistema no se pueden deshabilitar'
+                                    : role.isActive === false
+                                      ? 'Habilitar'
+                                      : 'Deshabilitar'
+                                }
+                                onClick={() => {
+                                  if (isSystem) return;
+                                  setToggleTarget(role);
+                                }}
+                                disabled={isSystem || actionLoading}
+                                className={cn(
+                                  'w-8 h-8',
+                                  isSystem && 'opacity-50 cursor-not-allowed',
+                                )}
                               >
-                                <Pencil className="w-4 h-4" />
+                                <Power className="w-4 h-4" />
                               </Button>
-                            ) : (
-                              <Link to={`/roles/edit/${role.id}`}>
-                                <Button variant="ghost" size="icon" title="Editar">
-                                  <Pencil className="w-4 h-4" />
-                                </Button>
-                              </Link>
-                            )}
-                          </Can>
-                          <Can permission={PERMISSIONS.ROLES.TOGGLE_ACTIVE}>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              title={
-                                isSystem
-                                  ? 'Los roles del sistema no se pueden deshabilitar'
-                                  : role.isActive === false
-                                    ? 'Habilitar'
-                                    : 'Deshabilitar'
-                              }
-                              onClick={() => {
-                                if (isSystem) return;
-                                setToggleTarget(role);
-                              }}
-                              disabled={isSystem || actionLoading}
-                              className={isSystem ? 'opacity-50 cursor-not-allowed' : ''}
+                            </Can>
+                            <Can
+                              anyOf={[
+                                PERMISSIONS.ROLES.SOFT_DELETE,
+                                PERMISSIONS.ROLES.HARD_DELETE,
+                              ]}
                             >
-                              <Power className="w-4 h-4" />
-                            </Button>
-                          </Can>
-                          <Can
-                            anyOf={[
-                              PERMISSIONS.ROLES.SOFT_DELETE,
-                              PERMISSIONS.ROLES.HARD_DELETE,
-                            ]}
-                          >
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className={
-                                isSystem
-                                  ? 'opacity-50 cursor-not-allowed text-destructive'
-                                  : 'text-destructive'
-                              }
-                              title={isSystem ? SYSTEM_TOOLTIP : 'Eliminar'}
-                              onClick={() => {
-                                if (isSystem) return;
-                                setDeleteTarget(role);
-                                setHardConfirm(0);
-                              }}
-                              disabled={isSystem}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </Can>
-                        </>
-                      )}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className={cn(
+                                  'w-8 h-8 text-destructive hover:bg-destructive-soft hover:text-destructive',
+                                  isSystem && 'opacity-50 cursor-not-allowed',
+                                )}
+                                title={isSystem ? SYSTEM_TOOLTIP : 'Eliminar'}
+                                onClick={() => {
+                                  if (isSystem) return;
+                                  setDeleteTarget(role);
+                                  setHardConfirm(0);
+                                }}
+                                disabled={isSystem}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </Can>
+                          </>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -398,110 +487,66 @@ export function RoleList() {
             )}
           </TableBody>
         </Table>
+
+        <DataTablePagination
+          page={metadata.page}
+          pageSize={filters.limit}
+          total={metadata.total}
+          lastPage={metadata.lastPage}
+          onPageChange={onPage}
+          itemLabel="roles"
+        />
       </div>
 
-      <div className="flex items-center justify-between">
-        <span className="text-sm text-muted-foreground">
-          Mostrando {roles.length} de {metadata.total}
-        </span>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={metadata.page <= 1 || isLoading}
-            onClick={() => onPage(metadata.page - 1)}
-          >
-            Anterior
-          </Button>
-          <span className="text-sm">
-            Página {metadata.page} de {Math.max(metadata.lastPage, 1)}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={metadata.page >= metadata.lastPage || isLoading}
-            onClick={() => onPage(metadata.page + 1)}
-          >
-            Siguiente
-          </Button>
-        </div>
-      </div>
-
-      <AlertDialog
+      <ConfirmDialog
         open={!!toggleTarget}
         onOpenChange={(open) => {
           if (!open) setToggleTarget(null);
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {toggleTarget?.isActive === false ? '¿Habilitar rol?' : '¿Deshabilitar rol?'}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {toggleTarget ? (
-                toggleTarget.isActive === false ? (
-                  <>
-                    Los usuarios con el rol <strong>{toggleTarget.name}</strong> volverán a
-                    recibir los permisos asociados.
-                  </>
-                ) : (
-                  <>
-                    Los usuarios con el rol <strong>{toggleTarget.name}</strong> no recibirán los
-                    permisos asociados hasta que sea habilitado nuevamente.
-                  </>
-                )
-              ) : null}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              variant={toggleTarget?.isActive === false ? 'default' : 'destructive'}
-              onClick={(e) => {
-                e.preventDefault();
-                void confirmToggleActive();
-              }}
-              disabled={actionLoading}
-            >
-              {toggleTarget?.isActive === false ? 'Habilitar' : 'Deshabilitar'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        tone={toggleTarget?.isActive === false ? 'success' : 'warning'}
+        icon={Power}
+        title={toggleTarget?.isActive === false ? '¿Habilitar rol?' : '¿Deshabilitar rol?'}
+        description={
+          toggleTarget ? (
+            toggleTarget.isActive === false ? (
+              <>
+                Los usuarios con el rol <strong>{toggleTarget.name}</strong> volverán a recibir
+                los permisos asociados.
+              </>
+            ) : (
+              <>
+                Los usuarios con el rol <strong>{toggleTarget.name}</strong> no recibirán los
+                permisos asociados hasta que sea habilitado nuevamente.
+              </>
+            )
+          ) : null
+        }
+        confirmLabel={toggleTarget?.isActive === false ? 'Habilitar' : 'Deshabilitar'}
+        confirmVariant={toggleTarget?.isActive === false ? 'default' : 'destructive'}
+        loading={actionLoading}
+        onConfirm={confirmToggleActive}
+      />
 
-      <AlertDialog
+      <ConfirmDialog
         open={!!restoreTarget}
         onOpenChange={(open) => {
           if (!open) setRestoreTarget(null);
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Restaurar rol?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {restoreTarget ? (
-                <>
-                  El rol <strong>{restoreTarget.name}</strong> volverá a estar disponible con sus
-                  permisos previos.
-                </>
-              ) : null}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                void confirmRestore();
-              }}
-              disabled={actionLoading}
-            >
-              Restaurar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        tone="success"
+        icon={Undo2}
+        title="¿Restaurar rol?"
+        description={
+          restoreTarget ? (
+            <>
+              El rol <strong>{restoreTarget.name}</strong> volverá a estar disponible con sus
+              permisos previos.
+            </>
+          ) : null
+        }
+        confirmLabel="Restaurar"
+        loading={actionLoading}
+        onConfirm={confirmRestore}
+      />
 
       <AlertDialog
         open={!!deleteTarget}
@@ -512,24 +557,35 @@ export function RoleList() {
           }
         }}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Eliminar rol</AlertDialogTitle>
-            <AlertDialogDescription>
-              {deleteTarget ? (
+        <AlertDialogContent className="sm:max-w-[460px] rounded-xl gap-4 p-0">
+          <DialogIconHeader
+            tone="destructive"
+            icon={Trash2}
+            title="¿Eliminar rol?"
+            description={
+              deleteTarget ? (
                 <>
-                  ¿Cómo querés eliminar el rol <strong>{deleteTarget.name}</strong>?
-                  {hardConfirm === 1 ? (
-                    <span className="block mt-2 text-destructive font-medium">
-                      Esta acción es irreversible. Confirmar de nuevo para continuar.
-                    </span>
-                  ) : null}
+                  Vas a eliminar el rol <strong>{deleteTarget.name}</strong>. Elegí entre mover a
+                  la papelera (reversible) o eliminar permanentemente.
                 </>
-              ) : null}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="flex flex-col gap-2">
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              ) : null
+            }
+            onClose={() => {
+              setDeleteTarget(null);
+              setHardConfirm(0);
+            }}
+          />
+          {hardConfirm === 1 ? (
+            <div className="px-6">
+              <DialogBanner tone="destructive">
+                Esta acción es irreversible. Confirmá de nuevo para eliminar permanentemente.
+              </DialogBanner>
+            </div>
+          ) : null}
+          <AlertDialogFooter className="px-6 pb-5 pt-2 flex flex-col sm:flex-row gap-2">
+            <AlertDialogCancel disabled={actionLoading} className="sm:mr-auto">
+              Cancelar
+            </AlertDialogCancel>
             <Can permission={PERMISSIONS.ROLES.SOFT_DELETE}>
               <AlertDialogAction
                 variant="default"

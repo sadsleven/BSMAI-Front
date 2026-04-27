@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AFMI / BSMAI — Sistema de estilos</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<!-- ============================================================
+     SVG ICON SPRITES (lucide-style)
+     ============================================================ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3z"/></symbol>
+    <symbol id="i-stethoscope" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2v2"/><path d="M5 2v2"/><path d="M5 3H4a2 2 0 0 0-2 2v4a6 6 0 0 0 12 0V5a2 2 0 0 0-2-2h-1"/><path d="M8 15a6 6 0 0 0 12 0v-3"/><circle cx="20" cy="10" r="2"/></symbol>
+    <symbol id="i-user-round" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></symbol>
+    <symbol id="i-building" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M12 6h.01"/><path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/><path d="M8 10h.01"/><path d="M8 14h.01"/></symbol>
+    <symbol id="i-clipboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 14h6"/><path d="M9 18h6"/></symbol>
+    <symbol id="i-file-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></symbol>
+    <symbol id="i-bar-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M7 16V9"/><path d="M12 16V5"/><path d="M17 16v-4"/></symbol>
+    <symbol id="i-receipt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l3-2 3 2 3-2 3 2 3-2 3 2V2"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 6v2m0 8v2"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.733 5.076a10.74 10.74 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-check-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
+    <symbol id="i-chevron-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-chevron-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-filter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><path d="M12 15V3"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/></symbol>
+    <symbol id="i-mail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+    <symbol id="i-power" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/></symbol>
+    <symbol id="i-trend-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></symbol>
+    <symbol id="i-trend-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></symbol>
+    <symbol id="i-id" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="12" r="2.5"/><path d="M15 9h3"/><path d="M15 13h3"/><path d="M14 16h4"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></symbol>
+    <symbol id="i-database" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></symbol>
+    <symbol id="i-folder-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H18a2 2 0 0 1 2 2v2"/></symbol>
+    <symbol id="i-loader" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/><path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/></symbol>
+  </defs>
+</svg>
+
+<!-- ============================================================
+     PAGE SHELL
+     ============================================================ -->
+<div class="sg-shell">
+
+  <aside class="sg-toc">
+    <div class="sg-toc-brand">
+      <div class="sg-toc-brand-mark">A</div>
+      <div class="sg-toc-brand-text">
+        <strong>BSMAI Style</strong>
+        <span>v1.0 · AFMI</span>
+      </div>
+    </div>
+    <h2>Fundamentos</h2>
+    <a href="#colors">Colores</a>
+    <a href="#type">Tipografía</a>
+    <a href="#radius">Radios y sombras</a>
+    <h2>Layout</h2>
+    <a href="#sidebar">Menú lateral</a>
+    <a href="#header-variants">Header (3 variantes)</a>
+    <a href="#full-app">App completa</a>
+    <h2>Páginas</h2>
+    <a href="#dashboard">Dashboard</a>
+    <a href="#table">Tabla de listado</a>
+    <a href="#form">Formulario</a>
+    <a href="#login">Login</a>
+    <h2>Modales</h2>
+    <a href="#modal-delete">Eliminar</a>
+    <a href="#modal-toggle">Habilitar / Deshabilitar</a>
+    <h2>Componentes</h2>
+    <a href="#buttons">Botones</a>
+    <a href="#badges">Estados / Badges</a>
+    <a href="#fields">Campos</a>
+    <a href="#toasts">Notificaciones</a>
+    <a href="#empty">Vacío y carga</a>
+  </aside>
+
+  <main class="sg-content">
+
+    <!-- HERO -->
+    <section class="sg-hero">
+      <span class="sg-hero-eyebrow">
+        <svg width="12" height="12"><use href="#i-stethoscope"/></svg>
+        AFMI · Billing System for Medical Appointments and Insurance
+      </span>
+      <h1>Sistema de estilos BSMAI</h1>
+      <p>Estilo unificado para menú, header, tablas, modales y formularios — alineado con tu stack actual (React 19 + Tailwind 4 + shadcn/ui radix-vega + Inter + Lucide). Tono clínico y moderno: blanco, azul AFMI como primario, cian como acento.</p>
+      <div class="demo-note" style="margin-top:24px">
+        <strong>Cómo leerlo:</strong> cada ejemplo es una vista renderizada con los tokens propuestos. Cada bloque incluye hint del componente del repo correspondiente.
+      </div>
+    </section>
+
+    <!-- COLORES -->
+    <section class="sg-section" id="colors">
+      <div class="sg-section-head"><h2>Colores</h2><span class="sg-num">01 · Fundamentos</span></div>
+      <p class="sg-section-desc">Marca AFMI: azul profundo como primario y cian como acento vivo. Neutros heredados del tema shadcn (oklch). Estados semánticos consistentes con datos médicos.</p>
+
+      <h3 style="margin:0 0 12px;font-size:13px;font-weight:600;color:oklch(0.30 0.02 255)">Marca</h3>
+      <div class="sg-grid-3" style="margin-bottom:24px">
+        <div class="sg-swatch"><div class="sg-swatch-color" style="background:oklch(0.50 0.13 255)"></div><div class="sg-swatch-meta"><strong>Primary · Azul AFMI</strong><code>oklch(0.50 0.13 255)</code></div></div>
+        <div class="sg-swatch"><div class="sg-swatch-color" style="background:oklch(0.74 0.13 210)"></div><div class="sg-swatch-meta"><strong>Accent · Cian</strong><code>oklch(0.74 0.13 210)</code></div></div>
+        <div class="sg-swatch"><div class="sg-swatch-color" style="background:linear-gradient(135deg, oklch(0.74 0.13 210) 0%, oklch(0.50 0.13 255) 100%)"></div><div class="sg-swatch-meta"><strong>Brand gradient</strong><code>cyan → blue (logo)</code></div></div>
+      </div>
+
+      <h3 style="margin:0 0 12px;font-size:13px;font-weight:600;color:oklch(0.30 0.02 255)">Estados semánticos</h3>
+      <div class="sg-grid-3" style="margin-bottom:24px">
+        <div class="sg-swatch"><div class="sg-swatch-color" style="background:oklch(0.62 0.14 155)"></div><div class="sg-swatch-meta"><strong>Success</strong><code>--success · activo, pagado</code></div></div>
+        <div class="sg-swatch"><div class="sg-swatch-color" style="background:oklch(0.74 0.16 70)"></div><div class="sg-swatch-meta"><strong>Warning</strong><code>--warning · pendiente</code></div></div>
+        <div class="sg-swatch"><div class="sg-swatch-color" style="background:oklch(0.58 0.22 27)"></div><div class="sg-swatch-meta"><strong>Destructive</strong><code>--destructive · eliminar</code></div></div>
+      </div>
+
+      <h3 style="margin:0 0 12px;font-size:13px;font-weight:600;color:oklch(0.30 0.02 255)">Superficies y neutros</h3>
+      <div class="sg-grid-3">
+        <div class="sg-swatch"><div class="sg-swatch-color" style="background:oklch(1 0 0); border-bottom:1px solid var(--border)"></div><div class="sg-swatch-meta"><strong>Background / Card</strong><code>oklch(1 0 0)</code></div></div>
+        <div class="sg-swatch"><div class="sg-swatch-color" style="background:oklch(0.985 0.003 250)"></div><div class="sg-swatch-meta"><strong>Muted / app bg</strong><code>oklch(0.985 0.003 250)</code></div></div>
+        <div class="sg-swatch"><div class="sg-swatch-color" style="background:oklch(0.92 0.005 250)"></div><div class="sg-swatch-meta"><strong>Border / Input</strong><code>oklch(0.92 0.005 250)</code></div></div>
+      </div>
+    </section>
+
+    <!-- TIPOGRAFÍA -->
+    <section class="sg-section" id="type">
+      <div class="sg-section-head"><h2>Tipografía</h2><span class="sg-num">02 · Fundamentos</span></div>
+      <p class="sg-section-desc">Inter Variable — la misma del repo (`@fontsource-variable/inter`). Escala compacta para densidad clínica sin sacrificar respiración.</p>
+      <div class="card"><div class="card-body" style="padding:8px 24px">
+        <div class="sg-type-row"><div class="sg-type-meta"><strong>Display</strong>32 / 800 / -0.02em</div><div style="font-size:32px;font-weight:800;letter-spacing:-0.02em;color:oklch(0.18 0.02 255)">Pacientes registrados</div></div>
+        <div class="sg-type-row"><div class="sg-type-meta"><strong>H1 — Page</strong>26 / 700 / -0.02em</div><div style="font-size:26px;font-weight:700;letter-spacing:-0.02em;color:oklch(0.18 0.02 255)">Listado de pacientes</div></div>
+        <div class="sg-type-row"><div class="sg-type-meta"><strong>H2 — Section</strong>20 / 700</div><div style="font-size:20px;font-weight:700;color:oklch(0.20 0.02 255)">Información personal</div></div>
+        <div class="sg-type-row"><div class="sg-type-meta"><strong>H3 — Card</strong>15 / 600</div><div style="font-size:15px;font-weight:600;color:oklch(0.20 0.02 255)">Datos del seguro</div></div>
+        <div class="sg-type-row"><div class="sg-type-meta"><strong>Body</strong>14 / 400</div><div style="font-size:14px;color:oklch(0.25 0.01 255)">Texto principal de tablas, formularios y descripciones generales del sistema.</div></div>
+        <div class="sg-type-row"><div class="sg-type-meta"><strong>Small</strong>13 / 500</div><div style="font-size:13px;font-weight:500;color:oklch(0.30 0.01 255)">Labels, botones, valores en tablas.</div></div>
+        <div class="sg-type-row"><div class="sg-type-meta"><strong>Caption</strong>12 / 500</div><div style="font-size:12px;color:var(--muted-foreground)">Texto auxiliar, hints, fechas, metadatos.</div></div>
+        <div class="sg-type-row"><div class="sg-type-meta"><strong>Overline</strong>11 / 600 / 0.06em</div><div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted-foreground)">Encabezado de tabla</div></div>
+      </div></div>
+    </section>
+
+    <!-- RADIOS -->
+    <section class="sg-section" id="radius">
+      <div class="sg-section-head"><h2>Radios y elevación</h2><span class="sg-num">03 · Fundamentos</span></div>
+      <p class="sg-section-desc">Base de radio: <code style="font-family:ui-monospace,monospace;font-size:12px;background:oklch(0.97 0.005 250);padding:1px 4px;border-radius:4px">--radius: 0.625rem</code>. Sombras suaves para que la UI clínica se sienta limpia.</p>
+      <div class="sg-grid-3">
+        <div style="padding:24px;background:white;border:1px solid var(--border);border-radius:6px;text-align:center"><div style="font-size:13px;font-weight:600;color:oklch(0.20 0.02 255);margin-bottom:4px">sm · 6px</div><code style="font-size:11px;color:var(--muted-foreground);font-family:ui-monospace,monospace">--radius-sm</code><div style="margin-top:14px;font-size:12px;color:var(--muted-foreground)">badges, chips</div></div>
+        <div style="padding:24px;background:white;border:1px solid var(--border);border-radius:8px;text-align:center"><div style="font-size:13px;font-weight:600;color:oklch(0.20 0.02 255);margin-bottom:4px">md · 8px</div><code style="font-size:11px;color:var(--muted-foreground);font-family:ui-monospace,monospace">--radius-md</code><div style="margin-top:14px;font-size:12px;color:var(--muted-foreground)">botones, inputs</div></div>
+        <div style="padding:24px;background:white;border:1px solid var(--border);border-radius:12px;text-align:center"><div style="font-size:13px;font-weight:600;color:oklch(0.20 0.02 255);margin-bottom:4px">lg · 12px</div><code style="font-size:11px;color:var(--muted-foreground);font-family:ui-monospace,monospace">--radius-lg</code><div style="margin-top:14px;font-size:12px;color:var(--muted-foreground)">cards, modales</div></div>
+      </div>
+    </section>
+
+    <!-- =============== SIDEBAR =============== -->
+    <section class="sg-section" id="sidebar">
+      <div class="sg-section-head"><h2>Menú lateral</h2><span class="sg-num">04 · Layout</span></div>
+      <p class="sg-section-desc">Sidebar claro de 256px (consistente con <code style="font-family:ui-monospace,monospace;font-size:12px;background:oklch(0.97 0.005 250);padding:1px 4px;border-radius:4px">layouts/components/Sidebar.tsx</code>) con borde derecho. Item activo: fondo azul suave + barra cian a la izquierda. Logo AFMI con gradiente cyan→blue.</p>
+
+      <div class="sg-frame">
+        <div class="sg-frame-head"><span class="sg-frame-title">Sidebar — estado completo</span><span class="sg-frame-meta">256 × 720 · light</span></div>
+        <div style="display:flex;background:oklch(0.985 0.003 250);height:560px">
+          <aside class="app-sidebar" style="width:256px">
+            <div class="app-sidebar-brand">
+              <div class="mark">A</div>
+              <div class="text"><strong>AFMI</strong><span>Sistema clínico</span></div>
+            </div>
+            <div class="app-sidebar-section">Principal</div>
+            <nav>
+              <div class="nav-item"><svg class="icon"><use href="#i-home"/></svg><span>Dashboard</span></div>
+              <div class="nav-item active"><svg class="icon"><use href="#i-user-round"/></svg><span>Pacientes</span></div>
+              <div class="nav-item"><svg class="icon"><use href="#i-stethoscope"/></svg><span>Doctores</span></div>
+              <div class="nav-item"><svg class="icon"><use href="#i-shield"/></svg><span>Aseguradoras</span></div>
+              <div class="nav-item"><svg class="icon"><use href="#i-clipboard"/></svg><span>Servicios médicos</span></div>
+              <div class="nav-item"><svg class="icon"><use href="#i-file-text"/></svg><span>Órdenes</span><span class="badge">12</span></div>
+              <div class="nav-item"><svg class="icon"><use href="#i-receipt"/></svg><span>Facturación</span></div>
+              <div class="nav-item"><svg class="icon"><use href="#i-bar-chart"/></svg><span>Reportes</span></div>
+              <div class="app-sidebar-section" style="margin-top:8px">Administración</div>
+              <div class="nav-item"><svg class="icon"><use href="#i-users"/></svg><span>Usuarios</span></div>
+              <div class="nav-item"><svg class="icon"><use href="#i-shield"/></svg><span>Roles y permisos</span></div>
+              <div class="nav-item"><svg class="icon"><use href="#i-settings"/></svg><span>Configuración</span></div>
+            </nav>
+            <div class="app-sidebar-footer">
+              <div class="user-chip">
+                <div class="avatar">JR</div>
+                <div class="info"><strong>Dr. J. Rivero</strong><span>admin@afmi.io</span></div>
+              </div>
+              <div class="logout"><svg width="16" height="16"><use href="#i-logout"/></svg></div>
+            </div>
+          </aside>
+          <div style="flex:1;display:grid;place-items:center;color:var(--muted-foreground);font-size:13px">contenido</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =============== HEADER VARIANTS =============== -->
+    <section class="sg-section" id="header-variants">
+      <div class="sg-section-head"><h2>Header — 3 variantes</h2><span class="sg-num">05 · Layout</span></div>
+      <p class="sg-section-desc">Tres opciones de header (64px). Elegí la que más encaje en cada vista o usá las tres según el contexto.</p>
+
+      <div class="sg-frame">
+        <div class="sg-frame-head"><span class="sg-frame-title">Variante A — Breadcrumbs + acciones</span><span class="sg-frame-meta">recomendado para páginas internas</span></div>
+        <header class="app-navbar">
+          <div class="crumbs"><a>AFMI</a><svg class="sep" width="14" height="14"><use href="#i-chevron-right"/></svg><a>Pacientes</a><svg class="sep" width="14" height="14"><use href="#i-chevron-right"/></svg><strong>María González</strong></div>
+          <div class="spacer"></div>
+          <div class="search"><svg class="icon"><use href="#i-search"/></svg><input placeholder="Buscar paciente, orden, factura..."/></div>
+          <button class="icon-btn"><svg width="18" height="18"><use href="#i-bell"/></svg><span class="dot"></span></button>
+          <div class="nav-avatar">JR</div>
+        </header>
+      </div>
+
+      <div class="sg-frame">
+        <div class="sg-frame-head"><span class="sg-frame-title">Variante B — Búsqueda prominente</span><span class="sg-frame-meta">para módulos con mucho lookup (pacientes, órdenes)</span></div>
+        <header class="app-navbar variant-search-prominent">
+          <div class="search" style="width:480px"><svg class="icon"><use href="#i-search"/></svg><input placeholder="Buscar por nombre, cédula, número de orden..."/></div>
+          <div class="spacer"></div>
+          <button class="btn btn-outline btn-sm"><svg><use href="#i-plus"/></svg>Nueva orden</button>
+          <button class="icon-btn"><svg width="18" height="18"><use href="#i-bell"/></svg><span class="dot"></span></button>
+          <div class="nav-avatar">JR</div>
+        </header>
+      </div>
+
+      <div class="sg-frame">
+        <div class="sg-frame-head"><span class="sg-frame-title">Variante C — Compacto / título de página</span><span class="sg-frame-meta">cuando el contenido tiene su propio header (formularios, edición)</span></div>
+        <header class="app-navbar">
+          <button class="btn btn-ghost btn-sm" style="margin-left:-8px"><svg><use href="#i-chevron-left"/></svg>Volver</button>
+          <div style="font-size:14px;font-weight:600;color:oklch(0.20 0.02 255)">Editar paciente · #PT-00428</div>
+          <div class="spacer"></div>
+          <button class="btn btn-outline btn-sm">Cancelar</button>
+          <button class="btn btn-primary btn-sm">Guardar cambios</button>
+        </header>
+      </div>
+    </section>
+
+    <!-- =============== FULL APP =============== -->
+    <section class="sg-section" id="full-app">
+      <div class="sg-section-head"><h2>App completa</h2><span class="sg-num">06 · Layout</span></div>
+      <p class="sg-section-desc">Vista en contexto: sidebar + header (variante A) + contenido. Esto es lo que vería el usuario al entrar.</p>
+
+      <div class="sg-frame">
+        <div class="sg-frame-head"><span class="sg-frame-title">DashboardLayout — vista completa</span><span class="sg-frame-meta">1280 × 720</span></div>
+        <div class="app">
+          <aside class="app-sidebar">
+            <div class="app-sidebar-brand"><div class="mark">A</div><div class="text"><strong>AFMI</strong><span>Sistema clínico</span></div></div>
+            <div class="app-sidebar-section">Principal</div>
+            <nav>
+              <div class="nav-item active"><svg class="icon"><use href="#i-home"/></svg><span>Dashboard</span></div>
+              <div class="nav-item"><svg class="icon"><use href="#i-user-round"/></svg><span>Pacientes</span></div>
+              <div class="nav-item"><svg class="icon"><use href="#i-stethoscope"/></svg><span>Doctores</span></div>
+              <div class="nav-item"><svg class="icon"><use href="#i-shield"/></svg><span>Aseguradoras</span></div>
+              <div class="nav-item"><svg class="icon"><use href="#i-clipboard"/></svg><span>Servicios médicos</span></div>
+              <div class="nav-item"><svg class="icon"><use href="#i-file-text"/></svg><span>Órdenes</span><span class="badge">12</span></div>
+              <div class="nav-item"><svg class="icon"><use href="#i-receipt"/></svg><span>Facturación</span></div>
+              <div class="nav-item"><svg class="icon"><use href="#i-bar-chart"/></svg><span>Reportes</span></div>
+              <div class="app-sidebar-section" style="margin-top:8px">Administración</div>
+              <div class="nav-item"><svg class="icon"><use href="#i-users"/></svg><span>Usuarios</span></div>
+              <div class="nav-item"><svg class="icon"><use href="#i-settings"/></svg><span>Configuración</span></div>
+            </nav>
+            <div class="app-sidebar-footer">
+              <div class="user-chip"><div class="avatar">JR</div><div class="info"><strong>Dr. J. Rivero</strong><span>Administrador</span></div></div>
+              <div class="logout"><svg width="16" height="16"><use href="#i-logout"/></svg></div>
+            </div>
+          </aside>
+
+          <div class="app-main">
+            <header class="app-navbar">
+              <div class="crumbs"><a>AFMI</a><svg class="sep" width="14" height="14"><use href="#i-chevron-right"/></svg><strong>Dashboard</strong></div>
+              <div class="spacer"></div>
+              <div class="search"><svg class="icon"><use href="#i-search"/></svg><input placeholder="Buscar..."/></div>
+              <button class="icon-btn"><svg width="18" height="18"><use href="#i-bell"/></svg><span class="dot"></span></button>
+              <div class="nav-avatar">JR</div>
+            </header>
+
+            <div class="app-content" id="dashboard">
+              <div class="page-header">
+                <div>
+                  <h1>Buenas tardes, Dr. Rivero</h1>
+                  <p>Resumen del día · 26 de abril, 2026</p>
+                </div>
+                <div class="actions">
+                  <button class="btn btn-outline"><svg><use href="#i-download"/></svg>Exportar</button>
+                  <button class="btn btn-primary"><svg><use href="#i-plus"/></svg>Nueva orden</button>
+                </div>
+              </div>
+
+              <!-- KPI -->
+              <div class="kpi-grid">
+                <div class="kpi">
+                  <div class="kpi-icon blue"><svg width="18" height="18"><use href="#i-user-round"/></svg></div>
+                  <div class="kpi-label">Pacientes activos</div>
+                  <div class="kpi-value">1,284</div>
+                  <div class="kpi-delta up"><svg width="13" height="13"><use href="#i-trend-up"/></svg>+8.2%<span class="label">vs mes pasado</span></div>
+                </div>
+                <div class="kpi">
+                  <div class="kpi-icon cyan"><svg width="18" height="18"><use href="#i-file-text"/></svg></div>
+                  <div class="kpi-label">Órdenes este mes</div>
+                  <div class="kpi-value">342</div>
+                  <div class="kpi-delta up"><svg width="13" height="13"><use href="#i-trend-up"/></svg>+12.4%<span class="label">vs mes pasado</span></div>
+                </div>
+                <div class="kpi">
+                  <div class="kpi-icon amber"><svg width="18" height="18"><use href="#i-receipt"/></svg></div>
+                  <div class="kpi-label">Cobros pendientes</div>
+                  <div class="kpi-value">$48.2K</div>
+                  <div class="kpi-delta down"><svg width="13" height="13"><use href="#i-trend-down"/></svg>-2.1%<span class="label">vs mes pasado</span></div>
+                </div>
+                <div class="kpi">
+                  <div class="kpi-icon green"><svg width="18" height="18"><use href="#i-check-circle"/></svg></div>
+                  <div class="kpi-label">Facturado en abril</div>
+                  <div class="kpi-value">$182.4K</div>
+                  <div class="kpi-delta up"><svg width="13" height="13"><use href="#i-trend-up"/></svg>+18.7%<span class="label">vs mes pasado</span></div>
+                </div>
+              </div>
+
+              <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px">
+                <div class="card">
+                  <div class="card-header"><h3>Órdenes recientes</h3><p>Últimas 5 órdenes registradas</p></div>
+                  <table class="data-table">
+                    <thead><tr><th>Orden</th><th>Paciente</th><th>Aseguradora</th><th class="cell-right">Monto</th><th>Estado</th></tr></thead>
+                    <tbody>
+                      <tr><td class="cell-strong">#OR-04281</td><td>María González</td><td>Mapfre</td><td class="cell-right cell-strong">$ 1,240.00</td><td><span class="badge badge-success"><span class="dot"></span>Pagado</span></td></tr>
+                      <tr><td class="cell-strong">#OR-04280</td><td>Carlos Pérez</td><td>Humano</td><td class="cell-right cell-strong">$ 480.00</td><td><span class="badge badge-warning"><span class="dot"></span>Pendiente</span></td></tr>
+                      <tr><td class="cell-strong">#OR-04279</td><td>Ana Rodríguez</td><td>Senasa</td><td class="cell-right cell-strong">$ 2,150.00</td><td><span class="badge badge-info"><span class="dot"></span>En proceso</span></td></tr>
+                      <tr><td class="cell-strong">#OR-04278</td><td>Luis Martínez</td><td>Universal</td><td class="cell-right cell-strong">$ 360.00</td><td><span class="badge badge-success"><span class="dot"></span>Pagado</span></td></tr>
+                      <tr><td class="cell-strong">#OR-04277</td><td>Pedro Vázquez</td><td>ARS Palic</td><td class="cell-right cell-strong">$ 920.00</td><td><span class="badge badge-danger"><span class="dot"></span>Rechazado</span></td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="card">
+                  <div class="card-header"><h3>Próximas citas</h3><p>Hoy · 26 abr</p></div>
+                  <div class="card-body" style="padding:0">
+                    <div style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;gap:12px;align-items:center">
+                      <div style="width:42px;height:42px;border-radius:8px;background:var(--brand-blue-soft);color:var(--brand-blue-strong);display:grid;place-items:center;font-weight:700;font-size:13px">10:30</div>
+                      <div style="flex:1"><div style="font-size:13px;font-weight:600;color:oklch(0.18 0.02 255)">María González</div><div style="font-size:12px;color:var(--muted-foreground)">Consulta general</div></div>
+                      <span class="badge badge-info">Confirmada</span>
+                    </div>
+                    <div style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;gap:12px;align-items:center">
+                      <div style="width:42px;height:42px;border-radius:8px;background:var(--brand-blue-soft);color:var(--brand-blue-strong);display:grid;place-items:center;font-weight:700;font-size:13px">11:15</div>
+                      <div style="flex:1"><div style="font-size:13px;font-weight:600;color:oklch(0.18 0.02 255)">Carlos Pérez</div><div style="font-size:12px;color:var(--muted-foreground)">Seguimiento</div></div>
+                      <span class="badge badge-warning">Pendiente</span>
+                    </div>
+                    <div style="padding:14px 20px;display:flex;gap:12px;align-items:center">
+                      <div style="width:42px;height:42px;border-radius:8px;background:var(--brand-blue-soft);color:var(--brand-blue-strong);display:grid;place-items:center;font-weight:700;font-size:13px">14:00</div>
+                      <div style="flex:1"><div style="font-size:13px;font-weight:600;color:oklch(0.18 0.02 255)">Ana Rodríguez</div><div style="font-size:12px;color:var(--muted-foreground)">Resultados de laboratorio</div></div>
+                      <span class="badge badge-info">Confirmada</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =============== TABLE =============== -->
+    <section class="sg-section" id="table">
+      <div class="sg-section-head"><h2>Tabla de listado</h2><span class="sg-num">07 · Página</span></div>
+      <p class="sg-section-desc">Densidad cómoda. Toolbar con búsqueda, filtros y acciones a la derecha. Avatares en columna principal, badges de estado, paginación inferior. Reemplazo directo de <code style="font-family:ui-monospace,monospace;font-size:12px;background:oklch(0.97 0.005 250);padding:1px 4px;border-radius:4px">UserList.tsx</code>.</p>
+
+      <div class="sg-frame">
+        <div class="sg-frame-head"><span class="sg-frame-title">Listado de pacientes</span><span class="sg-frame-meta">tabla con búsqueda + filtros + paginación</span></div>
+        <div style="background:white;padding:24px">
+          <div class="page-header">
+            <div><h1>Pacientes</h1><p>1,284 pacientes registrados · 28 nuevos este mes</p></div>
+            <div class="actions">
+              <button class="btn btn-outline"><svg><use href="#i-download"/></svg>Exportar</button>
+              <button class="btn btn-primary"><svg><use href="#i-plus"/></svg>Nuevo paciente</button>
+            </div>
+          </div>
+
+          <div class="card" style="overflow:hidden">
+            <div class="table-toolbar">
+              <div class="search"><svg class="icon"><use href="#i-search"/></svg><input placeholder="Buscar por nombre, cédula, teléfono..."/></div>
+              <div class="filters">
+                <button class="btn btn-outline btn-sm"><svg><use href="#i-filter"/></svg>Aseguradora<svg><use href="#i-chevron-down"/></svg></button>
+                <button class="btn btn-outline btn-sm"><svg><use href="#i-filter"/></svg>Estado<svg><use href="#i-chevron-down"/></svg></button>
+                <button class="btn btn-outline btn-sm"><svg><use href="#i-calendar"/></svg>Últimos 30 días<svg><use href="#i-chevron-down"/></svg></button>
+              </div>
+              <div class="spacer"></div>
+              <button class="btn btn-ghost btn-sm">Limpiar filtros</button>
+            </div>
+
+            <table class="data-table">
+              <thead><tr>
+                <th class="col-num">#</th>
+                <th>Paciente</th>
+                <th>Cédula</th>
+                <th>Teléfono</th>
+                <th>Aseguradora</th>
+                <th>Última visita</th>
+                <th>Estado</th>
+                <th class="col-actions">Acciones</th>
+              </tr></thead>
+              <tbody>
+                <tr><td class="col-num">001</td>
+                  <td><div class="avatar-cell"><div class="av">MG</div><div class="cell-id-pair"><span class="cell-strong">María González</span><span class="cell-sub">maria.g@email.com</span></div></div></td>
+                  <td>402-1234567-8</td><td>809-555-0142</td><td>Mapfre</td><td>22 abr 2026</td>
+                  <td><span class="badge badge-success"><span class="dot"></span>Activo</span></td>
+                  <td class="col-actions"><div class="row-actions"><button class="btn-icon" title="Ver"><svg><use href="#i-eye"/></svg></button><button class="btn-icon" title="Editar"><svg><use href="#i-edit"/></svg></button><button class="btn-icon danger" title="Eliminar"><svg><use href="#i-trash"/></svg></button></div></td>
+                </tr>
+                <tr><td class="col-num">002</td>
+                  <td><div class="avatar-cell"><div class="av">CP</div><div class="cell-id-pair"><span class="cell-strong">Carlos Pérez Núñez</span><span class="cell-sub">cperez@email.com</span></div></div></td>
+                  <td>402-9876543-2</td><td>829-555-0218</td><td>Humano</td><td>20 abr 2026</td>
+                  <td><span class="badge badge-success"><span class="dot"></span>Activo</span></td>
+                  <td class="col-actions"><div class="row-actions"><button class="btn-icon"><svg><use href="#i-eye"/></svg></button><button class="btn-icon"><svg><use href="#i-edit"/></svg></button><button class="btn-icon danger"><svg><use href="#i-trash"/></svg></button></div></td>
+                </tr>
+                <tr><td class="col-num">003</td>
+                  <td><div class="avatar-cell"><div class="av">AR</div><div class="cell-id-pair"><span class="cell-strong">Ana Rodríguez M.</span><span class="cell-sub">ana.r@email.com</span></div></div></td>
+                  <td>001-1122334-5</td><td>809-555-0367</td><td>Senasa</td><td>18 abr 2026</td>
+                  <td><span class="badge badge-warning"><span class="dot"></span>Pendiente verificación</span></td>
+                  <td class="col-actions"><div class="row-actions"><button class="btn-icon"><svg><use href="#i-eye"/></svg></button><button class="btn-icon"><svg><use href="#i-edit"/></svg></button><button class="btn-icon danger"><svg><use href="#i-trash"/></svg></button></div></td>
+                </tr>
+                <tr><td class="col-num">004</td>
+                  <td><div class="avatar-cell subtle"><div class="av">LM</div><div class="cell-id-pair"><span class="cell-strong" style="color:var(--muted-foreground)">Luis Martínez</span><span class="cell-sub">l.martinez@email.com</span></div></div></td>
+                  <td>402-5544332-1</td><td>809-555-0489</td><td>Universal</td><td>10 abr 2026</td>
+                  <td><span class="badge badge-neutral"><span class="dot"></span>Inactivo</span></td>
+                  <td class="col-actions"><div class="row-actions"><button class="btn-icon"><svg><use href="#i-eye"/></svg></button><button class="btn-icon"><svg><use href="#i-edit"/></svg></button><button class="btn-icon danger"><svg><use href="#i-trash"/></svg></button></div></td>
+                </tr>
+                <tr><td class="col-num">005</td>
+                  <td><div class="avatar-cell"><div class="av">PV</div><div class="cell-id-pair"><span class="cell-strong">Pedro Vázquez</span><span class="cell-sub">pvazquez@email.com</span></div></div></td>
+                  <td>001-7788990-0</td><td>829-555-0611</td><td>ARS Palic</td><td>15 abr 2026</td>
+                  <td><span class="badge badge-success"><span class="dot"></span>Activo</span></td>
+                  <td class="col-actions"><div class="row-actions"><button class="btn-icon"><svg><use href="#i-eye"/></svg></button><button class="btn-icon"><svg><use href="#i-edit"/></svg></button><button class="btn-icon danger"><svg><use href="#i-trash"/></svg></button></div></td>
+                </tr>
+                <tr><td class="col-num">006</td>
+                  <td><div class="avatar-cell"><div class="av">SF</div><div class="cell-id-pair"><span class="cell-strong">Sofía Fernández</span><span class="cell-sub">sfernandez@email.com</span></div></div></td>
+                  <td>402-3344556-7</td><td>809-555-0732</td><td>Mapfre</td><td>14 abr 2026</td>
+                  <td><span class="badge badge-success"><span class="dot"></span>Activo</span></td>
+                  <td class="col-actions"><div class="row-actions"><button class="btn-icon"><svg><use href="#i-eye"/></svg></button><button class="btn-icon"><svg><use href="#i-edit"/></svg></button><button class="btn-icon danger"><svg><use href="#i-trash"/></svg></button></div></td>
+                </tr>
+                <tr><td class="col-num">007</td>
+                  <td><div class="avatar-cell"><div class="av">JT</div><div class="cell-id-pair"><span class="cell-strong">Juan Torres Ruiz</span><span class="cell-sub">jtorres@email.com</span></div></div></td>
+                  <td>402-9988776-5</td><td>829-555-0854</td><td>Humano</td><td>13 abr 2026</td>
+                  <td><span class="badge badge-danger"><span class="dot"></span>Bloqueado</span></td>
+                  <td class="col-actions"><div class="row-actions"><button class="btn-icon"><svg><use href="#i-eye"/></svg></button><button class="btn-icon"><svg><use href="#i-edit"/></svg></button><button class="btn-icon danger"><svg><use href="#i-trash"/></svg></button></div></td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div class="pagination">
+              <div class="info">Mostrando <strong>1–10</strong> de <strong>1,284</strong> pacientes</div>
+              <div class="pages">
+                <button class="page-btn disabled"><svg width="14" height="14"><use href="#i-chevron-left"/></svg></button>
+                <button class="page-btn active">1</button>
+                <button class="page-btn">2</button>
+                <button class="page-btn">3</button>
+                <span style="padding:0 4px;color:var(--muted-foreground)">…</span>
+                <button class="page-btn">129</button>
+                <button class="page-btn"><svg width="14" height="14"><use href="#i-chevron-right"/></svg></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =============== MODALS =============== -->
+    <section class="sg-section" id="modal-delete">
+      <div class="sg-section-head"><h2>Modal de eliminar</h2><span class="sg-num">08 · Modales</span></div>
+      <p class="sg-section-desc">Confirmación destructiva con icono rojo, descripción explícita del recurso, checkbox de confirmación opcional y botón destructivo. Reemplaza el <code style="font-family:ui-monospace,monospace;font-size:12px;background:oklch(0.97 0.005 250);padding:1px 4px;border-radius:4px">confirm()</code> nativo en <code style="font-family:ui-monospace,monospace;font-size:12px;background:oklch(0.97 0.005 250);padding:1px 4px;border-radius:4px">UserList.tsx</code>.</p>
+
+      <div class="sg-frame">
+        <div class="sg-frame-head"><span class="sg-frame-title">AlertDialog · destructive</span><span class="sg-frame-meta">460px de ancho</span></div>
+        <div class="modal-stage">
+          <div class="modal">
+            <div class="modal-head">
+              <div class="modal-icon danger"><svg width="20" height="20"><use href="#i-alert"/></svg></div>
+              <div class="text">
+                <h3>¿Eliminar paciente?</h3>
+                <p>Estás por eliminar a <strong style="color:oklch(0.20 0.02 255)">María González</strong>. Esta acción no se puede deshacer y se perderán todas las órdenes asociadas.</p>
+              </div>
+              <div class="close"><svg width="16" height="16"><use href="#i-x"/></svg></div>
+            </div>
+            <div class="modal-body">
+              <div style="background:var(--destructive-soft);border:1px solid oklch(0.85 0.10 27);border-radius:8px;padding:12px;font-size:12.5px;color:oklch(0.40 0.20 27);display:flex;gap:8px;align-items:flex-start">
+                <svg width="16" height="16" style="flex-shrink:0;margin-top:1px"><use href="#i-info"/></svg>
+                <div>Se eliminarán también <strong>14 órdenes</strong> y <strong>$ 3,420.00</strong> en facturación pendiente.</div>
+              </div>
+              <div class="modal-confirm">
+                <div class="checkbox checked"></div>
+                <span>Entiendo que esta acción es permanente.</span>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-outline">Cancelar</button>
+              <button class="btn btn-destructive"><svg><use href="#i-trash"/></svg>Eliminar paciente</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sg-section" id="modal-toggle">
+      <div class="sg-section-head"><h2>Modal habilitar / deshabilitar</h2><span class="sg-num">09 · Modales</span></div>
+      <p class="sg-section-desc">Cambio de estado reversible. Sin checkbox de confirmación (no es destructivo). Botón primario en azul. Mismo patrón para "deshabilitar".</p>
+
+      <div class="sg-grid-2">
+        <div class="sg-frame">
+          <div class="sg-frame-head"><span class="sg-frame-title">Deshabilitar usuario</span><span class="sg-frame-meta">warning</span></div>
+          <div class="modal-stage" style="padding:32px 24px">
+            <div class="modal">
+              <div class="modal-head">
+                <div class="modal-icon warning"><svg width="20" height="20"><use href="#i-power"/></svg></div>
+                <div class="text">
+                  <h3>¿Deshabilitar usuario?</h3>
+                  <p><strong style="color:oklch(0.20 0.02 255)">Dr. J. Rivero</strong> no podrá iniciar sesión hasta que sea habilitado de nuevo. Su historial se conserva.</p>
+                </div>
+                <div class="close"><svg width="16" height="16"><use href="#i-x"/></svg></div>
+              </div>
+              <div class="modal-footer">
+                <button class="btn btn-outline">Cancelar</button>
+                <button class="btn btn-primary" style="background:oklch(0.55 0.16 70);border-color:oklch(0.55 0.16 70)">Deshabilitar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sg-frame">
+          <div class="sg-frame-head"><span class="sg-frame-title">Habilitar usuario</span><span class="sg-frame-meta">info / success</span></div>
+          <div class="modal-stage" style="padding:32px 24px">
+            <div class="modal">
+              <div class="modal-head">
+                <div class="modal-icon success"><svg width="20" height="20"><use href="#i-power"/></svg></div>
+                <div class="text">
+                  <h3>¿Habilitar usuario?</h3>
+                  <p><strong style="color:oklch(0.20 0.02 255)">Sofía Fernández</strong> recibirá un correo de bienvenida y podrá acceder al sistema con su rol asignado.</p>
+                </div>
+                <div class="close"><svg width="16" height="16"><use href="#i-x"/></svg></div>
+              </div>
+              <div class="modal-footer">
+                <button class="btn btn-outline">Cancelar</button>
+                <button class="btn btn-primary"><svg><use href="#i-check"/></svg>Habilitar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =============== FORM =============== -->
+    <section class="sg-section" id="form">
+      <div class="sg-section-head"><h2>Formulario crear / editar</h2><span class="sg-num">10 · Página</span></div>
+      <p class="sg-section-desc">Layout de 2 columnas con secciones. Inputs, selects, textareas, switches, validación inline y campo con error. Reemplazo de <code style="font-family:ui-monospace,monospace;font-size:12px;background:oklch(0.97 0.005 250);padding:1px 4px;border-radius:4px">UserCreate.tsx</code> / <code style="font-family:ui-monospace,monospace;font-size:12px;background:oklch(0.97 0.005 250);padding:1px 4px;border-radius:4px">UserEdit.tsx</code>.</p>
+
+      <div class="sg-frame">
+        <div class="sg-frame-head"><span class="sg-frame-title">Nuevo paciente</span><span class="sg-frame-meta">2-col grid · validación con Zod</span></div>
+        <div style="background:white;padding:24px;max-width:920px;margin:0 auto">
+          <div class="page-header">
+            <div><h1>Nuevo paciente</h1><p>Completa los datos del paciente y su información de seguro.</p></div>
+            <div class="actions">
+              <button class="btn btn-outline">Cancelar</button>
+              <button class="btn btn-primary"><svg><use href="#i-check"/></svg>Crear paciente</button>
+            </div>
+          </div>
+
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-header"><h3>Información personal</h3><p>Datos básicos del paciente</p></div>
+            <div class="card-body">
+              <div class="form-grid">
+                <div class="field">
+                  <label>Nombres <span class="req">*</span></label>
+                  <input class="input" value="María Alejandra" />
+                </div>
+                <div class="field">
+                  <label>Apellidos <span class="req">*</span></label>
+                  <input class="input" value="González Pérez" />
+                </div>
+                <div class="field">
+                  <label>Cédula <span class="req">*</span></label>
+                  <input class="input" placeholder="000-0000000-0" value="402-1234567-" />
+                  <span class="err"><svg><use href="#i-alert"/></svg>La cédula debe tener 11 dígitos.</span>
+                </div>
+                <div class="field">
+                  <label>Fecha de nacimiento</label>
+                  <div class="input-group">
+                    <input class="input" type="text" value="15 / 03 / 1985"/>
+                    <div class="addon right"><svg width="16" height="16"><use href="#i-calendar"/></svg></div>
+                  </div>
+                </div>
+                <div class="field">
+                  <label>Email</label>
+                  <div class="input-group">
+                    <div class="addon"><svg width="16" height="16"><use href="#i-mail"/></svg></div>
+                    <input class="input" type="email" value="maria.g@email.com"/>
+                  </div>
+                </div>
+                <div class="field">
+                  <label>Teléfono</label>
+                  <div class="input-group">
+                    <div class="addon"><svg width="16" height="16"><use href="#i-phone"/></svg></div>
+                    <input class="input" value="809-555-0142"/>
+                  </div>
+                </div>
+                <div class="field col-span-2">
+                  <label>Dirección</label>
+                  <textarea class="textarea" placeholder="Calle, sector, ciudad...">C/ Rafael Sánchez 24, Naco, Santo Domingo</textarea>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-header"><h3>Seguro médico</h3><p>Aseguradora y contrato del paciente</p></div>
+            <div class="card-body">
+              <div class="form-grid">
+                <div class="field">
+                  <label>Aseguradora <span class="req">*</span></label>
+                  <div class="select-wrap"><select class="select"><option>Mapfre</option><option>Humano</option><option>Senasa</option><option>Universal</option><option>ARS Palic</option></select></div>
+                </div>
+                <div class="field">
+                  <label>Tipo de plan</label>
+                  <div class="select-wrap"><select class="select"><option>Plan Esencial</option><option>Plan Complementario</option><option>Plan Premium</option></select></div>
+                </div>
+                <div class="field">
+                  <label>Número de contrato</label>
+                  <input class="input" value="MFR-2026-148293"/>
+                </div>
+                <div class="field">
+                  <label>Vencimiento</label>
+                  <input class="input" type="text" value="31 / 12 / 2026"/>
+                </div>
+                <div class="field col-span-2">
+                  <div class="checkbox-row"><div class="switch on"></div><label>Notificar al paciente por email cuando se cree una nueva orden o factura.</label></div>
+                  <div class="checkbox-row"><div class="switch"></div><label>Permitir acceso al portal del paciente.</label></div>
+                </div>
+              </div>
+            </div>
+            <div class="card-footer">
+              <span style="font-size:12px;color:var(--muted-foreground)"><svg width="13" height="13" style="vertical-align:-2px"><use href="#i-info"/></svg> Los campos con <span class="req" style="color:var(--destructive)">*</span> son obligatorios.</span>
+              <div style="display:flex;gap:8px"><button class="btn btn-outline">Cancelar</button><button class="btn btn-primary"><svg><use href="#i-check"/></svg>Crear paciente</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =============== LOGIN =============== -->
+    <section class="sg-section" id="login">
+      <div class="sg-section-head"><h2>Login</h2><span class="sg-num">11 · Página</span></div>
+      <p class="sg-section-desc">Pantalla de acceso con marca AFMI. Layout centrado, fondo con gradientes radiales sutiles, tarjeta elevada. Reemplazo de <code style="font-family:ui-monospace,monospace;font-size:12px;background:oklch(0.97 0.005 250);padding:1px 4px;border-radius:4px">LoginPage.tsx</code>.</p>
+
+      <div class="sg-frame">
+        <div class="sg-frame-head"><span class="sg-frame-title">Iniciar sesión</span><span class="sg-frame-meta">JWT en localStorage · key: afmi_access_token</span></div>
+        <div class="login-stage">
+          <div class="login-card">
+            <div class="login-brand">
+              <div class="mark">A</div>
+              <h1>Bienvenido a AFMI</h1>
+              <p>Inicia sesión con tu cuenta institucional</p>
+            </div>
+            <form>
+              <div class="field">
+                <label>Email</label>
+                <div class="input-group"><div class="addon"><svg width="16" height="16"><use href="#i-mail"/></svg></div><input class="input" type="email" placeholder="admin@afmi.io"/></div>
+              </div>
+              <div class="field" style="margin-top:14px">
+                <label>Contraseña</label>
+                <div class="input-group"><div class="addon"><svg width="16" height="16"><use href="#i-lock"/></svg></div><input class="input" type="password" value="••••••••"/><div class="addon right" style="cursor:pointer"><svg width="16" height="16"><use href="#i-eye"/></svg></div></div>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin:16px 0 20px">
+                <div class="checkbox-row" style="padding:0"><div class="checkbox"></div><label>Recordarme</label></div>
+                <a href="#" style="font-size:13px;color:var(--brand-blue);text-decoration:none;font-weight:500">¿Olvidaste tu contraseña?</a>
+              </div>
+              <button class="btn btn-primary btn-lg" style="width:100%">Entrar</button>
+            </form>
+            <div style="margin-top:20px;text-align:center;font-size:12px;color:var(--muted-foreground)">© 2026 AFMI · Sistema clínico</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =============== BUTTONS =============== -->
+    <section class="sg-section" id="buttons">
+      <div class="sg-section-head"><h2>Botones</h2><span class="sg-num">12 · Componentes</span></div>
+      <p class="sg-section-desc">Replicando las variantes de tu <code style="font-family:ui-monospace,monospace;font-size:12px;background:oklch(0.97 0.005 250);padding:1px 4px;border-radius:4px">button.tsx</code> con la marca AFMI.</p>
+
+      <div class="card"><div class="card-body" style="display:grid;gap:20px">
+        <div>
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted-foreground);font-weight:600;margin-bottom:10px">Variantes</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <button class="btn btn-primary"><svg><use href="#i-plus"/></svg>Primary</button>
+            <button class="btn btn-cyan"><svg><use href="#i-check"/></svg>Cyan accent</button>
+            <button class="btn btn-outline">Outline</button>
+            <button class="btn btn-secondary">Secondary</button>
+            <button class="btn btn-ghost">Ghost</button>
+            <button class="btn btn-destructive"><svg><use href="#i-trash"/></svg>Destructive</button>
+            <button class="btn btn-destructive-soft"><svg><use href="#i-trash"/></svg>Destructive soft</button>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted-foreground);font-weight:600;margin-bottom:10px">Tamaños</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <button class="btn btn-primary btn-xs">XS</button>
+            <button class="btn btn-primary btn-sm">Small</button>
+            <button class="btn btn-primary">Default</button>
+            <button class="btn btn-primary btn-lg">Large</button>
+            <button class="btn btn-outline btn-icon"><svg><use href="#i-edit"/></svg></button>
+            <button class="btn btn-primary" disabled>Disabled</button>
+          </div>
+        </div>
+      </div></div>
+    </section>
+
+    <!-- =============== BADGES =============== -->
+    <section class="sg-section" id="badges">
+      <div class="sg-section-head"><h2>Badges / Estados</h2><span class="sg-num">13 · Componentes</span></div>
+      <p class="sg-section-desc">Para estados de pacientes, órdenes, facturas. Siempre con punto de color para escaneo rápido en tabla.</p>
+      <div class="card"><div class="card-body" style="display:flex;gap:8px;flex-wrap:wrap">
+        <span class="badge badge-success"><span class="dot"></span>Activo</span>
+        <span class="badge badge-success"><span class="dot"></span>Pagado</span>
+        <span class="badge badge-warning"><span class="dot"></span>Pendiente</span>
+        <span class="badge badge-info"><span class="dot"></span>En proceso</span>
+        <span class="badge badge-info"><span class="dot"></span>Confirmada</span>
+        <span class="badge badge-danger"><span class="dot"></span>Rechazado</span>
+        <span class="badge badge-danger"><span class="dot"></span>Bloqueado</span>
+        <span class="badge badge-neutral"><span class="dot"></span>Inactivo</span>
+        <span class="badge badge-primary"><span class="dot"></span>Admin</span>
+        <span class="badge badge-primary"><span class="dot"></span>Doctor</span>
+      </div></div>
+    </section>
+
+    <!-- =============== FIELDS =============== -->
+    <section class="sg-section" id="fields">
+      <div class="sg-section-head"><h2>Campos de formulario</h2><span class="sg-num">14 · Componentes</span></div>
+      <div class="sg-frame">
+        <div class="sg-frame-head"><span class="sg-frame-title">Estados de input</span><span class="sg-frame-meta">default · focus · disabled · invalid</span></div>
+        <div style="background:white;padding:24px"><div class="form-grid">
+          <div class="field"><label>Default</label><input class="input" placeholder="Escribe algo..."/></div>
+          <div class="field"><label>Con valor</label><input class="input" value="402-1234567-8"/></div>
+          <div class="field"><label>Disabled</label><input class="input" disabled value="No editable"/></div>
+          <div class="field"><label>Inválido</label><input class="input invalid" value="email-malo"/><span class="err"><svg><use href="#i-alert"/></svg>Formato de email inválido.</span></div>
+          <div class="field"><label>Con prefijo</label><div class="input-group"><div class="addon">$</div><input class="input" value="1,240.00"/></div></div>
+          <div class="field"><label>Select</label><div class="select-wrap"><select class="select"><option>Mapfre</option><option>Humano</option><option>Senasa</option></select></div></div>
+          <div class="field col-span-2"><label>Textarea</label><textarea class="textarea" placeholder="Notas adicionales..."></textarea></div>
+        </div></div>
+      </div>
+    </section>
+
+    <!-- =============== TOASTS =============== -->
+    <section class="sg-section" id="toasts">
+      <div class="sg-section-head"><h2>Notificaciones / Toasts</h2><span class="sg-num">15 · Componentes</span></div>
+      <p class="sg-section-desc">Esquina superior derecha. Stack vertical. Borde izquierdo coloreado por tipo.</p>
+      <div class="card"><div class="card-body" style="display:flex;flex-direction:column;gap:10px;align-items:flex-start">
+        <div class="toast success"><svg class="ti"><use href="#i-check-circle"/></svg><div class="text"><strong>Paciente creado</strong><p>María González fue agregada correctamente.</p></div><div class="close"><svg width="14" height="14"><use href="#i-x"/></svg></div></div>
+        <div class="toast info"><svg class="ti"><use href="#i-info"/></svg><div class="text"><strong>Cambios guardados</strong><p>Los datos del paciente se actualizaron.</p></div><div class="close"><svg width="14" height="14"><use href="#i-x"/></svg></div></div>
+        <div class="toast warning"><svg class="ti"><use href="#i-alert"/></svg><div class="text"><strong>Plan vencido</strong><p>El seguro de Carlos Pérez vence en 3 días.</p></div><div class="close"><svg width="14" height="14"><use href="#i-x"/></svg></div></div>
+        <div class="toast danger"><svg class="ti"><use href="#i-alert"/></svg><div class="text"><strong>Error al guardar</strong><p>Verifica tu conexión e intenta de nuevo.</p></div><div class="close"><svg width="14" height="14"><use href="#i-x"/></svg></div></div>
+      </div></div>
+    </section>
+
+    <!-- =============== EMPTY / LOADING =============== -->
+    <section class="sg-section" id="empty">
+      <div class="sg-section-head"><h2>Estado vacío y carga</h2><span class="sg-num">16 · Componentes</span></div>
+
+      <div class="sg-grid-2">
+        <div class="sg-frame">
+          <div class="sg-frame-head"><span class="sg-frame-title">Empty state</span><span class="sg-frame-meta">en tablas / listados sin datos</span></div>
+          <div style="background:white">
+            <div class="empty-state">
+              <div class="empty-state-icon"><svg width="26" height="26"><use href="#i-folder-open"/></svg></div>
+              <h3>Aún no hay pacientes</h3>
+              <p>Empieza registrando tu primer paciente para verlos aquí. Podrás buscarlos, filtrarlos y crear órdenes.</p>
+              <button class="btn btn-primary"><svg><use href="#i-plus"/></svg>Nuevo paciente</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="sg-frame">
+          <div class="sg-frame-head"><span class="sg-frame-title">Loading skeleton</span><span class="sg-frame-meta">durante fetch en tabla</span></div>
+          <div style="background:white">
+            <div class="skeleton-row"><div class="skeleton skel-circle"></div><div class="skeleton skel-line"></div><div class="skeleton skel-line short"></div><div class="skeleton skel-line med"></div></div>
+            <div class="skeleton-row"><div class="skeleton skel-circle"></div><div class="skeleton skel-line"></div><div class="skeleton skel-line short"></div><div class="skeleton skel-line med"></div></div>
+            <div class="skeleton-row"><div class="skeleton skel-circle"></div><div class="skeleton skel-line"></div><div class="skeleton skel-line short"></div><div class="skeleton skel-line med"></div></div>
+            <div class="skeleton-row"><div class="skeleton skel-circle"></div><div class="skeleton skel-line"></div><div class="skeleton skel-line short"></div><div class="skeleton skel-line med"></div></div>
+            <div class="skeleton-row"><div class="skeleton skel-circle"></div><div class="skeleton skel-line"></div><div class="skeleton skel-line short"></div><div class="skeleton skel-line med"></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FOOTER -->
+    <section class="sg-section" style="margin-top:80px">
+      <div style="background:linear-gradient(135deg, oklch(0.18 0.02 255) 0%, oklch(0.25 0.04 250) 100%);color:white;border-radius:16px;padding:32px;display:flex;align-items:center;gap:24px">
+        <div style="width:56px;height:56px;border-radius:14px;background:linear-gradient(135deg, var(--brand-cyan) 0%, var(--brand-blue) 100%);display:grid;place-items:center;color:white;font-weight:800;font-size:22px;flex-shrink:0">A</div>
+        <div style="flex:1">
+          <div style="font-size:18px;font-weight:700;margin-bottom:4px">¿Cómo aplicar este sistema en BSMAI-Front?</div>
+          <div style="font-size:13.5px;opacity:0.85;line-height:1.6">1. Reemplaza los tokens en <code style="background:rgb(255 255 255 / 0.1);padding:1px 6px;border-radius:4px;font-family:ui-monospace,monospace">src/index.css</code> con la paleta AFMI (azul + cian). 2. Actualiza <code style="background:rgb(255 255 255 / 0.1);padding:1px 6px;border-radius:4px;font-family:ui-monospace,monospace">Sidebar.tsx</code> con el branding y los íconos por módulo. 3. Reemplaza <code style="background:rgb(255 255 255 / 0.1);padding:1px 6px;border-radius:4px;font-family:ui-monospace,monospace">confirm()</code> en UserList por el AlertDialog destructive. 4. Aplica el patrón de form de 2 columnas con secciones a UserCreate / UserEdit.</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+</body>
+</html>

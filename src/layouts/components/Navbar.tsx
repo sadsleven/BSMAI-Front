@@ -1,5 +1,7 @@
-import { Bell, LogOut, User as UserIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { Bell, LogOut, Plus, Search, User as UserIcon } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useAuthStore } from '@/modules/auth/domain/store/authStore';
 import { getFullName } from '@/modules/auth/domain/models/authUser';
 import { authApi } from '@/modules/auth/infrastructure/authApi';
@@ -14,9 +16,10 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 export function Navbar() {
+  const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
-  const navigate = useNavigate();
+
   const initials = user
     ? `${user.firstName?.[0] ?? ''}${user.lastName?.[0] ?? ''}`.toUpperCase() || 'U'
     : 'U';
@@ -28,41 +31,82 @@ export function Navbar() {
     navigate('/login', { replace: true });
   };
 
+  const handleCreateOrder = () => {
+    notify.info('Módulo de órdenes en construcción.');
+  };
+
   return (
-    <header className="h-16 border-b bg-card flex items-center justify-between px-6">
-      <div className="text-sm text-muted-foreground">{user ? getFullName(user) : ''}</div>
-      <div className="flex items-center gap-4">
-        <button className="p-2 hover:bg-accent rounded-full" type="button">
+    <header className="h-16 sticky top-0 z-20 border-b bg-card flex items-center px-6 gap-3 shrink-0">
+      {/* Left cluster: search + create order */}
+      <div className="relative w-[320px]">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+        <Input
+          type="search"
+          placeholder="Buscar pacientes, órdenes, doctores…"
+          className="h-10 pl-9 bg-muted/40"
+        />
+      </div>
+      <Button size="sm" className="h-10 px-4 shrink-0" onClick={handleCreateOrder}>
+        <Plus className="w-4 h-4 mr-1.5" />
+        Crear orden
+      </Button>
+
+      {/* Right cluster */}
+      <div className="ml-auto flex items-center gap-2">
+        <button
+          type="button"
+          className="relative w-9 h-9 rounded-full hover:bg-muted transition-colors flex items-center justify-center"
+          title="Notificaciones"
+        >
           <Bell className="w-5 h-5 text-muted-foreground" />
+          <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-brand-cyan" />
         </button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
               title={user?.email ?? ''}
-              className="w-8 h-8 bg-primary rounded-full flex items-center justify-center text-primary-foreground font-bold focus:outline-none focus:ring-2 focus:ring-ring"
+              className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-cyan to-brand-blue flex items-center justify-center text-white text-sm font-bold focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
             >
               {initials}
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-56">
+          <DropdownMenuContent
+            align="end"
+            sideOffset={8}
+            className="min-w-[260px] p-0 rounded-xl shadow-lg overflow-hidden"
+          >
             {user ? (
-              <DropdownMenuLabel className="px-2 py-2">
-                <div className="text-sm font-medium text-foreground truncate">
-                  {getFullName(user)}
+              <DropdownMenuLabel className="px-3 py-3 flex items-center gap-3 bg-brand-blue-soft/60 border-b">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-cyan to-brand-blue flex items-center justify-center text-white text-sm font-bold shrink-0">
+                  {initials}
                 </div>
-                <div className="text-xs text-muted-foreground truncate">{user.email}</div>
+                <div className="min-w-0 leading-tight">
+                  <div className="text-sm font-semibold text-foreground truncate">
+                    {getFullName(user)}
+                  </div>
+                  <div className="text-xs text-muted-foreground truncate">{user.email}</div>
+                </div>
               </DropdownMenuLabel>
             ) : null}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => navigate('/profile')}>
-              <UserIcon className="w-4 h-4" />
-              <span>Mi perfil</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem variant="destructive" onSelect={() => void handleLogout()}>
-              <LogOut className="w-4 h-4" />
-              <span>Cerrar sesión</span>
-            </DropdownMenuItem>
+            <div className="p-1">
+              <DropdownMenuItem
+                onSelect={() => navigate('/profile')}
+                className="px-2.5 py-2 rounded-md text-sm gap-2"
+              >
+                <UserIcon className="w-4 h-4" />
+                <span>Mi perfil</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator className="my-1" />
+              <DropdownMenuItem
+                variant="destructive"
+                onSelect={() => void handleLogout()}
+                className="px-2.5 py-2 rounded-md text-sm gap-2"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Cerrar sesión</span>
+              </DropdownMenuItem>
+            </div>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

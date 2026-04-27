@@ -8,14 +8,38 @@ import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { FormSwitch } from '@/components/ui/form-switch';
-import { X, Lock } from 'lucide-react';
+import { FormSection, FormGrid } from '@/components/ui/form-section';
+import { X, Lock, AlertTriangle } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface FieldErrorProps {
   message?: string;
 }
 function FieldError({ message }: FieldErrorProps) {
   if (!message) return null;
-  return <p className="text-xs text-destructive">{message}</p>;
+  return (
+    <p className="text-xs text-destructive flex items-center gap-1 mt-1">
+      <AlertTriangle className="w-3 h-3" />
+      {message}
+    </p>
+  );
+}
+
+function RequiredLabel({
+  htmlFor,
+  required,
+  children,
+}: {
+  htmlFor?: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Label htmlFor={htmlFor} className="text-sm font-medium">
+      {children}
+      {required ? <span className="text-destructive ml-0.5">*</span> : null}
+    </Label>
+  );
 }
 
 interface Props {
@@ -43,7 +67,8 @@ export function UserForm({ mode, canEditSuperAdmin, existingRoles }: Props) {
     })();
   }, []);
 
-  const roleIds: string[] = (useWatch({ control, name: 'roleIds' }) as string[] | undefined) ?? [];
+  const roleIds: string[] =
+    (useWatch({ control, name: 'roleIds' }) as string[] | undefined) ?? [];
   const isActive = useWatch({ control, name: 'isActive' }) as boolean | undefined;
   const isSuperAdmin = useWatch({ control, name: 'isSuperAdmin' }) as boolean | undefined;
 
@@ -76,127 +101,190 @@ export function UserForm({ mode, canEditSuperAdmin, existingRoles }: Props) {
   );
 
   const e = errors as Record<string, { message?: string } | undefined>;
+  const inputInvalid = (key: string) =>
+    e[key]?.message ? 'border-destructive focus-visible:ring-destructive/30' : '';
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="firstName">Nombre</Label>
-          <Input id="firstName" {...register('firstName')} />
-          <FieldError message={e.firstName?.message} />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="lastName">Apellido</Label>
-          <Input id="lastName" {...register('lastName')} />
-          <FieldError message={e.lastName?.message} />
-        </div>
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="email">Email</Label>
-        <Input id="email" type="email" {...register('email')} />
-        <FieldError message={e.email?.message} />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="phoneNumber">Teléfono (11 dígitos)</Label>
-        <Input id="phoneNumber" inputMode="numeric" {...register('phoneNumber')} />
-        <FieldError message={e.phoneNumber?.message} />
-      </div>
+      <FormSection
+        title="Información personal"
+        description="Datos básicos del usuario y forma de contacto."
+      >
+        <FormGrid>
+          <div className="space-y-1.5">
+            <RequiredLabel htmlFor="firstName" required>
+              Nombre
+            </RequiredLabel>
+            <Input
+              id="firstName"
+              {...register('firstName')}
+              className={cn('h-9', inputInvalid('firstName'))}
+            />
+            <FieldError message={e.firstName?.message} />
+          </div>
+          <div className="space-y-1.5">
+            <RequiredLabel htmlFor="lastName" required>
+              Apellido
+            </RequiredLabel>
+            <Input
+              id="lastName"
+              {...register('lastName')}
+              className={cn('h-9', inputInvalid('lastName'))}
+            />
+            <FieldError message={e.lastName?.message} />
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <RequiredLabel htmlFor="email" required>
+              Email
+            </RequiredLabel>
+            <Input
+              id="email"
+              type="email"
+              {...register('email')}
+              className={cn('h-9', inputInvalid('email'))}
+            />
+            <FieldError message={e.email?.message} />
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <RequiredLabel htmlFor="phoneNumber">Teléfono</RequiredLabel>
+            <Input
+              id="phoneNumber"
+              inputMode="numeric"
+              placeholder="11 dígitos"
+              {...register('phoneNumber')}
+              className={cn('h-9', inputInvalid('phoneNumber'))}
+            />
+            <p className="text-xs text-muted-foreground">Opcional. Exactamente 11 dígitos.</p>
+            <FieldError message={e.phoneNumber?.message} />
+          </div>
+        </FormGrid>
+      </FormSection>
 
       {mode === 'create' ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="password">Contraseña</Label>
-            <PasswordInput id="password" {...register('password')} />
-            <FieldError message={e.password?.message} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="confirmPassword">Confirmar contraseña</Label>
-            <PasswordInput id="confirmPassword" {...register('confirmPassword')} />
-            <FieldError message={e.confirmPassword?.message} />
-          </div>
-        </div>
+        <FormSection
+          title="Acceso"
+          description="Definí la contraseña inicial. El usuario podrá cambiarla luego desde su perfil."
+        >
+          <FormGrid>
+            <div className="space-y-1.5">
+              <RequiredLabel htmlFor="password" required>
+                Contraseña
+              </RequiredLabel>
+              <PasswordInput
+                id="password"
+                {...register('password')}
+                className={cn('h-9', inputInvalid('password'))}
+              />
+              <FieldError message={e.password?.message} />
+            </div>
+            <div className="space-y-1.5">
+              <RequiredLabel htmlFor="confirmPassword" required>
+                Confirmar contraseña
+              </RequiredLabel>
+              <PasswordInput
+                id="confirmPassword"
+                {...register('confirmPassword')}
+                className={cn('h-9', inputInvalid('confirmPassword'))}
+              />
+              <FieldError message={e.confirmPassword?.message} />
+            </div>
+            <p className="sm:col-span-2 text-xs text-muted-foreground">
+              Mínimo 8 caracteres con mayúscula, minúscula, número y caracter especial.
+            </p>
+          </FormGrid>
+        </FormSection>
       ) : null}
 
-      <div className="space-y-2">
-        <Label>Roles</Label>
-        <div className="flex flex-wrap gap-2">
-          {assignable.length === 0 && staleAssigned.length === 0 ? (
-            <span className="text-sm text-muted-foreground">No hay roles disponibles.</span>
-          ) : (
-            <>
-              {assignable.map((role) => {
-                const active = roleIds.includes(role.id);
-                return (
-                  <button
-                    key={role.id}
-                    type="button"
-                    onClick={() => toggleRole(role.id)}
-                    className="cursor-pointer"
-                  >
-                    <Badge variant={active ? 'default' : 'outline'}>{role.name}</Badge>
-                  </button>
-                );
-              })}
-              {staleAssigned.map((role) => {
-                const reason = role.deletedAt
-                  ? 'Rol en papelera'
-                  : role.isActive === false
-                    ? 'Rol deshabilitado'
-                    : 'Rol no asignable';
-                return (
-                  <span
-                    key={role.id}
-                    className="inline-flex items-center gap-1 rounded-md border border-dashed px-2 py-0.5 text-xs text-muted-foreground"
-                    title={`${reason}. Solo se puede quitar.`}
-                  >
-                    <Lock className="w-3 h-3" />
-                    {role.name}
+      <FormSection
+        title="Roles y permisos"
+        description="Asigná uno o más roles. Los permisos efectivos resultan de la unión."
+      >
+        <div className="space-y-3">
+          <Label className="text-sm font-medium">Roles</Label>
+          <div className="flex flex-wrap gap-2">
+            {assignable.length === 0 && staleAssigned.length === 0 ? (
+              <span className="text-sm text-muted-foreground">No hay roles disponibles.</span>
+            ) : (
+              <>
+                {assignable.map((role) => {
+                  const active = roleIds.includes(role.id);
+                  return (
                     <button
+                      key={role.id}
                       type="button"
                       onClick={() => toggleRole(role.id)}
-                      title="Quitar rol"
-                      className="ml-1 rounded hover:bg-accent p-0.5"
+                      className="cursor-pointer"
                     >
-                      <X className="w-3 h-3" />
+                      <Badge variant={active ? 'default' : 'outline'}>{role.name}</Badge>
                     </button>
-                  </span>
-                );
-              })}
-            </>
-          )}
+                  );
+                })}
+                {staleAssigned.map((role) => {
+                  const reason = role.deletedAt
+                    ? 'Rol en papelera'
+                    : role.isActive === false
+                      ? 'Rol deshabilitado'
+                      : 'Rol no asignable';
+                  return (
+                    <span
+                      key={role.id}
+                      className="inline-flex items-center gap-1 rounded-md border border-dashed px-2 py-0.5 text-xs text-muted-foreground"
+                      title={`${reason}. Solo se puede quitar.`}
+                    >
+                      <Lock className="w-3 h-3" />
+                      {role.name}
+                      <button
+                        type="button"
+                        onClick={() => toggleRole(role.id)}
+                        title="Quitar rol"
+                        className="ml-1 rounded hover:bg-accent p-0.5"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  );
+                })}
+              </>
+            )}
+          </div>
+          {staleAssigned.length > 0 ? (
+            <p className="text-xs text-muted-foreground">
+              Algunos roles asignados no están disponibles para nuevos usuarios; podés quitarlos
+              pero no volver a agregarlos desde el selector.
+            </p>
+          ) : null}
         </div>
-        {staleAssigned.length > 0 ? (
-          <p className="text-xs text-muted-foreground">
-            Algunos roles asignados no están disponibles para nuevos usuarios; podés quitarlos pero
-            no volver a agregarlos desde el selector.
-          </p>
-        ) : null}
-      </div>
+      </FormSection>
 
-      <div className="space-y-3">
-        <FormSwitch
-          label="Habilitado"
-          description="Si está deshabilitado, el usuario no podrá iniciar sesión."
-          checked={!!isActive}
-          onCheckedChange={(v) =>
-            setValue('isActive', v, { shouldDirty: true, shouldValidate: true })
-          }
-        />
-        {canEditSuperAdmin ? (
+      <FormSection
+        title="Estado de la cuenta"
+        description="Controla el acceso del usuario al sistema."
+      >
+        <div className="space-y-4">
           <FormSwitch
-            label="Super Administrador"
-            description={
-              isSuperAdmin
-                ? 'Los Super Administradores tienen acceso completo al sistema, sin restricciones de permisos.'
-                : 'Otorga acceso completo al sistema sin restricciones de permisos.'
-            }
-            checked={!!isSuperAdmin}
+            label="Habilitado"
+            description="Si está deshabilitado, el usuario no podrá iniciar sesión."
+            checked={!!isActive}
             onCheckedChange={(v) =>
-              setValue('isSuperAdmin', v, { shouldDirty: true, shouldValidate: true })
+              setValue('isActive', v, { shouldDirty: true, shouldValidate: true })
             }
           />
-        ) : null}
-      </div>
+          {canEditSuperAdmin ? (
+            <FormSwitch
+              label="Super Administrador"
+              description={
+                isSuperAdmin
+                  ? 'Los Super Administradores tienen acceso completo al sistema, sin restricciones de permisos.'
+                  : 'Otorga acceso completo al sistema sin restricciones de permisos.'
+              }
+              checked={!!isSuperAdmin}
+              onCheckedChange={(v) =>
+                setValue('isSuperAdmin', v, { shouldDirty: true, shouldValidate: true })
+              }
+            />
+          ) : null}
+        </div>
+      </FormSection>
     </div>
   );
 }

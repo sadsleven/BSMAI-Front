@@ -29,7 +29,7 @@ export function SortableHeader<T extends string>({
     <button
       type="button"
       onClick={() => onSort(column, next)}
-      className="flex items-center gap-1 hover:text-foreground"
+      className="inline-flex items-center gap-1 hover:text-foreground [font:inherit] [letter-spacing:inherit] [text-transform:inherit] text-inherit"
       aria-sort={!isActive ? 'none' : direction === 'ASC' ? 'ascending' : 'descending'}
     >
       {children}

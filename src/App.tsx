@@ -12,11 +12,19 @@ import { UserChangePassword } from './modules/users/presentation/pages/UserChang
 import { RoleList } from './modules/roles/presentation/pages/RoleList';
 import { RoleCreate } from './modules/roles/presentation/pages/RoleCreate';
 import { RoleEdit } from './modules/roles/presentation/pages/RoleEdit';
+import { DashboardPage } from './modules/dashboard/presentation/pages/DashboardPage';
 
 function App() {
   return (
     <BrowserRouter>
-      <Toaster richColors closeButton position="top-right" />
+      <Toaster
+        closeButton
+        position="top-right"
+        offset={20}
+        toastOptions={{
+          className: 'afmi-toast',
+        }}
+      />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/logout" element={<LogoutPage />} />
@@ -29,14 +37,7 @@ function App() {
             </AuthGuard>
           }
         >
-          <Route
-            index
-            element={
-              <div className="p-4">
-                <h1>Bienvenido al panel</h1>
-              </div>
-            }
-          />
+          <Route index element={<DashboardPage />} />
           <Route path="profile" element={<ProfilePage />} />
           <Route path="users">
             <Route index element={<UserList />} />
