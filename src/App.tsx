@@ -25,6 +25,15 @@ import { DoctorEdit } from './modules/doctors/presentation/pages/DoctorEdit';
 import { CareCenterList } from './modules/care-centers/presentation/pages/CareCenterList';
 import { CareCenterCreate } from './modules/care-centers/presentation/pages/CareCenterCreate';
 import { CareCenterEdit } from './modules/care-centers/presentation/pages/CareCenterEdit';
+import { InsuranceList } from './modules/insurances/presentation/pages/InsuranceList';
+import { InsuranceCreate } from './modules/insurances/presentation/pages/InsuranceCreate';
+import { InsuranceEdit } from './modules/insurances/presentation/pages/InsuranceEdit';
+import { PathologyList } from './modules/pathologies/presentation/pages/PathologyList';
+import { PathologyCreate } from './modules/pathologies/presentation/pages/PathologyCreate';
+import { PathologyEdit } from './modules/pathologies/presentation/pages/PathologyEdit';
+import { ServiceTypeList } from './modules/service-types/presentation/pages/ServiceTypeList';
+import { ServiceTypeCreate } from './modules/service-types/presentation/pages/ServiceTypeCreate';
+import { ServiceTypeEdit } from './modules/service-types/presentation/pages/ServiceTypeEdit';
 
 function App() {
   return (
@@ -81,6 +90,21 @@ function App() {
             <Route index element={<CareCenterList />} />
             <Route path="create" element={<CareCenterCreate />} />
             <Route path="edit/:id" element={<CareCenterEdit />} />
+          </Route>
+          <Route path="insurances">
+            <Route index element={<InsuranceList />} />
+            <Route path="create" element={<InsuranceCreate />} />
+            <Route path="edit/:id" element={<InsuranceEdit />} />
+          </Route>
+          <Route path="pathologies">
+            <Route index element={<PathologyList />} />
+            <Route path="create" element={<PathologyCreate />} />
+            <Route path="edit/:id" element={<PathologyEdit />} />
+          </Route>
+          <Route path="service-types">
+            <Route index element={<ServiceTypeList />} />
+            <Route path="create" element={<ServiceTypeCreate />} />
+            <Route path="edit/:id" element={<ServiceTypeEdit />} />
           </Route>
         </Route>
 

@@ -5,6 +5,7 @@ import {
   DetailRow,
   DetailSection,
 } from '@/components/ui/detail-dialog';
+import { Badge } from '@/components/ui/badge';
 import { UserRound } from 'lucide-react';
 import { patientGateway } from '../../infrastructure/patientGateway';
 import { fullName, type Patient } from '../../domain/models/patient';
@@ -78,6 +79,34 @@ export function PatientDetail({ patientId, open, onOpenChange }: PatientDetailPr
                 )
               }
             />
+          </DetailSection>
+
+          <DetailSection title={`Seguros (${patient.insurances?.length ?? 0})`}>
+            {patient.insurances?.length ? (
+              <div className="flex flex-wrap gap-1.5">
+                {patient.insurances.map((i) => {
+                  const stale = i.deletedAt || i.isActive === false;
+                  return (
+                    <Badge
+                      key={i.id}
+                      variant="outline"
+                      className={stale ? 'border-dashed text-muted-foreground' : ''}
+                      title={
+                        i.deletedAt
+                          ? 'Seguro en papelera'
+                          : i.isActive === false
+                            ? 'Seguro deshabilitado'
+                            : undefined
+                      }
+                    >
+                      {i.name}
+                    </Badge>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground italic">Sin seguros asignados.</p>
+            )}
           </DetailSection>
 
           <DetailSection title={`Teléfonos (${patient.phones?.length ?? 0})`}>

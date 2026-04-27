@@ -137,6 +137,10 @@ export const patientSchema = z.object({
     .min(3, 'La dirección debe tener al menos 3 caracteres')
     .max(500, 'La dirección no puede superar 500 caracteres'),
   phones: phonesArraySchema,
+  insuranceIds: z
+    .array(z.string().uuid())
+    .max(50, 'Máximo 50 seguros por paciente')
+    .optional(),
   isActive: z.boolean().optional(),
 });
 export type PatientValues = z.infer<typeof patientSchema>;
@@ -156,6 +160,39 @@ export const specialtySchema = z.object({
   isActive: z.boolean().optional(),
 });
 export type SpecialtyValues = z.infer<typeof specialtySchema>;
+
+const simpleNamedSchema = (max: number) =>
+  z.object({
+    name: z
+      .string({ error: 'El nombre es obligatorio' })
+      .min(2, 'El nombre debe tener al menos 2 caracteres')
+      .max(max, `El nombre no puede superar ${max} caracteres`),
+    description: z
+      .string()
+      .max(500, 'La descripción no puede superar 500 caracteres')
+      .optional(),
+    isActive: z.boolean().optional(),
+  });
+
+export const pathologySchema = simpleNamedSchema(200);
+export type PathologyValues = z.infer<typeof pathologySchema>;
+
+export const serviceTypeSchema = simpleNamedSchema(200);
+export type ServiceTypeValues = z.infer<typeof serviceTypeSchema>;
+
+export const insuranceSchema = z.object({
+  name: z
+    .string({ error: 'El nombre es obligatorio' })
+    .min(2, 'El nombre debe tener al menos 2 caracteres')
+    .max(200, 'El nombre no puede superar 200 caracteres'),
+  description: z
+    .string()
+    .max(500, 'La descripción no puede superar 500 caracteres')
+    .optional(),
+  phones: phonesArraySchema,
+  isActive: z.boolean().optional(),
+});
+export type InsuranceValues = z.infer<typeof insuranceSchema>;
 
 // ---- Doctores y Centros de Atención (métodos de pago compartidos) ----
 

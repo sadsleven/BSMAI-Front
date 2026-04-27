@@ -41,4 +41,7 @@ export const PERMISSIONS = {
   PATIENTS: buildResource('patients'),
   DOCTORS: buildResource('doctors'),
   CARE_CENTERS: buildResource('care-centers'),
+  INSURANCES: buildResource('insurances'),
+  PATHOLOGIES: buildResource('pathologies'),
+  SERVICE_TYPES: buildResource('service-types'),
 } as const;

@@ -19,6 +19,7 @@ function buildParams(q: PatientsQuery): Record<string, string | number | boolean
     isActive: q.isActive,
     birthDateFrom: q.birthDateFrom,
     birthDateTo: q.birthDateTo,
+    insuranceId: q.insuranceId,
   };
 }
 

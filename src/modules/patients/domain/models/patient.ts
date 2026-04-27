@@ -1,3 +1,5 @@
+import type { Insurance } from '@/modules/insurances/domain/models/insurance';
+
 export interface PatientPhone {
   id?: string;
   number: string;
@@ -14,6 +16,7 @@ export interface Patient {
   address: string;
   isActive: boolean;
   phones: PatientPhone[];
+  insurances: Insurance[];
   createdAt?: string;
   updatedAt?: string;
   deletedAt?: string | null;
@@ -27,6 +30,7 @@ export interface CreatePatientDto {
   birthDate: string;
   address: string;
   phones: { number: string; label?: string }[];
+  insuranceIds?: string[];
   isActive?: boolean;
 }
 
@@ -43,6 +47,7 @@ export interface PatientsQuery {
   isActive?: boolean;
   birthDateFrom?: string;
   birthDateTo?: string;
+  insuranceId?: string;
 }
 
 export interface PaginatedResponse<T> {

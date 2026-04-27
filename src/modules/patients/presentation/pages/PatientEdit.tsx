@@ -4,6 +4,7 @@ import { FormProvider, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { patientGateway } from '../../infrastructure/patientGateway';
 import { fullName } from '../../domain/models/patient';
+import type { Insurance } from '@/modules/insurances/domain/models/insurance';
 import { Button } from '@/components/ui/button';
 import { PatientForm } from '../components/PatientForm';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
@@ -16,6 +17,7 @@ export function PatientEdit() {
   const navigate = useNavigate();
   const [fetching, setFetching] = useState(true);
   const [displayName, setDisplayName] = useState('');
+  const [existingInsurances, setExistingInsurances] = useState<Insurance[]>([]);
 
   const methods = useForm<PatientValues>({
     resolver: zodResolver(patientSchema),
@@ -28,6 +30,7 @@ export function PatientEdit() {
       birthDate: '',
       address: '',
       phones: [{ number: '', label: '' }],
+      insuranceIds: [],
       isActive: true,
     },
   });
@@ -48,9 +51,11 @@ export function PatientEdit() {
             p.phones?.length > 0
               ? p.phones.map((ph) => ({ number: ph.number, label: ph.label ?? '' }))
               : [{ number: '', label: '' }],
+          insuranceIds: (p.insurances ?? []).map((i) => i.id),
           isActive: p.isActive,
         });
         setDisplayName(fullName(p));
+        setExistingInsurances(p.insurances ?? []);
       } catch (e) {
         notify.fromError(e, 'No se pudo cargar el paciente.');
       } finally {
@@ -74,6 +79,7 @@ export function PatientEdit() {
           number: p.number,
           label: p.label || undefined,
         })),
+        insuranceIds: values.insuranceIds ?? [],
         isActive: values.isActive,
       });
       notify.success('Paciente actualizado');
@@ -108,7 +114,7 @@ export function PatientEdit() {
             </button>
           </div>
 
-          <PatientForm />
+          <PatientForm existingInsurances={existingInsurances} />
 
           <div className="flex items-center justify-between gap-3 pt-2">
             <p className="text-xs text-muted-foreground">

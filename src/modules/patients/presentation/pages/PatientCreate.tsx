@@ -23,6 +23,7 @@ export function PatientCreate() {
       birthDate: '',
       address: '',
       phones: [{ number: '', label: '' }],
+      insuranceIds: [],
       isActive: true,
     },
   });
@@ -42,6 +43,7 @@ export function PatientCreate() {
           number: p.number,
           label: p.label || undefined,
         })),
+        insuranceIds: values.insuranceIds ?? [],
         isActive: values.isActive,
       });
       notify.success('Paciente creado exitosamente');

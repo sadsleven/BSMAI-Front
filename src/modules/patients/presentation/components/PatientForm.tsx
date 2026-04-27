@@ -4,11 +4,13 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { CedulaInput } from '@/components/ui/cedula-input';
 import { PhoneListInput } from '@/components/ui/phone-list-input';
+import { InsuranceMultiSelect } from '@/components/ui/insurance-multi-select';
 import { FormSwitch } from '@/components/ui/form-switch';
 import { FormSection, FormGrid } from '@/components/ui/form-section';
 import { AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { PatientValues } from '@/lib/validations/schemas';
+import type { Insurance } from '@/modules/insurances/domain/models/insurance';
 
 interface FieldErrorProps {
   message?: string;
@@ -23,7 +25,12 @@ function FieldError({ message }: FieldErrorProps) {
   );
 }
 
-export function PatientForm() {
+export type PatientFormProps = {
+  /** Pre-existing insurances (for showing stale chips on edit). */
+  existingInsurances?: Insurance[];
+};
+
+export function PatientForm({ existingInsurances }: PatientFormProps = {}) {
   const {
     register,
     control,
@@ -146,6 +153,28 @@ export function PatientForm() {
               errors={phoneErrors}
               arrayError={
                 typeof errors.phones?.message === 'string' ? errors.phones.message : undefined
+              }
+            />
+          )}
+        />
+      </FormSection>
+
+      <FormSection
+        title="Seguros"
+        description="Asigná uno o más seguros al paciente. Opcional."
+      >
+        <Controller
+          name="insuranceIds"
+          control={control}
+          render={({ field }) => (
+            <InsuranceMultiSelect
+              value={field.value ?? []}
+              onChange={field.onChange}
+              existing={existingInsurances}
+              error={
+                typeof errors.insuranceIds?.message === 'string'
+                  ? errors.insuranceIds.message
+                  : undefined
               }
             />
           )}

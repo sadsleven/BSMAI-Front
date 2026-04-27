@@ -8,6 +8,9 @@ import {
   UserRound,
   BriefcaseMedical,
   Hospital,
+  Shield as ShieldIcon,
+  Activity,
+  FileText,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -84,6 +87,24 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
           label: 'Especialidades',
           href: '/specialties',
           show: has(PERMISSIONS.SPECIALTIES.LIST),
+        },
+        {
+          icon: ShieldIcon,
+          label: 'Seguros',
+          href: '/insurances',
+          show: has(PERMISSIONS.INSURANCES.LIST),
+        },
+        {
+          icon: Activity,
+          label: 'Patologías',
+          href: '/pathologies',
+          show: has(PERMISSIONS.PATHOLOGIES.LIST),
+        },
+        {
+          icon: FileText,
+          label: 'Tipos de servicio',
+          href: '/service-types',
+          show: has(PERMISSIONS.SERVICE_TYPES.LIST),
         },
       ],
     },

@@ -62,10 +62,13 @@ Código transversal en `src/lib/` (utilidades), `src/components/ui/` (shadcn), `
 - **`users/`** — CRUD usuarios, soft/hard delete, restore, change-password, paginación server-side.
 - **`roles/`** — CRUD roles, picker de permisos agrupado por recurso.
 - **`specialties/`** — CRUD simple de especialidades clínicas. Endpoint `assignable` para selectores.
-- **`patients/`** — CRUD pacientes con cédula, email, dirección y lista dinámica de teléfonos.
+- **`patients/`** — CRUD pacientes con cédula, email, dirección, lista dinámica de teléfonos y multi-select de seguros.
 - **`doctors/`** — CRUD doctores con RIF condicional, especialidades multi-select y métodos de pago dinámicos.
 - **`care-centers/`** — CRUD centros de atención con RIF siempre obligatorio, especialidades y métodos de pago.
 - **`banks/`** — sólo lectura: catálogo de bancos venezolanos para selectores de pago móvil/transferencia.
+- **`insurances/`** — CRUD seguros con name + description + lista dinámica de teléfonos. Endpoint `assignable` para `<InsuranceMultiSelect>`.
+- **`pathologies/`** — CRUD simple de patologías. Endpoint `assignable`.
+- **`service-types/`** — CRUD simple de tipos de servicio. Endpoint `assignable`.
 
 ## HTTP
 
@@ -134,7 +137,7 @@ Todas las tablas de la app deben seguir este patrón — **no hay controles de s
 
 ## Validación de formularios
 
-- Schemas Zod centralizados en `src/lib/validations/schemas.ts`: `loginSchema`, `profileSchema`, `createUserSchema`, `updateUserSchema`, `changeOwnPasswordSchema`, `adminChangePasswordSchema`, `roleSchema`, `specialtySchema`, `patientSchema`, `doctorSchema`, `careCenterSchema`, `paymentMethodSchema`.
+- Schemas Zod centralizados en `src/lib/validations/schemas.ts`: `loginSchema`, `profileSchema`, `createUserSchema`, `updateUserSchema`, `changeOwnPasswordSchema`, `adminChangePasswordSchema`, `roleSchema`, `specialtySchema`, `patientSchema` (con `insuranceIds`), `doctorSchema`, `careCenterSchema`, `paymentMethodSchema`, `insuranceSchema`, `pathologySchema`, `serviceTypeSchema`.
 - Conectados a React Hook Form via `zodResolver`. Modo de validación: `onBlur` consistente.
 - Reglas reutilizables: `emailSchema`, `nameSchema(label)`, `phoneSchema`, `passwordSchema`, `cedulaSchema`, `rifSchema`, `phoneNumberSchema`, `phoneItemSchema`, `phonesArraySchema`, `paymentMethodsArraySchema`. Mensajes en español.
 - Reglas duras: nombre 1-150 chars solo letras/acentos/`ñ`; teléfono opcional pero exactamente 11 dígitos si presente; password 8-100 con mayúscula+minúscula+número+especial; cédula `V/E-XX.XXX.XXX`; RIF `J/G/V/E-XX.XXX.XXX-D`; teléfonos para owners 11 dígitos exactos.
@@ -152,15 +155,19 @@ Todas las tablas de la app deben seguir este patrón — **no hay controles de s
 - `<RifInput>` (`src/components/ui/rif-input.tsx`) — auto-formato `J-XX.XXX.XXX-D`. Acepta `J/G/V/E`. Misma regla de uso obligatorio.
 - `<PhoneListInput>` (`src/components/ui/phone-list-input.tsx`) — lista dinámica de teléfonos con `add`/`remove`. Por defecto min=1, max=10. Cada item: número 11 dígitos + label opcional. Errores per-item + arrayError. **Patient/Doctor/CareCenter** lo consumen vía `<Controller>`.
 - `<SpecialtyMultiSelect>` (`src/components/ui/specialty-multi-select.tsx`) — multi-select con búsqueda. Carga `/specialties/assignable`. Especialidades ya asignadas que dejaron de ser asignables aparecen como chip punteado, **quitables pero no re-agregables**. Pasar `existing` para mantenerlas.
+- `<InsuranceMultiSelect>` (`src/components/ui/insurance-multi-select.tsx`) — multi-select de seguros. Mismo patrón que `<SpecialtyMultiSelect>` (consume `/insurances/assignable`, soporta `existing` para chips stale). Convención general: cualquier relación N-a-M visible en formularios usa este patrón con endpoint `/<resource>/assignable`.
 - `<PaymentMethodsInput>` (`src/components/ui/payment-methods-input.tsx`) — lista dinámica de métodos de pago. Type discriminator: `mobile_payment | bank_transfer | other`, cada uno renderiza fields propios. Carga `GET /banks` para `<Select>` de banco. Soporta `defaults` (cedula/rif/fullName/firstPhone): autocompleta al cambiar de tipo o agregar uno nuevo, **sin pisar lo ya tipeado** — el usuario puede sobreescribir manualmente.
 
 ### Módulos clínicos
 
 - `specialties` — CRUD simple. Forms con `name` + `description` + `isActive`. List con icon-tile cyan-soft.
-- `patients` — Form con `<CedulaInput>` + email + nombres + birthDate + dirección + `<PhoneListInput>` + estado.
+- `patients` — Form con `<CedulaInput>` + email + nombres + birthDate + dirección + `<PhoneListInput>` + `<InsuranceMultiSelect>` + estado. List muestra primeros 2 seguros como badges debajo del email + filtro Select por seguro (server-side via subquery, no rompe otros seguros del paciente). Detail muestra sección "Seguros" con chips stale para deshabilitados/papelera.
 - `doctors` — Form con `<CedulaInput>` + email + nombres + `<FormSwitch>` `isLegalEntity` + `<RifInput>` condicional + `<PhoneListInput>` + `<SpecialtyMultiSelect>` + `<PaymentMethodsInput>` (defaults desde cedula/rif/nombre/primer teléfono) + estado. List con badge "Jurídica" y filtro `entityType` server-side.
 - `care-centers` — Form con `name` + email + `<RifInput>` (siempre obligatorio) + `<PhoneListInput>` + `<SpecialtyMultiSelect>` + `<PaymentMethodsInput>` + estado.
 - `banks` — gateway sólo lectura. Único consumidor actual: `<PaymentMethodsInput>`.
+- `insurances` — Form con `name` + `description` + `<PhoneListInput>` + estado. List con icon Shield + columna teléfono. Sidebar bajo "Catálogos".
+- `pathologies` — CRUD simple paralelo a `specialties` (icon Activity). Sidebar bajo "Catálogos".
+- `service-types` — CRUD simple paralelo a `specialties` (icon FileText, ej. "Radiografía de tórax"). Sidebar bajo "Catálogos".
 - **Replace-all en update**: el FE envía siempre el array completo de phones / paymentMethods. En edit los items existentes preservan `id` (campo opcional en el schema); los nuevos van sin id. El backend hace diff por id.
 
 ## Notificaciones (`notify`)
