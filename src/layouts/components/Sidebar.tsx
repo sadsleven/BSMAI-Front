@@ -31,7 +31,13 @@ type NavSection = {
   items: NavItem[];
 };
 
-export function Sidebar() {
+export type SidebarContentProps = {
+  /** Called after a nav link is clicked (used to close mobile drawer). */
+  onNavigate?: () => void;
+};
+
+/** Inner UI of the sidebar — reusable in desktop aside and mobile drawer. */
+export function SidebarContent({ onNavigate }: SidebarContentProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
@@ -109,7 +115,7 @@ export function Sidebar() {
     href === '/' ? location.pathname === '/' : location.pathname.startsWith(href);
 
   return (
-    <aside className="w-64 h-screen sticky top-0 self-start bg-sidebar border-r border-sidebar-border flex flex-col shrink-0 z-30">
+    <div className="flex flex-col h-full">
       {/* Brand header */}
       <div className="px-5 py-5 border-b border-sidebar-border flex items-center gap-3">
         <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-cyan to-brand-blue flex items-center justify-center text-white font-bold shadow-sm">
@@ -145,6 +151,7 @@ export function Sidebar() {
                       )}
                       <Link
                         to={item.href}
+                        onClick={onNavigate}
                         className={cn(
                           'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors',
                           active
@@ -191,6 +198,15 @@ export function Sidebar() {
           <LogOut className="w-4 h-4" />
         </button>
       </div>
+    </div>
+  );
+}
+
+/** Desktop sticky sidebar. Hidden below md. */
+export function Sidebar() {
+  return (
+    <aside className="hidden md:flex w-64 h-screen sticky top-0 self-start bg-sidebar border-r border-sidebar-border flex-col shrink-0 z-30">
+      <SidebarContent />
     </aside>
   );
 }

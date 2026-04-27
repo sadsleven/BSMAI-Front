@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Bell, LogOut, Plus, Search, User as UserIcon } from 'lucide-react';
+import { Bell, LogOut, Menu, Plus, Search, User as UserIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuthStore } from '@/modules/auth/domain/store/authStore';
@@ -15,7 +15,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-export function Navbar() {
+export type NavbarProps = {
+  onMenuClick?: () => void;
+};
+
+export function Navbar({ onMenuClick }: NavbarProps) {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
@@ -36,9 +40,27 @@ export function Navbar() {
   };
 
   return (
-    <header className="h-16 sticky top-0 z-20 border-b bg-card flex items-center px-6 gap-3 shrink-0">
-      {/* Left cluster: search + create order */}
-      <div className="relative w-[320px]">
+    <header className="h-16 sticky top-0 z-20 border-b bg-card flex items-center px-3 sm:px-6 gap-2 sm:gap-3 shrink-0">
+      {/* Hamburger (mobile only) */}
+      <button
+        type="button"
+        onClick={onMenuClick}
+        aria-label="Abrir menú"
+        className="md:hidden w-10 h-10 rounded-md hover:bg-muted flex items-center justify-center text-muted-foreground shrink-0"
+      >
+        <Menu className="w-5 h-5" />
+      </button>
+
+      {/* Brand (mobile only — sidebar hidden) */}
+      <div className="md:hidden flex items-center gap-2 min-w-0">
+        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-cyan to-brand-blue flex items-center justify-center text-white text-sm font-bold shrink-0">
+          A
+        </div>
+        <span className="text-[15px] font-bold truncate">AFMI</span>
+      </div>
+
+      {/* Left cluster: search + create order (desktop) */}
+      <div className="relative w-[320px] hidden md:block">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
         <Input
           type="search"
@@ -46,16 +68,30 @@ export function Navbar() {
           className="h-10 pl-9 bg-muted/40"
         />
       </div>
-      <Button size="sm" className="h-10 px-4 shrink-0" onClick={handleCreateOrder}>
+      <Button
+        size="sm"
+        className="hidden md:inline-flex h-10 px-4 shrink-0"
+        onClick={handleCreateOrder}
+      >
         <Plus className="w-4 h-4 mr-1.5" />
         Crear orden
       </Button>
 
       {/* Right cluster */}
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex items-center gap-1 sm:gap-2">
+        {/* Compact "Crear orden" on mobile (icon only) */}
+        <Button
+          size="icon"
+          className="md:hidden h-10 w-10 shrink-0"
+          onClick={handleCreateOrder}
+          title="Crear orden"
+          aria-label="Crear orden"
+        >
+          <Plus className="w-5 h-5" />
+        </Button>
         <button
           type="button"
-          className="relative w-9 h-9 rounded-full hover:bg-muted transition-colors flex items-center justify-center"
+          className="relative w-10 h-10 rounded-full hover:bg-muted transition-colors flex items-center justify-center shrink-0"
           title="Notificaciones"
         >
           <Bell className="w-5 h-5 text-muted-foreground" />
@@ -66,7 +102,7 @@ export function Navbar() {
             <button
               type="button"
               title={user?.email ?? ''}
-              className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-cyan to-brand-blue flex items-center justify-center text-white text-sm font-bold focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-cyan to-brand-blue flex items-center justify-center text-white text-sm font-bold focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 shrink-0"
             >
               {initials}
             </button>
