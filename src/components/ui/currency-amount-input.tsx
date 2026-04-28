@@ -2,11 +2,11 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 
 /**
- * Input para montos en bolívares con formato venezolano:
+ * Input para montos con formato venezolano:
  * separador de miles `.` y decimal `,`. Ej: "1.485,22".
  *
  * Externamente expone un `number | undefined` con notación estándar
- * (`1485.22`). Reutilizable para cualquier módulo que maneje montos.
+ * (`1485.22`). El prefijo de moneda es configurable (`Bs.` por defecto).
  */
 export type CurrencyAmountInputProps = Omit<
   React.InputHTMLAttributes<HTMLInputElement>,
@@ -15,6 +15,8 @@ export type CurrencyAmountInputProps = Omit<
   value: number | undefined;
   onChange: (value: number | undefined) => void;
   invalid?: boolean;
+  /** Prefijo de moneda mostrado dentro del input. Default: `Bs.`. */
+  currencyPrefix?: string;
 };
 
 const ALLOWED = /[^\d,]/g;
@@ -41,7 +43,7 @@ export const CurrencyAmountInput = React.forwardRef<
   HTMLInputElement,
   CurrencyAmountInputProps
 >(function CurrencyAmountInput(
-  { value, onChange, className, invalid, onBlur, ...rest },
+  { value, onChange, className, invalid, onBlur, currencyPrefix = 'Bs.', ...rest },
   ref,
 ) {
   const [display, setDisplay] = React.useState<string>(() => toVe(value));
@@ -92,7 +94,7 @@ export const CurrencyAmountInput = React.forwardRef<
   return (
     <div className="relative">
       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
-        Bs.
+        {currencyPrefix}
       </span>
       <input
         ref={ref}

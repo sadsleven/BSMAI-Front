@@ -43,6 +43,9 @@ import { ExchangeRateEdit } from './modules/exchange-rates/presentation/pages/Ex
 import { BranchList } from './modules/branches/presentation/pages/BranchList';
 import { BranchCreate } from './modules/branches/presentation/pages/BranchCreate';
 import { BranchEdit } from './modules/branches/presentation/pages/BranchEdit';
+import { OrderList } from './modules/orders/presentation/pages/OrderList';
+import { OrderCreate } from './modules/orders/presentation/pages/OrderCreate';
+import { OrderEdit } from './modules/orders/presentation/pages/OrderEdit';
 
 function App() {
   return (
@@ -129,6 +132,11 @@ function App() {
             <Route index element={<BranchList />} />
             <Route path="create" element={<BranchCreate />} />
             <Route path="edit/:id" element={<BranchEdit />} />
+          </Route>
+          <Route path="orders">
+            <Route index element={<OrderList />} />
+            <Route path="create" element={<OrderCreate />} />
+            <Route path="edit/:id" element={<OrderEdit />} />
           </Route>
         </Route>
 

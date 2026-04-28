@@ -452,6 +452,141 @@ export type CareCenterValues = z.infer<typeof careCenterSchema>;
 // re-export phoneNumberSchema for convenience
 export { phoneNumberSchema };
 
+// ---- Orders ----
+
+const ORDER_TYPES = ['cash', 'credit', 'insurance', 'cashea'] as const;
+const PROVIDER_TYPES = ['doctor', 'care_center'] as const;
+const ORDER_CURRENCIES = ['USD', 'EUR'] as const;
+const PAYMENT_TYPES_ORDER = [
+  'mobile_payment',
+  'bank_transfer',
+  'cash_foreign',
+  'cash_bs',
+  'other',
+] as const;
+
+export const orderPaymentSchema = z
+  .object({
+    id: z.string().uuid().optional(),
+    type: z.enum(PAYMENT_TYPES_ORDER, { error: 'Tipo de pago requerido' }),
+    paymentDate: z.string().min(1, 'Fecha requerida'),
+    referenceNumber: z.string().max(20).optional().or(z.literal('')),
+    bankCode: z.string().max(8).optional().or(z.literal('')),
+    exchangeRateId: z.string().uuid().optional().or(z.literal('')),
+    accountNumber: z.string().max(40).optional().or(z.literal('')),
+    amountCurrency: z.enum(['USD', 'EUR', 'BS'], { error: 'Moneda requerida' }),
+    amountValue: z
+      .number({ error: 'Monto requerido' })
+      .positive('Monto debe ser > 0')
+      .refine((v) => Math.round(v * 100) === v * 100, { message: 'Máximo 2 decimales' }),
+  })
+  .superRefine((val, ctx) => {
+    const trim = (v?: string) => (v ?? '').trim();
+    if (val.type === 'mobile_payment' || val.type === 'bank_transfer') {
+      if (!trim(val.bankCode))
+        ctx.addIssue({ code: 'custom', path: ['bankCode'], message: 'Banco requerido' });
+      if (!trim(val.referenceNumber))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['referenceNumber'],
+          message: 'Referencia requerida',
+        });
+      if (!trim(val.exchangeRateId))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['exchangeRateId'],
+          message: 'Tasa requerida',
+        });
+      if (val.amountCurrency !== 'BS')
+        ctx.addIssue({
+          code: 'custom',
+          path: ['amountCurrency'],
+          message: 'Debe ser BS',
+        });
+    } else if (val.type === 'cash_bs') {
+      if (!trim(val.exchangeRateId))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['exchangeRateId'],
+          message: 'Tasa requerida',
+        });
+      if (val.amountCurrency !== 'BS')
+        ctx.addIssue({
+          code: 'custom',
+          path: ['amountCurrency'],
+          message: 'Debe ser BS',
+        });
+    } else if (val.type === 'other') {
+      if (!trim(val.referenceNumber))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['referenceNumber'],
+          message: 'Referencia requerida',
+        });
+    }
+  });
+export type OrderPaymentValues = z.infer<typeof orderPaymentSchema>;
+
+export const orderSchema = z
+  .object({
+    branchId: z.string().uuid({ message: 'Sucursal requerida' }),
+    type: z.enum(ORDER_TYPES, { error: 'Tipo requerido' }),
+    holderId: z.string().uuid({ message: 'Titular requerido' }),
+    patientId: z.string().uuid({ message: 'Paciente requerido' }),
+    contractorId: z.string().uuid().optional().or(z.literal('')),
+    insuranceId: z.string().uuid().optional().or(z.literal('')),
+    providerType: z.enum(PROVIDER_TYPES, { error: 'Proveedor requerido' }),
+    doctorId: z.string().uuid().optional().or(z.literal('')),
+    careCenterId: z.string().uuid().optional().or(z.literal('')),
+    specialtyId: z.string().uuid({ message: 'Especialidad requerida' }),
+    serviceTypeId: z.string().uuid({ message: 'Tipo de servicio requerido' }),
+    pathologyId: z.string().uuid({ message: 'Patología requerida' }),
+    orderDate: z.string().min(1, 'Fecha de orden requerida'),
+    appointmentDate: z.string().min(1, 'Fecha de atención requerida'),
+    priceCurrency: z.enum(ORDER_CURRENCIES, { error: 'Moneda requerida' }),
+    priceAmount: z
+      .number({ error: 'Monto requerido' })
+      .positive('Debe ser > 0')
+      .refine((v) => Math.round(v * 100) === v * 100, { message: 'Máximo 2 decimales' }),
+    payments: z.array(orderPaymentSchema).max(50).optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.providerType === 'doctor') {
+      if (!val.doctorId)
+        ctx.addIssue({ code: 'custom', path: ['doctorId'], message: 'Doctor requerido' });
+    } else {
+      if (!val.careCenterId)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['careCenterId'],
+          message: 'Centro requerido',
+        });
+    }
+    if (val.type === 'insurance') {
+      if (!val.contractorId)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['contractorId'],
+          message: 'Contratista requerido',
+        });
+      if (!val.insuranceId)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['insuranceId'],
+          message: 'Seguro requerido',
+        });
+    }
+    if (val.orderDate && val.appointmentDate) {
+      if (new Date(val.appointmentDate) < new Date(val.orderDate))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['appointmentDate'],
+          message: 'Fecha de atención debe ser ≥ fecha de orden',
+        });
+    }
+  });
+export type OrderValues = z.infer<typeof orderSchema>;
+
 export const roleSchema = z.object({
   name: z
     .string({ error: 'El nombre del rol es obligatorio' })

@@ -47,4 +47,13 @@ export const PERMISSIONS = {
   CONTRACTORS: buildResource('contractors'),
   EXCHANGE_RATES: buildResource('exchange-rates'),
   BRANCHES: buildResource('branches'),
+  ORDERS: {
+    LIST: 'orders.list',
+    VIEW: 'orders.view',
+    CREATE: 'orders.create',
+    UPDATE: 'orders.update',
+    SOFT_DELETE: 'orders.soft-delete',
+    HARD_DELETE: 'orders.hard-delete',
+    RESTORE: 'orders.restore',
+  },
 } as const;

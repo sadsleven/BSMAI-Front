@@ -70,6 +70,7 @@ Código transversal en `src/lib/` (utilidades), `src/components/ui/` (shadcn), `
 - **`pathologies/`** — CRUD simple de patologías. Endpoint `assignable`.
 - **`service-types/`** — CRUD simple de tipos de servicio. Endpoint `assignable`.
 - **`branches/`** — CRUD sucursales (name único + description + isActive). Endpoint `assignable` para `<BranchMultiSelect>`. Asignación M2M a usuarios; el Super Admin tiene acceso implícito a todas (no se replican filas en `user_branches`). Helper `getUserBranches(currentUser)` en `src/lib/auth/branches.ts` es la única forma correcta de leer las sucursales del usuario actual.
+- **`orders/`** — Paso 1 implementado (registro). Wizard con stepper (5 pasos visibles, pasos 2-5 marcados "Próximamente"). Estados (`draft|in_progress|attended|report_issued|finalized|cancelled`) reemplazan `isActive`. Edición sólo en `draft`. Filtrado por sucursales del usuario (server-side). Última sucursal usada persistida en `localStorage` (`lastBranchId:${userId}`). Sub-recurso pagos (`POST /orders/:id/payments`) con tasa histórica guardada por pago. Componentes `<PatientSearchSelect>` + `<PatientCreateModal>` (patrón "selector + crear inline"), `<ProviderSearchSelect>`, `<OrderPaymentForm>`.
 
 ## HTTP
 

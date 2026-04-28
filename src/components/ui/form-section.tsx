@@ -11,6 +11,11 @@ export type FormSectionProps = {
   footer?: ReactNode;
   className?: string;
   contentClassName?: string;
+  /**
+   * When true, drops `overflow-hidden` on the card so descendant popovers/dropdowns
+   * (custom autocompletes anchored absolute) don't get clipped.
+   */
+  allowOverflow?: boolean;
 };
 
 export function FormSection({
@@ -21,11 +26,13 @@ export function FormSection({
   footer,
   className,
   contentClassName,
+  allowOverflow,
 }: FormSectionProps) {
   return (
     <section
       className={cn(
-        'bg-card rounded-xl border shadow-xs overflow-hidden',
+        'bg-card rounded-xl border shadow-xs',
+        allowOverflow ? 'overflow-visible' : 'overflow-hidden',
         className,
       )}
     >

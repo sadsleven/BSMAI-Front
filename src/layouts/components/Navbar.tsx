@@ -37,7 +37,7 @@ export function Navbar({ onMenuClick }: NavbarProps) {
   };
 
   const handleCreateOrder = () => {
-    notify.info('Módulo de órdenes en construcción.');
+    navigate('/orders/create');
   };
 
   return (

@@ -14,6 +14,7 @@ import {
   Briefcase,
   TrendingUp,
   Building,
+  ClipboardList,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -62,6 +63,12 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
       title: 'Principal',
       items: [
         { icon: Home, label: 'Inicio', href: '/', show: true },
+        {
+          icon: ClipboardList,
+          label: 'Órdenes',
+          href: '/orders',
+          show: has(PERMISSIONS.ORDERS.LIST),
+        },
         {
           icon: UserRound,
           label: 'Pacientes',

@@ -22,3 +22,17 @@ export function userHasBranch(
 ): boolean {
   return getUserBranches(user).some((b) => b.id === branchId);
 }
+
+/**
+ * Última sucursal usada por el usuario actual, persistida por-usuario en localStorage.
+ * Default cuando el usuario tiene varias asignadas y aún no eligió ninguna.
+ */
+export function getLastBranchId(userId: string): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(`lastBranchId:${userId}`);
+}
+
+export function setLastBranchId(userId: string, branchId: string): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(`lastBranchId:${userId}`, branchId);
+}
