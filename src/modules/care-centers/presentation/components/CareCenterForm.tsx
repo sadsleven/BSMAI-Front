@@ -44,7 +44,7 @@ export function CareCenterForm({ existingSpecialties }: CareCenterFormProps) {
   const isActive = watch('isActive') ?? true;
   const phones = watch('phones') ?? [];
   const rif = watch('rif');
-  const name = watch('name');
+  const businessName = watch('businessName');
 
   const phoneErrors = (
     errors.phones as unknown as Array<{ number?: { message?: string } } | undefined>
@@ -75,15 +75,15 @@ export function CareCenterForm({ existingSpecialties }: CareCenterFormProps) {
       >
         <FormGrid>
           <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor="name" className="text-sm font-medium">
-              Nombre <span className="text-destructive">*</span>
+            <Label htmlFor="businessName" className="text-sm font-medium">
+              Razón social <span className="text-destructive">*</span>
             </Label>
             <Input
-              id="name"
-              {...register('name')}
-              className={cn('h-9', invalid('name'))}
+              id="businessName"
+              {...register('businessName')}
+              className={cn('h-9', invalid('businessName'))}
             />
-            <FieldError message={errors.name?.message} />
+            <FieldError message={errors.businessName?.message} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="email" className="text-sm font-medium">
@@ -180,7 +180,7 @@ export function CareCenterForm({ existingSpecialties }: CareCenterFormProps) {
               }
               defaults={{
                 rif: rif || null,
-                fullName: name,
+                fullName: businessName,
                 firstPhone: phones[0]?.number,
               }}
             />

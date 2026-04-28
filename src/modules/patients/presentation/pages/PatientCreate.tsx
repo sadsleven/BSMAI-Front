@@ -8,6 +8,7 @@ import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { patientSchema, type PatientValues } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
 import { ChevronLeft } from 'lucide-react';
+import type { CreatePatientDto } from '../../domain/models/patient';
 
 export function PatientCreate() {
   const navigate = useNavigate();
@@ -16,14 +17,18 @@ export function PatientCreate() {
     resolver: zodResolver(patientSchema),
     mode: 'onBlur',
     defaultValues: {
+      personType: 'natural',
       cedula: '',
       email: '',
       firstName: '',
       lastName: '',
+      businessName: '',
+      rif: '',
       birthDate: '',
       address: '',
       phones: [{ number: '', label: '' }],
       insuranceIds: [],
+      contractorIds: [],
       isActive: true,
     },
   });
@@ -32,11 +37,9 @@ export function PatientCreate() {
 
   const onSubmit = async (values: PatientValues) => {
     try {
-      await patientGateway.create({
-        cedula: values.cedula,
+      const dto: CreatePatientDto = {
+        personType: values.personType,
         email: values.email,
-        firstName: values.firstName,
-        lastName: values.lastName,
         birthDate: values.birthDate,
         address: values.address,
         phones: values.phones.map((p) => ({
@@ -44,8 +47,18 @@ export function PatientCreate() {
           label: p.label || undefined,
         })),
         insuranceIds: values.insuranceIds ?? [],
+        contractorIds: values.contractorIds ?? [],
         isActive: values.isActive,
-      });
+      };
+      if (values.personType === 'natural') {
+        dto.cedula = values.cedula;
+        dto.firstName = values.firstName;
+        dto.lastName = values.lastName;
+      } else {
+        dto.businessName = values.businessName;
+        dto.rif = values.rif;
+      }
+      await patientGateway.create(dto);
       notify.success('Paciente creado exitosamente');
       navigate('/patients');
     } catch (err) {

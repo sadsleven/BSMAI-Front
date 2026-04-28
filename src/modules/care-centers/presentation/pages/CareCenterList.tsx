@@ -45,7 +45,7 @@ import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
 import { notify } from '@/lib/notifications/toast';
 
-type SortBy = 'name' | 'email' | 'rif' | 'createdAt' | 'updatedAt';
+type SortBy = 'businessName' | 'email' | 'rif' | 'createdAt' | 'updatedAt';
 type StatusFilter = 'all' | 'active' | 'inactive';
 type Deletion = 'active' | 'deleted' | 'all';
 
@@ -61,8 +61,8 @@ function readQuery(sp: URLSearchParams) {
   };
 }
 
-function centerInitial(c: Pick<CareCenter, 'name'>) {
-  return c.name?.[0]?.toUpperCase() || 'C';
+function centerInitial(c: Pick<CareCenter, 'businessName'>) {
+  return c.businessName?.[0]?.toUpperCase() || 'C';
 }
 
 function StatusBadge({ c }: { c: CareCenter }) {
@@ -301,12 +301,12 @@ export function CareCenterList() {
             <TableRow className="bg-[oklch(0.985_0.003_250)] hover:bg-[oklch(0.985_0.003_250)]">
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 <SortableHeader<SortBy>
-                  column="name"
+                  column="businessName"
                   activeColumn={filters.sortBy}
                   direction={filters.sortDir}
                   onSort={onSort}
                 >
-                  Centro
+                  Razón social
                 </SortableHeader>
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
@@ -364,7 +364,7 @@ export function CareCenterList() {
                       </div>
                       <div className="min-w-0">
                         <div className="font-semibold text-foreground truncate">
-                          {c.name}
+                          {c.businessName}
                         </div>
                         <div className="text-xs text-muted-foreground truncate">
                           {c.email}
@@ -502,12 +502,12 @@ export function CareCenterList() {
           toggleTarget ? (
             toggleTarget.isActive ? (
               <>
-                El centro <strong>{toggleTarget.name}</strong> dejará de aparecer
+                El centro <strong>{toggleTarget.businessName}</strong> dejará de aparecer
                 como activo en listados y nuevas atenciones.
               </>
             ) : (
               <>
-                El centro <strong>{toggleTarget.name}</strong> volverá a estar
+                El centro <strong>{toggleTarget.businessName}</strong> volverá a estar
                 disponible para registrar atenciones.
               </>
             )
@@ -530,7 +530,7 @@ export function CareCenterList() {
         description={
           restoreTarget ? (
             <>
-              El centro <strong>{restoreTarget.name}</strong> volverá a estar
+              El centro <strong>{restoreTarget.businessName}</strong> volverá a estar
               disponible.
             </>
           ) : null
@@ -557,7 +557,7 @@ export function CareCenterList() {
             description={
               deleteTarget ? (
                 <>
-                  Vas a eliminar <strong>{deleteTarget.name}</strong>. Elegí entre
+                  Vas a eliminar <strong>{deleteTarget.businessName}</strong>. Elegí entre
                   mover a la papelera (reversible) o eliminar permanentemente.
                 </>
               ) : null

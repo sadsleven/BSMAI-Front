@@ -124,25 +124,100 @@ export const adminChangePasswordSchema = (requireCurrent: boolean) =>
       message: 'Las contraseñas nuevas no coinciden',
     });
 
-export const patientSchema = z.object({
-  cedula: cedulaSchema,
-  email: emailSchema,
-  firstName: nameSchema('El nombre'),
-  lastName: nameSchema('El apellido'),
-  birthDate: z
-    .string({ error: 'La fecha de nacimiento es obligatoria' })
-    .min(1, 'La fecha de nacimiento es obligatoria'),
-  address: z
-    .string({ error: 'La dirección es obligatoria' })
-    .min(3, 'La dirección debe tener al menos 3 caracteres')
-    .max(500, 'La dirección no puede superar 500 caracteres'),
-  phones: phonesArraySchema,
-  insuranceIds: z
-    .array(z.string().uuid())
-    .max(50, 'Máximo 50 seguros por paciente')
-    .optional(),
-  isActive: z.boolean().optional(),
-});
+/**
+ * Paciente: persona natural o jurídica.
+ *
+ * - `natural` exige cédula + firstName + lastName.
+ * - `legal_entity` exige businessName + RIF.
+ *
+ * Cross-validation con superRefine. Los campos del tipo opuesto no se envían
+ * al backend (ver Form), pero el schema deja todos opcionales para no chocar
+ * con resets parciales mientras el usuario cambia de tipo.
+ */
+export const patientSchema = z
+  .object({
+    personType: z.enum(['natural', 'legal_entity'], {
+      error: 'Seleccioná un tipo de persona',
+    }),
+    cedula: z.string().optional().or(z.literal('')),
+    firstName: z.string().optional().or(z.literal('')),
+    lastName: z.string().optional().or(z.literal('')),
+    businessName: z.string().optional().or(z.literal('')),
+    rif: z.string().optional().or(z.literal('')),
+    email: emailSchema,
+    birthDate: z
+      .string({ error: 'La fecha de nacimiento es obligatoria' })
+      .min(1, 'La fecha de nacimiento es obligatoria'),
+    address: z
+      .string({ error: 'La dirección es obligatoria' })
+      .min(3, 'La dirección debe tener al menos 3 caracteres')
+      .max(500, 'La dirección no puede superar 500 caracteres'),
+    phones: phonesArraySchema,
+    insuranceIds: z
+      .array(z.string().uuid())
+      .max(50, 'Máximo 50 seguros por paciente')
+      .optional(),
+    contractorIds: z
+      .array(z.string().uuid())
+      .max(50, 'Máximo 50 contratistas por paciente')
+      .optional(),
+    isActive: z.boolean().optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.personType === 'natural') {
+      if (!val.cedula) {
+        ctx.addIssue({ code: 'custom', path: ['cedula'], message: 'La cédula es obligatoria' });
+      } else if (!/^[VE]-\d{1,2}\.\d{3}\.\d{3}$/.test(val.cedula)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['cedula'],
+          message: 'Formato inválido. Ej: V-12.345.678',
+        });
+      }
+      const NAME_RE = /^[A-Za-zÁÉÍÓÚáéíóúÑñ\s]+$/;
+      if (!val.firstName) {
+        ctx.addIssue({ code: 'custom', path: ['firstName'], message: 'El nombre es obligatorio' });
+      } else if (!NAME_RE.test(val.firstName)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['firstName'],
+          message: 'El nombre solo admite letras y espacios',
+        });
+      }
+      if (!val.lastName) {
+        ctx.addIssue({ code: 'custom', path: ['lastName'], message: 'El apellido es obligatorio' });
+      } else if (!NAME_RE.test(val.lastName)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['lastName'],
+          message: 'El apellido solo admite letras y espacios',
+        });
+      }
+    } else {
+      if (!val.businessName) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['businessName'],
+          message: 'La razón social es obligatoria',
+        });
+      } else if (val.businessName.length > 200) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['businessName'],
+          message: 'Máximo 200 caracteres',
+        });
+      }
+      if (!val.rif) {
+        ctx.addIssue({ code: 'custom', path: ['rif'], message: 'El RIF es obligatorio' });
+      } else if (!/^[JGVE]-\d{1,2}\.\d{3}\.\d{3}-\d$/.test(val.rif)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['rif'],
+          message: 'Formato inválido. Ej: J-12.345.678-9',
+        });
+      }
+    }
+  });
 export type PatientValues = z.infer<typeof patientSchema>;
 
 // Re-export VE schemas for convenience
@@ -179,6 +254,43 @@ export type PathologyValues = z.infer<typeof pathologySchema>;
 
 export const serviceTypeSchema = simpleNamedSchema(200);
 export type ServiceTypeValues = z.infer<typeof serviceTypeSchema>;
+
+/**
+ * Contractor name. Reglas relajadas a propósito: cualquier carácter permitido
+ * (números, símbolos, etc.). Distinto a `nameSchema` de personas.
+ */
+export const contractorSchema = z.object({
+  name: z
+    .string({ error: 'El nombre es obligatorio' })
+    .min(1, 'El nombre es obligatorio')
+    .max(200, 'El nombre no puede superar 200 caracteres'),
+  description: z
+    .string()
+    .max(500, 'La descripción no puede superar 500 caracteres')
+    .optional(),
+  isActive: z.boolean().optional(),
+});
+export type ContractorValues = z.infer<typeof contractorSchema>;
+
+/**
+ * ExchangeRate. `amountBs` es el monto numérico (no string formateado VE);
+ * el FE convierte 485,22 → 485.22 antes de enviarlo. 2 decimales máx.
+ */
+export const exchangeRateSchema = z.object({
+  currency: z.enum(['USD', 'EUR'], { error: 'Seleccioná una moneda' }),
+  amountBs: z
+    .number({ error: 'El monto es obligatorio' })
+    .positive('El monto debe ser mayor a 0')
+    .max(999_999_999.99, 'Monto excede el máximo permitido')
+    .refine((v) => Math.round(v * 100) === v * 100, {
+      message: 'Máximo 2 decimales',
+    }),
+  effectiveDate: z
+    .string({ error: 'La fecha efectiva es obligatoria' })
+    .min(1, 'La fecha efectiva es obligatoria'),
+  isActive: z.boolean().optional(),
+});
+export type ExchangeRateValues = z.infer<typeof exchangeRateSchema>;
 
 export const insuranceSchema = z.object({
   name: z
@@ -316,10 +428,10 @@ export const doctorSchema = z
 export type DoctorValues = z.infer<typeof doctorSchema>;
 
 export const careCenterSchema = z.object({
-  name: z
-    .string({ error: 'El nombre es obligatorio' })
-    .min(2, 'El nombre debe tener al menos 2 caracteres')
-    .max(200, 'El nombre no puede superar 200 caracteres'),
+  businessName: z
+    .string({ error: 'La razón social es obligatoria' })
+    .min(2, 'La razón social debe tener al menos 2 caracteres')
+    .max(200, 'La razón social no puede superar 200 caracteres'),
   email: emailSchema,
   rif: rifSchema,
   phones: phonesArraySchema,

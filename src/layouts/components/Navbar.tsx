@@ -14,6 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { ExchangeRatesBadge } from './ExchangeRatesBadge';
 
 export type NavbarProps = {
   onMenuClick?: () => void;
@@ -89,6 +90,7 @@ export function Navbar({ onMenuClick }: NavbarProps) {
         >
           <Plus className="w-5 h-5" />
         </Button>
+        <ExchangeRatesBadge />
         <button
           type="button"
           className="relative w-10 h-10 rounded-full hover:bg-muted transition-colors flex items-center justify-center shrink-0"

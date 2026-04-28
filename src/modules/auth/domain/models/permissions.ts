@@ -44,4 +44,6 @@ export const PERMISSIONS = {
   INSURANCES: buildResource('insurances'),
   PATHOLOGIES: buildResource('pathologies'),
   SERVICE_TYPES: buildResource('service-types'),
+  CONTRACTORS: buildResource('contractors'),
+  EXCHANGE_RATES: buildResource('exchange-rates'),
 } as const;

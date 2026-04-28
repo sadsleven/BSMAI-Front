@@ -23,7 +23,7 @@ export interface CareCenterPaymentMethod {
 
 export interface CareCenter {
   id: string;
-  name: string;
+  businessName: string;
   email: string;
   rif: string;
   isActive: boolean;
@@ -36,7 +36,7 @@ export interface CareCenter {
 }
 
 export interface CreateCareCenterDto {
-  name: string;
+  businessName: string;
   email: string;
   rif: string;
   phones: { number: string; label?: string }[];
@@ -51,7 +51,7 @@ export interface CareCentersQuery {
   page?: number;
   limit?: number;
   search?: string;
-  sortBy?: 'name' | 'email' | 'rif' | 'createdAt' | 'updatedAt';
+  sortBy?: 'businessName' | 'email' | 'rif' | 'createdAt' | 'updatedAt';
   sortDir?: 'ASC' | 'DESC';
   withDeleted?: boolean;
   onlyDeleted?: boolean;

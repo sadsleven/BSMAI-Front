@@ -3,8 +3,10 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { FormProvider, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { patientGateway } from '../../infrastructure/patientGateway';
-import { fullName } from '../../domain/models/patient';
+import { displayName } from '../../domain/models/patient';
+import type { UpdatePatientDto } from '../../domain/models/patient';
 import type { Insurance } from '@/modules/insurances/domain/models/insurance';
+import type { Contractor } from '@/modules/contractors/domain/models/contractor';
 import { Button } from '@/components/ui/button';
 import { PatientForm } from '../components/PatientForm';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
@@ -16,21 +18,26 @@ export function PatientEdit() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [fetching, setFetching] = useState(true);
-  const [displayName, setDisplayName] = useState('');
+  const [headerLabel, setHeaderLabel] = useState('');
   const [existingInsurances, setExistingInsurances] = useState<Insurance[]>([]);
+  const [existingContractors, setExistingContractors] = useState<Contractor[]>([]);
 
   const methods = useForm<PatientValues>({
     resolver: zodResolver(patientSchema),
     mode: 'onBlur',
     defaultValues: {
+      personType: 'natural',
       cedula: '',
       email: '',
       firstName: '',
       lastName: '',
+      businessName: '',
+      rif: '',
       birthDate: '',
       address: '',
       phones: [{ number: '', label: '' }],
       insuranceIds: [],
+      contractorIds: [],
       isActive: true,
     },
   });
@@ -41,10 +48,13 @@ export function PatientEdit() {
       try {
         const p = await patientGateway.getById(id);
         methods.reset({
-          cedula: p.cedula,
+          personType: p.personType,
+          cedula: p.cedula ?? '',
           email: p.email,
-          firstName: p.firstName,
-          lastName: p.lastName,
+          firstName: p.firstName ?? '',
+          lastName: p.lastName ?? '',
+          businessName: p.businessName ?? '',
+          rif: p.rif ?? '',
           birthDate: p.birthDate,
           address: p.address,
           phones:
@@ -52,10 +62,12 @@ export function PatientEdit() {
               ? p.phones.map((ph) => ({ number: ph.number, label: ph.label ?? '' }))
               : [{ number: '', label: '' }],
           insuranceIds: (p.insurances ?? []).map((i) => i.id),
+          contractorIds: (p.contractors ?? []).map((c) => c.id),
           isActive: p.isActive,
         });
-        setDisplayName(fullName(p));
+        setHeaderLabel(displayName(p));
         setExistingInsurances(p.insurances ?? []);
+        setExistingContractors(p.contractors ?? []);
       } catch (e) {
         notify.fromError(e, 'No se pudo cargar el paciente.');
       } finally {
@@ -68,11 +80,9 @@ export function PatientEdit() {
   const onSubmit = async (values: PatientValues) => {
     if (!id) return;
     try {
-      await patientGateway.update(id, {
-        cedula: values.cedula,
+      const dto: UpdatePatientDto = {
+        personType: values.personType,
         email: values.email,
-        firstName: values.firstName,
-        lastName: values.lastName,
         birthDate: values.birthDate,
         address: values.address,
         phones: values.phones.map((p) => ({
@@ -80,8 +90,18 @@ export function PatientEdit() {
           label: p.label || undefined,
         })),
         insuranceIds: values.insuranceIds ?? [],
+        contractorIds: values.contractorIds ?? [],
         isActive: values.isActive,
-      });
+      };
+      if (values.personType === 'natural') {
+        dto.cedula = values.cedula;
+        dto.firstName = values.firstName;
+        dto.lastName = values.lastName;
+      } else {
+        dto.businessName = values.businessName;
+        dto.rif = values.rif;
+      }
+      await patientGateway.update(id, dto);
       notify.success('Paciente actualizado');
       navigate('/patients');
     } catch (err) {
@@ -103,7 +123,7 @@ export function PatientEdit() {
               <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">
                 Editar paciente
               </h1>
-              {displayName && <p className="text-sm text-muted-foreground">{displayName}</p>}
+              {headerLabel && <p className="text-sm text-muted-foreground">{headerLabel}</p>}
             </div>
             <button
               type="button"
@@ -114,7 +134,10 @@ export function PatientEdit() {
             </button>
           </div>
 
-          <PatientForm existingInsurances={existingInsurances} />
+          <PatientForm
+            existingInsurances={existingInsurances}
+            existingContractors={existingContractors}
+          />
 
           <div className="flex items-center justify-between gap-3 pt-2">
             <p className="text-xs text-muted-foreground">

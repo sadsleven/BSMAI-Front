@@ -1,19 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { usePatientStore } from '../../domain/store/patientStore';
-import { patientGateway } from '../../infrastructure/patientGateway';
-import {
-  displayName,
-  displayIdentifier,
-  patientInitials,
-  type PersonType,
-  type Patient,
-} from '../../domain/models/patient';
-import { insuranceGateway } from '@/modules/insurances/infrastructure/insuranceGateway';
-import type { Insurance } from '@/modules/insurances/domain/models/insurance';
-import { contractorGateway } from '@/modules/contractors/infrastructure/contractorGateway';
-import type { Contractor } from '@/modules/contractors/domain/models/contractor';
-import { Badge } from '@/components/ui/badge';
+import { useExchangeRateStore } from '../../domain/store/exchangeRateStore';
+import { exchangeRateGateway } from '../../infrastructure/exchangeRateGateway';
+import type { Currency, ExchangeRate } from '../../domain/models/exchangeRate';
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -48,107 +37,78 @@ import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
-import { Plus, Pencil, Trash2, Power, Undo2, UserRound, Eye } from 'lucide-react';
-import { PatientDetail } from '../components/PatientDetail';
+import { Plus, Pencil, Trash2, Power, TrendingUp, Undo2, Eye } from 'lucide-react';
 import { Can } from '@/modules/auth/presentation/components/Can';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
 import { notify } from '@/lib/notifications/toast';
+import { cn } from '@/lib/utils';
+import { ExchangeRateDetail } from '../components/ExchangeRateDetail';
+import { formatBs } from '../utils/format';
 
-type SortBy =
-  | 'firstName'
-  | 'lastName'
-  | 'businessName'
-  | 'cedula'
-  | 'rif'
-  | 'email'
-  | 'createdAt'
-  | 'updatedAt';
-type StatusFilter = 'all' | 'active' | 'inactive';
+type SortBy = 'effectiveDate' | 'amountBs' | 'currency' | 'createdAt' | 'updatedAt';
 type Deletion = 'active' | 'deleted' | 'all';
-type PersonTypeFilter = 'all' | PersonType;
+type StatusFilter = 'all' | 'active' | 'inactive';
+type CurrencyFilter = Currency | 'all';
 
 function readQuery(sp: URLSearchParams) {
   return {
     page: Number(sp.get('page') ?? 1) || 1,
     limit: Number(sp.get('limit') ?? 10) || 10,
-    search: sp.get('search') ?? '',
     status: (sp.get('status') as StatusFilter) ?? 'all',
     deletion: (sp.get('deletion') as Deletion) ?? 'active',
-    insuranceId: sp.get('insuranceId') ?? '',
-    contractorId: sp.get('contractorId') ?? '',
-    personType: (sp.get('personType') as PersonTypeFilter) ?? 'all',
-    sortBy: (sp.get('sortBy') as SortBy) ?? 'createdAt',
+    currency: (sp.get('currency') as CurrencyFilter) ?? 'all',
+    sortBy: (sp.get('sortBy') as SortBy) ?? 'effectiveDate',
     sortDir: ((sp.get('sortDir') as SortDir) ?? 'DESC') as SortDir,
   };
 }
 
-function StatusBadge({ p }: { p: Patient }) {
-  if (p.deletedAt)
+function StatusBadge({ r }: { r: ExchangeRate }) {
+  if (r.deletedAt)
     return (
       <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-destructive-soft text-destructive text-xs font-medium">
         <span className="w-1.5 h-1.5 rounded-full bg-destructive" /> En papelera
       </span>
     );
-  if (p.isActive)
+  if (!r.isActive)
     return (
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-success-soft text-success text-xs font-medium">
-        <span className="w-1.5 h-1.5 rounded-full bg-success" /> Habilitado
+      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-warning-soft text-warning text-xs font-medium">
+        <span className="w-1.5 h-1.5 rounded-full bg-warning" /> Deshabilitada
       </span>
     );
   return (
-    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-warning-soft text-warning text-xs font-medium">
-      <span className="w-1.5 h-1.5 rounded-full bg-warning" /> Deshabilitado
+    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-success-soft text-success text-xs font-medium">
+      <span className="w-1.5 h-1.5 rounded-full bg-success" /> Habilitada
     </span>
   );
 }
 
-export function PatientList() {
-  const { patients, metadata, isLoading, error, setQuery, fetch, remove } =
-    usePatientStore();
+export function ExchangeRateList() {
+  const { rates, metadata, isLoading, error, setQuery, fetch, remove } =
+    useExchangeRateStore();
   const { has } = usePermissions();
   const [sp, setSp] = useSearchParams();
   const filters = useMemo(() => readQuery(sp), [sp]);
-  const [searchInput, setSearchInput] = useState(filters.search);
-  const [deleteTarget, setDeleteTarget] = useState<Patient | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ExchangeRate | null>(null);
   const [hardConfirm, setHardConfirm] = useState(0);
   const [actionLoading, setActionLoading] = useState(false);
-  const [toggleTarget, setToggleTarget] = useState<Patient | null>(null);
-  const [restoreTarget, setRestoreTarget] = useState<Patient | null>(null);
+  const [toggleTarget, setToggleTarget] = useState<ExchangeRate | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<ExchangeRate | null>(null);
   const [viewTargetId, setViewTargetId] = useState<string | null>(null);
-  const [insurances, setInsurances] = useState<Insurance[]>([]);
-  const [contractors, setContractors] = useState<Contractor[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all([
-      insuranceGateway.listAssignable().catch(() => [] as Insurance[]),
-      contractorGateway.listAssignable().catch(() => [] as Contractor[]),
-    ]).then(([ins, ctr]) => {
-      if (cancelled) return;
-      setInsurances(ins);
-      setContractors(ctr);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const canSeeDeleted =
-    has(PERMISSIONS.PATIENTS.HARD_DELETE) || has(PERMISSIONS.PATIENTS.RESTORE);
+    has(PERMISSIONS.EXCHANGE_RATES.HARD_DELETE) ||
+    has(PERMISSIONS.EXCHANGE_RATES.RESTORE);
 
   useEffect(() => {
     setQuery({
       page: filters.page,
       limit: filters.limit,
-      search: filters.search || undefined,
       isActive:
         filters.status === 'all' ? undefined : filters.status === 'active' ? true : false,
       withDeleted: filters.deletion === 'all',
       onlyDeleted: filters.deletion === 'deleted',
-      insuranceId: filters.insuranceId || undefined,
-      contractorId: filters.contractorId || undefined,
-      personType: filters.personType === 'all' ? undefined : filters.personType,
+      currency: filters.currency === 'all' ? undefined : filters.currency,
       sortBy: filters.sortBy,
       sortDir: filters.sortDir,
     });
@@ -156,29 +116,14 @@ export function PatientList() {
   }, [
     filters.page,
     filters.limit,
-    filters.search,
     filters.status,
     filters.deletion,
-    filters.insuranceId,
-    filters.contractorId,
-    filters.personType,
+    filters.currency,
     filters.sortBy,
     filters.sortDir,
     setQuery,
     fetch,
   ]);
-
-  useEffect(() => {
-    const t = setTimeout(() => {
-      if (searchInput === filters.search) return;
-      const next = new URLSearchParams(sp);
-      if (searchInput) next.set('search', searchInput);
-      else next.delete('search');
-      next.set('page', '1');
-      setSp(next, { replace: true });
-    }, 300);
-    return () => clearTimeout(t);
-  }, [searchInput, filters.search, sp, setSp]);
 
   const updateParam = (patch: Record<string, string | undefined>, resetPage = true) => {
     const next = new URLSearchParams(sp);
@@ -195,15 +140,11 @@ export function PatientList() {
   const onPage = (page: number) => updateParam({ page: String(page) }, false);
 
   const hasActiveFilters =
-    Boolean(filters.search) ||
     filters.status !== 'all' ||
     filters.deletion !== 'active' ||
-    Boolean(filters.insuranceId) ||
-    Boolean(filters.contractorId) ||
-    filters.personType !== 'all';
+    filters.currency !== 'all';
 
   const clearFilters = () => {
-    setSearchInput('');
     setSp(new URLSearchParams(), { replace: true });
   };
 
@@ -211,8 +152,8 @@ export function PatientList() {
     if (!toggleTarget) return;
     try {
       setActionLoading(true);
-      await patientGateway.toggleActive(toggleTarget.id);
-      notify.success(`Paciente ${toggleTarget.isActive ? 'deshabilitado' : 'habilitado'}`);
+      await exchangeRateGateway.toggleActive(toggleTarget.id);
+      notify.success(`Tasa ${toggleTarget.isActive ? 'deshabilitada' : 'habilitada'}`);
       setToggleTarget(null);
       await fetch();
     } catch (e) {
@@ -226,12 +167,12 @@ export function PatientList() {
     if (!restoreTarget) return;
     try {
       setActionLoading(true);
-      await patientGateway.restore(restoreTarget.id);
-      notify.success('Paciente restaurado');
+      await exchangeRateGateway.restore(restoreTarget.id);
+      notify.success('Tasa restaurada');
       setRestoreTarget(null);
       await fetch();
     } catch (e) {
-      notify.fromError(e, 'No se pudo restaurar el paciente.');
+      notify.fromError(e, 'No se pudo restaurar la tasa.');
     } finally {
       setActionLoading(false);
     }
@@ -241,13 +182,13 @@ export function PatientList() {
     if (!deleteTarget) return;
     try {
       setActionLoading(true);
-      await patientGateway.softDelete(deleteTarget.id);
+      await exchangeRateGateway.softDelete(deleteTarget.id);
       remove(deleteTarget.id);
-      notify.success('Paciente movido a la papelera');
+      notify.success('Tasa movida a la papelera');
       setDeleteTarget(null);
       await fetch();
     } catch (e) {
-      notify.fromError(e, 'No se pudo eliminar el paciente.');
+      notify.fromError(e, 'No se pudo eliminar la tasa.');
     } finally {
       setActionLoading(false);
     }
@@ -261,14 +202,14 @@ export function PatientList() {
     }
     try {
       setActionLoading(true);
-      await patientGateway.hardDelete(deleteTarget.id);
+      await exchangeRateGateway.hardDelete(deleteTarget.id);
       remove(deleteTarget.id);
-      notify.success('Paciente eliminado permanentemente');
+      notify.success('Tasa eliminada permanentemente');
       setDeleteTarget(null);
       setHardConfirm(0);
       await fetch();
     } catch (e) {
-      notify.fromError(e, 'No se pudo eliminar el paciente.');
+      notify.fromError(e, 'No se pudo eliminar la tasa.');
     } finally {
       setActionLoading(false);
     }
@@ -280,17 +221,17 @@ export function PatientList() {
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div className="space-y-1">
           <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">
-            Pacientes
+            Tasas de cambio
           </h1>
           <p className="text-sm text-muted-foreground">
-            {metadata.total.toLocaleString()} pacientes en total
+            {metadata.total.toLocaleString()} tasas en total
           </p>
         </div>
-        <Can permission={PERMISSIONS.PATIENTS.CREATE}>
-          <Link to="/patients/create">
+        <Can permission={PERMISSIONS.EXCHANGE_RATES.CREATE}>
+          <Link to="/exchange-rates/create">
             <Button>
               <Plus className="w-4 h-4 mr-1.5" />
-              Nuevo paciente
+              Nueva tasa
             </Button>
           </Link>
         </Can>
@@ -298,60 +239,21 @@ export function PatientList() {
 
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
-          searchValue={searchInput}
-          onSearchChange={setSearchInput}
-          searchPlaceholder="Buscar por nombre, cédula o email…"
           hasActiveFilters={hasActiveFilters}
           onClear={clearFilters}
           filters={
             <>
               <Select
-                value={filters.personType}
-                onValueChange={(v) => updateParam({ personType: v })}
+                value={filters.currency}
+                onValueChange={(v) => updateParam({ currency: v === 'all' ? undefined : v })}
               >
                 <SelectTrigger className="h-9 w-44">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Tipo: todos</SelectItem>
-                  <SelectItem value="natural">Natural</SelectItem>
-                  <SelectItem value="legal_entity">Jurídico</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select
-                value={filters.insuranceId || 'all'}
-                onValueChange={(v) =>
-                  updateParam({ insuranceId: v === 'all' ? undefined : v })
-                }
-              >
-                <SelectTrigger className="h-9 w-56">
-                  <SelectValue placeholder="Seguro: todos" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Seguro: todos</SelectItem>
-                  {insurances.map((i) => (
-                    <SelectItem key={i.id} value={i.id}>
-                      {i.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                value={filters.contractorId || 'all'}
-                onValueChange={(v) =>
-                  updateParam({ contractorId: v === 'all' ? undefined : v })
-                }
-              >
-                <SelectTrigger className="h-9 w-56">
-                  <SelectValue placeholder="Contratista: todos" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Contratista: todos</SelectItem>
-                  {contractors.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="all">Todas las monedas</SelectItem>
+                  <SelectItem value="USD">USD</SelectItem>
+                  <SelectItem value="EUR">EUR</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={filters.status} onValueChange={(v) => updateParam({ status: v })}>
@@ -359,9 +261,9 @@ export function PatientList() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Estado: todos</SelectItem>
-                  <SelectItem value="active">Solo habilitados</SelectItem>
-                  <SelectItem value="inactive">Solo deshabilitados</SelectItem>
+                  <SelectItem value="all">Estado: todas</SelectItem>
+                  <SelectItem value="active">Solo habilitadas</SelectItem>
+                  <SelectItem value="inactive">Solo deshabilitadas</SelectItem>
                 </SelectContent>
               </Select>
               {canSeeDeleted ? (
@@ -373,9 +275,9 @@ export function PatientList() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="active">Activos</SelectItem>
+                    <SelectItem value="active">Activas</SelectItem>
                     <SelectItem value="deleted">En papelera</SelectItem>
-                    <SelectItem value="all">Todos</SelectItem>
+                    <SelectItem value="all">Todas</SelectItem>
                   </SelectContent>
                 </Select>
               ) : null}
@@ -394,29 +296,33 @@ export function PatientList() {
             <TableRow className="bg-[oklch(0.985_0.003_250)] hover:bg-[oklch(0.985_0.003_250)]">
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 <SortableHeader<SortBy>
-                  column="firstName"
+                  column="currency"
                   activeColumn={filters.sortBy}
                   direction={filters.sortDir}
                   onSort={onSort}
                 >
-                  Paciente
+                  Moneda
                 </SortableHeader>
-              </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                Tipo
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 <SortableHeader<SortBy>
-                  column="cedula"
+                  column="amountBs"
                   activeColumn={filters.sortBy}
                   direction={filters.sortDir}
                   onSort={onSort}
                 >
-                  Identificación
+                  Monto (Bs.)
                 </SortableHeader>
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                Teléfono
+                <SortableHeader<SortBy>
+                  column="effectiveDate"
+                  activeColumn={filters.sortBy}
+                  direction={filters.sortDir}
+                  onSort={onSort}
+                >
+                  Fecha efectiva
+                </SortableHeader>
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Estado
@@ -428,17 +334,17 @@ export function PatientList() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <SkeletonTableRows rows={5} columns={6} />
-            ) : patients.length === 0 ? (
+              <SkeletonTableRows rows={5} columns={5} />
+            ) : rates.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="p-0">
+                <TableCell colSpan={5} className="p-0">
                   <EmptyState
-                    icon={UserRound}
-                    title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay pacientes'}
+                    icon={TrendingUp}
+                    title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay tasas de cambio'}
                     description={
                       hasActiveFilters
                         ? 'Ajustá los filtros para ver más resultados.'
-                        : 'Creá el primer paciente para empezar a registrar atenciones.'
+                        : 'Creá la primera tasa de cambio.'
                     }
                     action={
                       hasActiveFilters ? (
@@ -451,73 +357,51 @@ export function PatientList() {
                 </TableCell>
               </TableRow>
             ) : (
-              patients.map((p) => (
-                <TableRow key={p.id} className="hover:bg-[oklch(0.985_0.003_250)]">
+              rates.map((r) => (
+                <TableRow key={r.id} className="hover:bg-[oklch(0.985_0.003_250)]">
                   <TableCell className="py-3.5 px-4">
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand-cyan to-brand-blue flex items-center justify-center text-white text-xs font-bold shrink-0">
-                        {patientInitials(p)}
+                      <div className="w-8 h-8 rounded-lg bg-brand-cyan-soft text-brand-cyan-strong flex items-center justify-center shrink-0">
+                        <TrendingUp className="w-4 h-4" />
                       </div>
-                      <div className="min-w-0">
-                        <div className="font-semibold text-foreground truncate">
-                          {displayName(p)}
-                        </div>
-                        <div className="text-xs text-muted-foreground truncate">{p.email}</div>
-                        {p.insurances?.length ? (
-                          <div className="flex flex-wrap gap-1 mt-1 max-w-[280px]">
-                            {p.insurances.slice(0, 2).map((i) => (
-                              <Badge
-                                key={i.id}
-                                variant="outline"
-                                className="text-[10px] py-0 px-1.5"
-                              >
-                                {i.name}
-                              </Badge>
-                            ))}
-                            {p.insurances.length > 2 && (
-                              <span className="text-[10px] text-muted-foreground self-center">
-                                +{p.insurances.length - 2}
-                              </span>
-                            )}
-                          </div>
-                        ) : null}
-                      </div>
+                      <span className="font-semibold text-foreground">{r.currency}</span>
                     </div>
                   </TableCell>
-                  <TableCell className="py-3.5 px-4">
-                    <Badge variant="outline" className="text-xs">
-                      {p.personType === 'legal_entity' ? 'Jurídico' : 'Natural'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="py-3.5 px-4 text-sm font-mono text-muted-foreground">
-                    {displayIdentifier(p) || '—'}
+                  <TableCell className="py-3.5 px-4 text-sm font-mono">
+                    {formatBs(r.amountBs)}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm text-muted-foreground">
-                    {p.phones?.[0]?.number ?? '—'}
+                    {new Date(r.effectiveDate).toLocaleString('es-VE', {
+                      year: 'numeric',
+                      month: '2-digit',
+                      day: '2-digit',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
                   </TableCell>
                   <TableCell className="py-3.5 px-4">
-                    <StatusBadge p={p} />
+                    <StatusBadge r={r} />
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-right">
                     <div className="inline-flex items-center gap-0.5">
-                      <Can permission={PERMISSIONS.PATIENTS.VIEW}>
+                      <Can permission={PERMISSIONS.EXCHANGE_RATES.VIEW}>
                         <Button
                           variant="ghost"
                           size="icon"
                           title="Ver detalle"
-                          onClick={() => setViewTargetId(p.id)}
+                          onClick={() => setViewTargetId(r.id)}
                           className="w-8 h-8"
                         >
                           <Eye className="w-4 h-4" />
                         </Button>
                       </Can>
-                      {p.deletedAt ? (
-                        <Can permission={PERMISSIONS.PATIENTS.RESTORE}>
+                      {r.deletedAt ? (
+                        <Can permission={PERMISSIONS.EXCHANGE_RATES.RESTORE}>
                           <Button
                             variant="ghost"
                             size="icon"
                             title="Restaurar"
-                            onClick={() => setRestoreTarget(p)}
+                            onClick={() => setRestoreTarget(r)}
                             disabled={actionLoading}
                             className="w-8 h-8"
                           >
@@ -526,24 +410,19 @@ export function PatientList() {
                         </Can>
                       ) : (
                         <>
-                          <Can permission={PERMISSIONS.PATIENTS.UPDATE}>
-                            <Link to={`/patients/edit/${p.id}`}>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                title="Editar"
-                                className="w-8 h-8"
-                              >
+                          <Can permission={PERMISSIONS.EXCHANGE_RATES.UPDATE}>
+                            <Link to={`/exchange-rates/edit/${r.id}`}>
+                              <Button variant="ghost" size="icon" title="Editar" className="w-8 h-8">
                                 <Pencil className="w-4 h-4" />
                               </Button>
                             </Link>
                           </Can>
-                          <Can permission={PERMISSIONS.PATIENTS.TOGGLE_ACTIVE}>
+                          <Can permission={PERMISSIONS.EXCHANGE_RATES.TOGGLE_ACTIVE}>
                             <Button
                               variant="ghost"
                               size="icon"
-                              title={p.isActive ? 'Deshabilitar' : 'Habilitar'}
-                              onClick={() => setToggleTarget(p)}
+                              title={r.isActive ? 'Deshabilitar' : 'Habilitar'}
+                              onClick={() => setToggleTarget(r)}
                               disabled={actionLoading}
                               className="w-8 h-8"
                             >
@@ -552,17 +431,19 @@ export function PatientList() {
                           </Can>
                           <Can
                             anyOf={[
-                              PERMISSIONS.PATIENTS.SOFT_DELETE,
-                              PERMISSIONS.PATIENTS.HARD_DELETE,
+                              PERMISSIONS.EXCHANGE_RATES.SOFT_DELETE,
+                              PERMISSIONS.EXCHANGE_RATES.HARD_DELETE,
                             ]}
                           >
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="w-8 h-8 text-destructive hover:bg-destructive-soft hover:text-destructive"
+                              className={cn(
+                                'w-8 h-8 text-destructive hover:bg-destructive-soft hover:text-destructive',
+                              )}
                               title="Eliminar"
                               onClick={() => {
-                                setDeleteTarget(p);
+                                setDeleteTarget(r);
                                 setHardConfirm(0);
                               }}
                             >
@@ -585,7 +466,7 @@ export function PatientList() {
           total={metadata.total}
           lastPage={metadata.lastPage}
           onPageChange={onPage}
-          itemLabel="pacientes"
+          itemLabel="tasas"
         />
       </div>
 
@@ -596,20 +477,13 @@ export function PatientList() {
         }}
         tone={toggleTarget?.isActive ? 'warning' : 'success'}
         icon={Power}
-        title={toggleTarget?.isActive ? '¿Deshabilitar paciente?' : '¿Habilitar paciente?'}
+        title={toggleTarget?.isActive ? '¿Deshabilitar tasa?' : '¿Habilitar tasa?'}
         description={
           toggleTarget ? (
-            toggleTarget.isActive ? (
-              <>
-                El paciente <strong>{displayName(toggleTarget)}</strong> dejará de aparecer
-                como activo en listados y nuevas atenciones.
-              </>
-            ) : (
-              <>
-                El paciente <strong>{displayName(toggleTarget)}</strong> volverá a estar
-                disponible para registrar atenciones.
-              </>
-            )
+            <>
+              La tasa <strong>{toggleTarget.currency}</strong> del{' '}
+              {new Date(toggleTarget.effectiveDate).toLocaleString('es-VE')} cambiará de estado.
+            </>
           ) : null
         }
         confirmLabel={toggleTarget?.isActive ? 'Deshabilitar' : 'Habilitar'}
@@ -625,12 +499,12 @@ export function PatientList() {
         }}
         tone="success"
         icon={Undo2}
-        title="¿Restaurar paciente?"
+        title="¿Restaurar tasa?"
         description={
           restoreTarget ? (
             <>
-              El paciente <strong>{displayName(restoreTarget)}</strong> volverá a estar
-              disponible.
+              La tasa <strong>{restoreTarget.currency}</strong> del{' '}
+              {new Date(restoreTarget.effectiveDate).toLocaleString('es-VE')} volverá a estar disponible.
             </>
           ) : null
         }
@@ -652,12 +526,12 @@ export function PatientList() {
           <DialogIconHeader
             tone="destructive"
             icon={Trash2}
-            title="¿Eliminar paciente?"
+            title="¿Eliminar tasa?"
             description={
               deleteTarget ? (
                 <>
-                  Vas a eliminar a <strong>{displayName(deleteTarget)}</strong>. Elegí entre
-                  mover a la papelera (reversible) o eliminar permanentemente.
+                  Vas a eliminar la tasa <strong>{deleteTarget.currency}</strong> del{' '}
+                  {new Date(deleteTarget.effectiveDate).toLocaleString('es-VE')}.
                 </>
               ) : null
             }
@@ -677,7 +551,7 @@ export function PatientList() {
             <AlertDialogCancel disabled={actionLoading} className="sm:mr-auto">
               Cancelar
             </AlertDialogCancel>
-            <Can permission={PERMISSIONS.PATIENTS.SOFT_DELETE}>
+            <Can permission={PERMISSIONS.EXCHANGE_RATES.SOFT_DELETE}>
               <AlertDialogAction
                 variant="default"
                 onClick={(e) => {
@@ -689,7 +563,7 @@ export function PatientList() {
                 Mover a la papelera
               </AlertDialogAction>
             </Can>
-            <Can permission={PERMISSIONS.PATIENTS.HARD_DELETE}>
+            <Can permission={PERMISSIONS.EXCHANGE_RATES.HARD_DELETE}>
               <AlertDialogAction
                 variant="destructive"
                 onClick={(e) => {
@@ -705,8 +579,8 @@ export function PatientList() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <PatientDetail
-        patientId={viewTargetId}
+      <ExchangeRateDetail
+        rateId={viewTargetId}
         open={!!viewTargetId}
         onOpenChange={(o) => {
           if (!o) setViewTargetId(null);

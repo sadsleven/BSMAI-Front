@@ -41,7 +41,7 @@ export function CareCenterCreate() {
     resolver: zodResolver(careCenterSchema),
     mode: 'onBlur',
     defaultValues: {
-      name: '',
+      businessName: '',
       email: '',
       rif: '',
       phones: [{ number: '', label: '' }],
@@ -56,7 +56,7 @@ export function CareCenterCreate() {
   const onSubmit = async (values: CareCenterValues) => {
     try {
       await careCenterGateway.create({
-        name: values.name,
+        businessName: values.businessName,
         email: values.email,
         rif: values.rif,
         phones: values.phones.map((p) => ({

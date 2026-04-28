@@ -20,6 +20,8 @@ function buildParams(q: PatientsQuery): Record<string, string | number | boolean
     birthDateFrom: q.birthDateFrom,
     birthDateTo: q.birthDateTo,
     insuranceId: q.insuranceId,
+    contractorId: q.contractorId,
+    personType: q.personType,
   };
 }
 

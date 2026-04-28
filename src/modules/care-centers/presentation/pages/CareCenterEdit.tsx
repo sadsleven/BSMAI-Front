@@ -48,7 +48,7 @@ export function CareCenterEdit() {
     resolver: zodResolver(careCenterSchema),
     mode: 'onBlur',
     defaultValues: {
-      name: '',
+      businessName: '',
       email: '',
       rif: '',
       phones: [{ number: '', label: '' }],
@@ -64,7 +64,7 @@ export function CareCenterEdit() {
       try {
         const c = await careCenterGateway.getById(id);
         methods.reset({
-          name: c.name,
+          businessName: c.businessName,
           email: c.email,
           rif: c.rif,
           phones:
@@ -85,7 +85,7 @@ export function CareCenterEdit() {
           })),
           isActive: c.isActive,
         });
-        setDisplayName(c.name);
+        setDisplayName(c.businessName);
         setExistingSpecialties(c.specialties ?? []);
       } catch (e) {
         notify.fromError(e, 'No se pudo cargar el centro.');
@@ -100,7 +100,7 @@ export function CareCenterEdit() {
     if (!id) return;
     try {
       await careCenterGateway.update(id, {
-        name: values.name,
+        businessName: values.businessName,
         email: values.email,
         rif: values.rif,
         phones: values.phones.map((p) => ({

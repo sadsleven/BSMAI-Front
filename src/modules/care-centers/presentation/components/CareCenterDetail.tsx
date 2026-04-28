@@ -67,13 +67,14 @@ export function CareCenterDetail({ centerId, open, onOpenChange }: CareCenterDet
       open={open}
       onOpenChange={onOpenChange}
       icon={Hospital}
-      title={center ? center.name : 'Detalle del centro'}
+      title={center ? center.businessName : 'Detalle del centro'}
       subtitle={center?.email}
       loading={loading}
     >
       {center ? (
         <div className="divide-y">
           <DetailSection title="Datos del centro">
+            <DetailRow label="Razón social" value={center.businessName} />
             <DetailRow label="RIF" value={center.rif} mono />
             <DetailRow label="Email" value={center.email} />
             <DetailRow

@@ -34,6 +34,12 @@ import { PathologyEdit } from './modules/pathologies/presentation/pages/Patholog
 import { ServiceTypeList } from './modules/service-types/presentation/pages/ServiceTypeList';
 import { ServiceTypeCreate } from './modules/service-types/presentation/pages/ServiceTypeCreate';
 import { ServiceTypeEdit } from './modules/service-types/presentation/pages/ServiceTypeEdit';
+import { ContractorList } from './modules/contractors/presentation/pages/ContractorList';
+import { ContractorCreate } from './modules/contractors/presentation/pages/ContractorCreate';
+import { ContractorEdit } from './modules/contractors/presentation/pages/ContractorEdit';
+import { ExchangeRateList } from './modules/exchange-rates/presentation/pages/ExchangeRateList';
+import { ExchangeRateCreate } from './modules/exchange-rates/presentation/pages/ExchangeRateCreate';
+import { ExchangeRateEdit } from './modules/exchange-rates/presentation/pages/ExchangeRateEdit';
 
 function App() {
   return (
@@ -105,6 +111,16 @@ function App() {
             <Route index element={<ServiceTypeList />} />
             <Route path="create" element={<ServiceTypeCreate />} />
             <Route path="edit/:id" element={<ServiceTypeEdit />} />
+          </Route>
+          <Route path="contractors">
+            <Route index element={<ContractorList />} />
+            <Route path="create" element={<ContractorCreate />} />
+            <Route path="edit/:id" element={<ContractorEdit />} />
+          </Route>
+          <Route path="exchange-rates">
+            <Route index element={<ExchangeRateList />} />
+            <Route path="create" element={<ExchangeRateCreate />} />
+            <Route path="edit/:id" element={<ExchangeRateEdit />} />
           </Route>
         </Route>
 

@@ -6,9 +6,9 @@ import {
   DetailSection,
 } from '@/components/ui/detail-dialog';
 import { Badge } from '@/components/ui/badge';
-import { UserRound } from 'lucide-react';
+import { UserRound, Building2 } from 'lucide-react';
 import { patientGateway } from '../../infrastructure/patientGateway';
-import { fullName, type Patient } from '../../domain/models/patient';
+import { displayName, type Patient } from '../../domain/models/patient';
 import { notify } from '@/lib/notifications/toast';
 
 export type PatientDetailProps = {
@@ -44,19 +44,40 @@ export function PatientDetail({ patientId, open, onOpenChange }: PatientDetailPr
     };
   }, [patientId, open]);
 
+  const isLegal = patient?.personType === 'legal_entity';
+
   return (
     <DetailDialog
       open={open}
       onOpenChange={onOpenChange}
-      icon={UserRound}
-      title={patient ? fullName(patient) : 'Detalle del paciente'}
+      icon={isLegal ? Building2 : UserRound}
+      title={patient ? displayName(patient) : 'Detalle del paciente'}
       subtitle={patient?.email}
       loading={loading}
     >
       {patient ? (
         <div className="divide-y">
-          <DetailSection title="Información personal">
-            <DetailRow label="Cédula" value={patient.cedula} mono />
+          <DetailSection title={isLegal ? 'Información de la empresa' : 'Información personal'}>
+            <DetailRow
+              label="Tipo"
+              value={
+                <DetailBadge tone="info">
+                  {isLegal ? 'Jurídica' : 'Natural'}
+                </DetailBadge>
+              }
+            />
+            {isLegal ? (
+              <>
+                <DetailRow label="Razón social" value={patient.businessName} />
+                <DetailRow label="RIF" value={patient.rif} mono />
+              </>
+            ) : (
+              <>
+                <DetailRow label="Cédula" value={patient.cedula} mono />
+                <DetailRow label="Nombre" value={patient.firstName} />
+                <DetailRow label="Apellido" value={patient.lastName} />
+              </>
+            )}
             <DetailRow label="Email" value={patient.email} />
             <DetailRow
               label="Nacimiento"
@@ -106,6 +127,34 @@ export function PatientDetail({ patientId, open, onOpenChange }: PatientDetailPr
               </div>
             ) : (
               <p className="text-sm text-muted-foreground italic">Sin seguros asignados.</p>
+            )}
+          </DetailSection>
+
+          <DetailSection title={`Contratistas (${patient.contractors?.length ?? 0})`}>
+            {patient.contractors?.length ? (
+              <div className="flex flex-wrap gap-1.5">
+                {patient.contractors.map((c) => {
+                  const stale = c.deletedAt || c.isActive === false;
+                  return (
+                    <Badge
+                      key={c.id}
+                      variant="outline"
+                      className={stale ? 'border-dashed text-muted-foreground' : ''}
+                      title={
+                        c.deletedAt
+                          ? 'Contratista en papelera'
+                          : c.isActive === false
+                            ? 'Contratista deshabilitado'
+                            : undefined
+                      }
+                    >
+                      {c.name}
+                    </Badge>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground italic">Sin contratistas asignados.</p>
             )}
           </DetailSection>
 

@@ -11,6 +11,8 @@ import {
   Shield as ShieldIcon,
   Activity,
   FileText,
+  Briefcase,
+  TrendingUp,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -77,6 +79,12 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
           href: '/care-centers',
           show: has(PERMISSIONS.CARE_CENTERS.LIST),
         },
+        {
+          icon: Briefcase,
+          label: 'Contratistas',
+          href: '/contractors',
+          show: has(PERMISSIONS.CONTRACTORS.LIST),
+        },
       ],
     },
     {
@@ -105,6 +113,17 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
           label: 'Tipos de servicio',
           href: '/service-types',
           show: has(PERMISSIONS.SERVICE_TYPES.LIST),
+        },
+      ],
+    },
+    {
+      title: 'Finanzas',
+      items: [
+        {
+          icon: TrendingUp,
+          label: 'Tasas de cambio',
+          href: '/exchange-rates',
+          show: has(PERMISSIONS.EXCHANGE_RATES.LIST),
         },
       ],
     },
