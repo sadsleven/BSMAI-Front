@@ -7,6 +7,13 @@ export interface RoleSummary {
   isSystem?: boolean;
 }
 
+export interface BranchSummary {
+  id: string;
+  name: string;
+  isActive?: boolean;
+  deletedAt?: string | null;
+}
+
 export interface User {
   id: string;
   firstName: string;
@@ -16,6 +23,7 @@ export interface User {
   isActive: boolean;
   isSuperAdmin: boolean;
   roles: RoleSummary[];
+  branches?: BranchSummary[];
   createdAt?: string;
   updatedAt?: string;
   deletedAt?: string | null;
@@ -31,6 +39,7 @@ export interface CreateUserDto {
   isActive?: boolean;
   isSuperAdmin?: boolean;
   roleIds?: string[];
+  branchIds?: string[];
 }
 
 export interface UpdateUserDto {
@@ -41,6 +50,7 @@ export interface UpdateUserDto {
   isActive?: boolean;
   isSuperAdmin?: boolean;
   roleIds?: string[];
+  branchIds?: string[];
 }
 
 export interface ChangePasswordDto {
@@ -57,6 +67,7 @@ export interface UsersQuery {
   isSuperAdmin?: boolean;
   roleId?: string;
   roleIds?: string[];
+  branchId?: string;
   sortBy?: 'firstName' | 'lastName' | 'email' | 'createdAt' | 'updatedAt';
   sortDir?: 'ASC' | 'DESC';
   withDeleted?: boolean;

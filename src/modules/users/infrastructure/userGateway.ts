@@ -21,6 +21,7 @@ function buildParams(query: UsersQuery = {}): Record<string, string> {
   if (typeof query.isSuperAdmin === 'boolean') out.isSuperAdmin = String(query.isSuperAdmin);
   if (query.roleId) out.roleId = query.roleId;
   if (query.roleIds && query.roleIds.length) out.roleIds = query.roleIds.join(',');
+  if (query.branchId) out.branchId = query.branchId;
   if (query.sortBy) out.sortBy = query.sortBy;
   if (query.sortDir) out.sortDir = query.sortDir;
   if (query.withDeleted) out.withDeleted = 'true';

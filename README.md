@@ -69,6 +69,7 @@ Código transversal en `src/lib/` (utilidades), `src/components/ui/` (shadcn), `
 - **`insurances/`** — CRUD seguros con name + description + lista dinámica de teléfonos. Endpoint `assignable` para `<InsuranceMultiSelect>`.
 - **`pathologies/`** — CRUD simple de patologías. Endpoint `assignable`.
 - **`service-types/`** — CRUD simple de tipos de servicio. Endpoint `assignable`.
+- **`branches/`** — CRUD sucursales (name único + description + isActive). Endpoint `assignable` para `<BranchMultiSelect>`. Asignación M2M a usuarios; el Super Admin tiene acceso implícito a todas (no se replican filas en `user_branches`). Helper `getUserBranches(currentUser)` en `src/lib/auth/branches.ts` es la única forma correcta de leer las sucursales del usuario actual.
 
 ## HTTP
 

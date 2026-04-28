@@ -27,6 +27,7 @@ export function UserCreate() {
       isActive: true,
       isSuperAdmin: false,
       roleIds: [],
+      branchIds: [],
     },
   });
 
@@ -44,6 +45,7 @@ export function UserCreate() {
         isActive: values.isActive,
         isSuperAdmin: isSuperAdmin ? values.isSuperAdmin : undefined,
         roleIds: values.roleIds,
+        branchIds: values.isSuperAdmin ? undefined : values.branchIds,
       });
       notify.success('Usuario creado exitosamente');
       navigate('/users');

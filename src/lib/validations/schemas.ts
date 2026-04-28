@@ -72,6 +72,7 @@ export const createUserSchema = z
     isActive: z.boolean().optional(),
     isSuperAdmin: z.boolean().optional(),
     roleIds: z.array(z.string().uuid()).optional(),
+    branchIds: z.array(z.string().uuid()).optional(),
   })
   .refine((d) => d.password === d.confirmPassword, {
     path: ['confirmPassword'],
@@ -87,6 +88,7 @@ export const updateUserSchema = z.object({
   isActive: z.boolean().optional(),
   isSuperAdmin: z.boolean().optional(),
   roleIds: z.array(z.string().uuid()).optional(),
+  branchIds: z.array(z.string().uuid()).optional(),
 });
 export type UpdateUserValues = z.infer<typeof updateUserSchema>;
 
@@ -251,6 +253,9 @@ const simpleNamedSchema = (max: number) =>
 
 export const pathologySchema = simpleNamedSchema(200);
 export type PathologyValues = z.infer<typeof pathologySchema>;
+
+export const branchSchema = simpleNamedSchema(200);
+export type BranchValues = z.infer<typeof branchSchema>;
 
 export const serviceTypeSchema = simpleNamedSchema(200);
 export type ServiceTypeValues = z.infer<typeof serviceTypeSchema>;

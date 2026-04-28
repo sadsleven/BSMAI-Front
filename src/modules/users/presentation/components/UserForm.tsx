@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import type { Role } from '@/modules/roles/domain/models/role';
-import type { RoleSummary } from '../../domain/models/user';
+import type { BranchSummary, RoleSummary } from '../../domain/models/user';
+import type { Branch } from '@/modules/branches/domain/models/branch';
 import { roleGateway } from '@/modules/roles/infrastructure/roleGateway';
 import { Input } from '@/components/ui/input';
 import { PasswordInput } from '@/components/ui/password-input';
@@ -9,7 +10,8 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { FormSwitch } from '@/components/ui/form-switch';
 import { FormSection, FormGrid } from '@/components/ui/form-section';
-import { X, Lock, AlertTriangle } from 'lucide-react';
+import { BranchMultiSelect } from '@/components/ui/branch-multi-select';
+import { X, Lock, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface FieldErrorProps {
@@ -46,9 +48,10 @@ interface Props {
   mode: 'create' | 'edit';
   canEditSuperAdmin?: boolean;
   existingRoles?: RoleSummary[];
+  existingBranches?: BranchSummary[];
 }
 
-export function UserForm({ mode, canEditSuperAdmin, existingRoles }: Props) {
+export function UserForm({ mode, canEditSuperAdmin, existingRoles, existingBranches }: Props) {
   const {
     register,
     setValue,
@@ -69,8 +72,24 @@ export function UserForm({ mode, canEditSuperAdmin, existingRoles }: Props) {
 
   const roleIds: string[] =
     (useWatch({ control, name: 'roleIds' }) as string[] | undefined) ?? [];
+  const branchIds: string[] =
+    (useWatch({ control, name: 'branchIds' }) as string[] | undefined) ?? [];
   const isActive = useWatch({ control, name: 'isActive' }) as boolean | undefined;
   const isSuperAdmin = useWatch({ control, name: 'isSuperAdmin' }) as boolean | undefined;
+
+  const setBranches = (next: string[]) =>
+    setValue('branchIds', next, { shouldDirty: true, shouldValidate: true });
+
+  const existingBranchesAsBranch: Branch[] = useMemo(
+    () =>
+      (existingBranches ?? []).map((b) => ({
+        id: b.id,
+        name: b.name,
+        isActive: b.isActive ?? true,
+        deletedAt: b.deletedAt ?? null,
+      })),
+    [existingBranches],
+  );
 
   const setRoles = (next: string[]) =>
     setValue('roleIds', next, { shouldDirty: true, shouldValidate: true });
@@ -254,6 +273,27 @@ export function UserForm({ mode, canEditSuperAdmin, existingRoles }: Props) {
             </p>
           ) : null}
         </div>
+      </FormSection>
+
+      <FormSection
+        title="Sucursales"
+        description="Sucursales en las que el usuario puede operar."
+      >
+        {isSuperAdmin ? (
+          <div className="flex items-start gap-2 rounded-md border border-dashed bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground">
+            <ShieldCheck className="w-4 h-4 mt-0.5 text-brand-blue shrink-0" />
+            <span>
+              Los Super Administradores tienen acceso a todas las sucursales automáticamente.
+            </span>
+          </div>
+        ) : (
+          <BranchMultiSelect
+            value={branchIds}
+            onChange={setBranches}
+            existing={existingBranchesAsBranch}
+            error={e.branchIds?.message}
+          />
+        )}
       </FormSection>
 
       <FormSection

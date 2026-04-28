@@ -40,6 +40,9 @@ import { ContractorEdit } from './modules/contractors/presentation/pages/Contrac
 import { ExchangeRateList } from './modules/exchange-rates/presentation/pages/ExchangeRateList';
 import { ExchangeRateCreate } from './modules/exchange-rates/presentation/pages/ExchangeRateCreate';
 import { ExchangeRateEdit } from './modules/exchange-rates/presentation/pages/ExchangeRateEdit';
+import { BranchList } from './modules/branches/presentation/pages/BranchList';
+import { BranchCreate } from './modules/branches/presentation/pages/BranchCreate';
+import { BranchEdit } from './modules/branches/presentation/pages/BranchEdit';
 
 function App() {
   return (
@@ -121,6 +124,11 @@ function App() {
             <Route index element={<ExchangeRateList />} />
             <Route path="create" element={<ExchangeRateCreate />} />
             <Route path="edit/:id" element={<ExchangeRateEdit />} />
+          </Route>
+          <Route path="branches">
+            <Route index element={<BranchList />} />
+            <Route path="create" element={<BranchCreate />} />
+            <Route path="edit/:id" element={<BranchEdit />} />
           </Route>
         </Route>
 

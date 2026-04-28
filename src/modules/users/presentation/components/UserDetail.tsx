@@ -109,6 +109,44 @@ export function UserDetail({ userId, open, onOpenChange }: UserDetailProps) {
             )}
           </DetailSection>
 
+          <DetailSection
+            title={
+              user.isSuperAdmin
+                ? 'Sucursales (todas)'
+                : `Sucursales (${user.branches?.length ?? 0})`
+            }
+          >
+            {user.isSuperAdmin ? (
+              <p className="text-sm text-muted-foreground">
+                Los Super Administradores tienen acceso a todas las sucursales automáticamente.
+              </p>
+            ) : user.branches?.length ? (
+              <div className="flex flex-wrap gap-1.5">
+                {user.branches.map((b) => {
+                  const stale = b.deletedAt || b.isActive === false;
+                  return (
+                    <Badge
+                      key={b.id}
+                      variant="outline"
+                      className={stale ? 'border-dashed text-muted-foreground' : ''}
+                      title={
+                        b.deletedAt
+                          ? 'Sucursal en papelera'
+                          : b.isActive === false
+                            ? 'Sucursal deshabilitada'
+                            : undefined
+                      }
+                    >
+                      {b.name}
+                    </Badge>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground italic">Sin sucursales asignadas.</p>
+            )}
+          </DetailSection>
+
           {(user.createdAt || user.updatedAt) && (
             <DetailSection title="Auditoría">
               {user.createdAt && (

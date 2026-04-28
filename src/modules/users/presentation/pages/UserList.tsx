@@ -5,6 +5,8 @@ import { userGateway } from '../../infrastructure/userGateway';
 import { fullName, type User } from '../../domain/models/user';
 import { roleGateway } from '@/modules/roles/infrastructure/roleGateway';
 import type { Role } from '@/modules/roles/domain/models/role';
+import { branchGateway } from '@/modules/branches/infrastructure/branchGateway';
+import type { Branch } from '@/modules/branches/domain/models/branch';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -81,6 +83,7 @@ function readQuery(sp: URLSearchParams) {
     status: (sp.get('status') as StatusFilter) ?? 'all',
     deletion: (sp.get('deletion') as DeletionFilter) ?? 'active',
     roleIds: sp.get('roleIds') ? sp.get('roleIds')!.split(',').filter(Boolean) : [],
+    branchId: sp.get('branchId') ?? '',
     sortBy: (sp.get('sortBy') as SortBy) ?? 'createdAt',
     sortDir: ((sp.get('sortDir') as SortDir) ?? 'DESC') as SortDir,
   };
@@ -121,6 +124,7 @@ export function UserList() {
   const filters = useMemo(() => readQuery(sp), [sp]);
   const [searchInput, setSearchInput] = useState(filters.search);
   const [roles, setRoles] = useState<Role[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
 
   const canSeeDeleted = has(PERMISSIONS.USERS.HARD_DELETE) || has(PERMISSIONS.USERS.RESTORE);
 
@@ -130,6 +134,13 @@ export function UserList() {
         setRoles(await roleGateway.listAll());
       } catch {
         setRoles([]);
+      }
+    })();
+    (async () => {
+      try {
+        setBranches(await branchGateway.listAssignable());
+      } catch {
+        setBranches([]);
       }
     })();
   }, []);
@@ -144,6 +155,7 @@ export function UserList() {
       withDeleted: filters.deletion === 'all',
       onlyDeleted: filters.deletion === 'deleted',
       roleIds: filters.roleIds.length ? filters.roleIds : undefined,
+      branchId: filters.branchId || undefined,
       sortBy: filters.sortBy,
       sortDir: filters.sortDir,
     });
@@ -155,6 +167,7 @@ export function UserList() {
     filters.status,
     filters.deletion,
     filters.roleIds.join(','),
+    filters.branchId,
     filters.sortBy,
     filters.sortDir,
     setQuery,
@@ -200,6 +213,7 @@ export function UserList() {
     Boolean(filters.search) ||
     filters.status !== 'all' ||
     filters.roleIds.length > 0 ||
+    Boolean(filters.branchId) ||
     filters.deletion !== 'active';
 
   const clearFilters = () => {
@@ -351,6 +365,23 @@ export function UserList() {
                 </DropdownMenuContent>
               </DropdownMenu>
 
+              <Select
+                value={filters.branchId || 'all'}
+                onValueChange={(v) => updateParam({ branchId: v === 'all' ? undefined : v })}
+              >
+                <SelectTrigger className="h-9 w-48">
+                  <SelectValue placeholder="Sucursal" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Sucursal: todas</SelectItem>
+                  {branches.map((b) => (
+                    <SelectItem key={b.id} value={b.id}>
+                      {b.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
               {canSeeDeleted ? (
                 <Select
                   value={filteredDeletion}
@@ -396,6 +427,9 @@ export function UserList() {
                 Roles
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                Sucursales
+              </TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Estado
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">
@@ -405,10 +439,10 @@ export function UserList() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <SkeletonTableRows rows={5} columns={5} />
+              <SkeletonTableRows rows={5} columns={6} />
             ) : users.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="p-0">
+                <TableCell colSpan={6} className="p-0">
                   <EmptyState
                     title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay usuarios'}
                     description={
@@ -467,6 +501,26 @@ export function UserList() {
                             ))
                           : <span className="text-sm text-muted-foreground">—</span>}
                       </div>
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4">
+                      {user.isSuperAdmin ? (
+                        <Badge variant="default" className="gap-1">
+                          <Crown className="w-3 h-3" /> Todas
+                        </Badge>
+                      ) : user.branches?.length ? (
+                        <div className="flex flex-wrap gap-1">
+                          {user.branches.slice(0, 2).map((b) => (
+                            <Badge key={b.id} variant="secondary">
+                              {b.name}
+                            </Badge>
+                          ))}
+                          {user.branches.length > 2 ? (
+                            <Badge variant="outline">+{user.branches.length - 2}</Badge>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell className="py-3.5 px-4">
                       <StatusBadge user={user} />

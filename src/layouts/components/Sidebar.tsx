@@ -13,6 +13,7 @@ import {
   FileText,
   Briefcase,
   TrendingUp,
+  Building,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -117,17 +118,6 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
       ],
     },
     {
-      title: 'Finanzas',
-      items: [
-        {
-          icon: TrendingUp,
-          label: 'Tasas de cambio',
-          href: '/exchange-rates',
-          show: has(PERMISSIONS.EXCHANGE_RATES.LIST),
-        },
-      ],
-    },
-    {
       title: 'Administración',
       items: [
         {
@@ -141,6 +131,18 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
           label: 'Roles y permisos',
           href: '/roles',
           show: has(PERMISSIONS.ROLES.LIST),
+        },
+        {
+          icon: Building,
+          label: 'Sucursales',
+          href: '/branches',
+          show: has(PERMISSIONS.BRANCHES.LIST),
+        },
+        {
+          icon: TrendingUp,
+          label: 'Tasas de cambio',
+          href: '/exchange-rates',
+          show: has(PERMISSIONS.EXCHANGE_RATES.LIST),
         },
       ],
     },

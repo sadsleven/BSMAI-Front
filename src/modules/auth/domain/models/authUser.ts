@@ -3,6 +3,11 @@ export interface AuthRole {
   name: string;
 }
 
+export interface AuthBranch {
+  id: string;
+  name: string;
+}
+
 export interface AuthUser {
   id: string;
   email: string;
@@ -13,6 +18,15 @@ export interface AuthUser {
   isSuperAdmin: boolean;
   roles: AuthRole[];
   permissions: string[];
+  /**
+   * Sucursales visibles para el usuario.
+   * - Super Admin: TODAS las sucursales activas.
+   * - Regular: sólo las asignadas activas + no eliminadas.
+   *
+   * El backend ya filtra/expande según `isSuperAdmin`. **No** verificar
+   * `isSuperAdmin` en componentes — usar `getUserBranches()`.
+   */
+  branches: AuthBranch[];
 }
 
 export function getFullName(user: AuthUser | null | undefined): string {

@@ -8,7 +8,7 @@ import { UserForm } from '../components/UserForm';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
 import { updateUserSchema, type UpdateUserValues } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
-import type { RoleSummary } from '../../domain/models/user';
+import type { BranchSummary, RoleSummary } from '../../domain/models/user';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { ChevronLeft } from 'lucide-react';
 
@@ -18,6 +18,7 @@ export function UserEdit() {
   const { isSuperAdmin } = usePermissions();
   const [fetching, setFetching] = useState(true);
   const [existingRoles, setExistingRoles] = useState<RoleSummary[]>([]);
+  const [existingBranches, setExistingBranches] = useState<BranchSummary[]>([]);
   const [displayName, setDisplayName] = useState('');
 
   const methods = useForm<UpdateUserValues>({
@@ -31,6 +32,7 @@ export function UserEdit() {
       isActive: true,
       isSuperAdmin: false,
       roleIds: [],
+      branchIds: [],
     },
   });
 
@@ -47,8 +49,10 @@ export function UserEdit() {
           isActive: user.isActive,
           isSuperAdmin: user.isSuperAdmin,
           roleIds: user.roles?.map((r) => r.id) ?? [],
+          branchIds: user.branches?.map((b) => b.id) ?? [],
         });
         setExistingRoles(user.roles ?? []);
+        setExistingBranches(user.branches ?? []);
         setDisplayName(`${user.firstName} ${user.lastName}`.trim());
       } catch (e) {
         notify.fromError(e, 'No se pudo cargar el usuario.');
@@ -70,6 +74,7 @@ export function UserEdit() {
         isActive: values.isActive,
         isSuperAdmin: isSuperAdmin ? values.isSuperAdmin : undefined,
         roleIds: values.roleIds,
+        branchIds: values.isSuperAdmin ? undefined : values.branchIds,
       });
       notify.success('Usuario actualizado');
       navigate('/users');
@@ -109,6 +114,7 @@ export function UserEdit() {
             mode="edit"
             canEditSuperAdmin={isSuperAdmin}
             existingRoles={existingRoles}
+            existingBranches={existingBranches}
           />
 
           <div className="flex items-center justify-between gap-3 pt-2">

@@ -24,6 +24,7 @@ const PATH_LABELS: Record<string, string> = {
   'care-centers': 'Centros de atención',
   contractors: 'Contratistas',
   'exchange-rates': 'Tasas de cambio',
+  branches: 'Sucursales',
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

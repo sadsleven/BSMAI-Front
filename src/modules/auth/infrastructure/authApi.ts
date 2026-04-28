@@ -18,6 +18,10 @@ function mapUser(data: unknown): AuthUser {
     .filter((r) => r.id && r.name);
   const permsRaw = Array.isArray(o.permissions) ? (o.permissions as unknown[]) : [];
   const permissions = permsRaw.map((p) => String(p)).filter(Boolean);
+  const branchesRaw = Array.isArray(o.branches) ? (o.branches as Record<string, unknown>[]) : [];
+  const branches = branchesRaw
+    .map((b) => ({ id: String(b.id ?? ''), name: String(b.name ?? '') }))
+    .filter((b) => b.id && b.name);
   return {
     id,
     email,
@@ -28,6 +32,7 @@ function mapUser(data: unknown): AuthUser {
     isSuperAdmin: Boolean(o.isSuperAdmin),
     roles,
     permissions,
+    branches,
   };
 }
 
