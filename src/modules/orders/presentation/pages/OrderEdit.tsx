@@ -61,6 +61,7 @@ export function OrderEdit() {
   const [holder, setHolder] = useState<Patient | null>(null);
   const [patient, setPatient] = useState<Patient | null>(null);
   const [provider, setProvider] = useState<ProviderSelectValue | null>(null);
+  const [currentStep, setCurrentStep] = useState<string>('register');
 
   const methods = useForm<OrderValues>({
     resolver: zodResolver(orderSchema),
@@ -203,6 +204,9 @@ export function OrderEdit() {
             initialHolder={holder}
             initialPatient={patient}
             initialProvider={provider}
+            savedOrder={initialOrder}
+            currentStep={currentStep}
+            onStepChange={setCurrentStep}
           />
 
           <div className="flex items-center justify-between gap-3 pt-2 flex-wrap">
@@ -213,14 +217,29 @@ export function OrderEdit() {
               <Button type="button" variant="outline" onClick={tryCancel}>
                 Cancelar
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                disabled
-                title="Disponible cuando se implementen los pasos siguientes"
-              >
-                Continuar al Paso 2
-              </Button>
+              {currentStep === 'register' ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setCurrentStep('process')}
+                  disabled={!initialOrder}
+                  title={
+                    initialOrder
+                      ? 'Avanzar al Paso 2'
+                      : 'Guardá la orden primero para acceder al Paso 2'
+                  }
+                >
+                  Continuar al Paso 2
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setCurrentStep('register')}
+                >
+                  Volver al Paso 1
+                </Button>
+              )}
               <Button type="submit" disabled={methods.formState.isSubmitting}>
                 {methods.formState.isSubmitting ? 'Guardando…' : 'Guardar cambios'}
               </Button>

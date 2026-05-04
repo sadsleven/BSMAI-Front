@@ -129,7 +129,7 @@ export function OrderCreate() {
                 type="button"
                 variant="outline"
                 disabled
-                title="Disponible cuando se implementen los pasos siguientes"
+                title="Guardá el borrador para acceder al Paso 2"
               >
                 Continuar al Paso 2
               </Button>

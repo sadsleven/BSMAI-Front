@@ -13,7 +13,6 @@ import {
 import { CurrencyAmountInput } from '@/components/ui/currency-amount-input';
 import { DatePicker } from '@/components/ui/date-picker';
 import { bankGateway } from '@/modules/banks/infrastructure/bankGateway';
-import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
 import type { Bank } from '@/modules/banks/domain/models/bank';
 import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchangeRate';
 import type { OrderPaymentValues } from '@/lib/validations/schemas';
@@ -48,6 +47,8 @@ export type OrderPaymentFormProps = {
   onChange: (next: OrderPaymentValues[]) => void;
   /** Moneda de la orden — define amountCurrency para `cash_foreign` y `other`. */
   orderCurrency: OrderCurrency;
+  /** Tasa actual de la moneda de la orden (provista por el padre). */
+  currentRate: ExchangeRate | null;
   errors?: PaymentItemErrors[];
   disabled?: boolean;
 };
@@ -78,11 +79,11 @@ export function OrderPaymentForm({
   payments,
   onChange,
   orderCurrency,
+  currentRate,
   errors,
   disabled,
 }: OrderPaymentFormProps) {
   const [banks, setBanks] = useState<Bank[]>([]);
-  const [currentRate, setCurrentRate] = useState<ExchangeRate | null>(null);
 
   useEffect(() => {
     bankGateway
@@ -91,12 +92,24 @@ export function OrderPaymentForm({
       .catch(() => setBanks([]));
   }, []);
 
+  // Backfill exchangeRateId on BS-typed payments once currentRate is known.
   useEffect(() => {
-    exchangeRateGateway
-      .getCurrent(orderCurrency)
-      .then(setCurrentRate)
-      .catch(() => setCurrentRate(null));
-  }, [orderCurrency]);
+    if (!currentRate?.id) return;
+    let dirty = false;
+    const next = payments.map((p) => {
+      const needsRate =
+        (p.type === 'mobile_payment' || p.type === 'bank_transfer' || p.type === 'cash_bs') &&
+        !(p.exchangeRateId && p.exchangeRateId.trim());
+      if (needsRate) {
+        dirty = true;
+        return { ...p, exchangeRateId: currentRate.id };
+      }
+      return p;
+    });
+    if (dirty) onChange(next);
+    // Intentionally only react to currentRate change; payments handled implicitly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentRate?.id]);
 
   const todayIso = new Date().toISOString().slice(0, 10);
 
