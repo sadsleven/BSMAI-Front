@@ -23,7 +23,7 @@ export interface DoctorPaymentMethod {
 export interface Doctor {
   id: string;
   cedula: string;
-  email: string;
+  email?: string | null;
   firstName: string;
   lastName: string;
   isLegalEntity: boolean;
@@ -39,7 +39,7 @@ export interface Doctor {
 
 export interface CreateDoctorDto {
   cedula: string;
-  email: string;
+  email?: string;
   firstName: string;
   lastName: string;
   isLegalEntity?: boolean;

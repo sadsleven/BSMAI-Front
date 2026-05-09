@@ -8,6 +8,7 @@ import { UserForm } from '../components/UserForm';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
 import { updateUserSchema, type UpdateUserValues } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
+import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import type { BranchSummary, RoleSummary } from '../../domain/models/user';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { ChevronLeft } from 'lucide-react';
@@ -91,7 +92,7 @@ export function UserEdit() {
     <div className="max-w-3xl mx-auto">
       <PageBreadcrumbs />
       <FormProvider {...methods}>
-        <form onSubmit={methods.handleSubmit(onSubmit)} className="space-y-6">
+        <form onSubmit={methods.handleSubmit(onSubmit, (errs) => notifyFormErrors(errs))} className="space-y-6">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="space-y-1">
               <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">

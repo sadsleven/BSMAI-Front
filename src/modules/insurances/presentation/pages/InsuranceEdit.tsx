@@ -13,6 +13,7 @@ import { PhoneListInput } from '@/components/ui/phone-list-input';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { insuranceSchema, type InsuranceValues } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
+import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { ChevronLeft, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -28,7 +29,9 @@ export function InsuranceEdit() {
     defaultValues: {
       name: '',
       description: '',
-      phones: [{ number: '', label: '' }],
+      email: '',
+      fiscalAddress: '',
+      phones: [],
       isActive: true,
     },
   });
@@ -53,10 +56,12 @@ export function InsuranceEdit() {
         reset({
           name: i.name,
           description: i.description ?? '',
+          email: i.email ?? '',
+          fiscalAddress: i.fiscalAddress ?? '',
           phones:
             i.phones?.length > 0
               ? i.phones.map((ph) => ({ number: ph.number, label: ph.label ?? '' }))
-              : [{ number: '', label: '' }],
+              : [],
           isActive: i.isActive ?? true,
         });
         setDisplayName(i.name);
@@ -75,6 +80,8 @@ export function InsuranceEdit() {
       await insuranceGateway.update(id, {
         name: values.name,
         description: values.description ?? undefined,
+        email: values.email?.trim() || '',
+        fiscalAddress: values.fiscalAddress?.trim() ?? '',
         phones: values.phones.map((p) => ({
           number: p.number,
           label: p.label || undefined,
@@ -92,7 +99,7 @@ export function InsuranceEdit() {
     return <div className="text-sm text-muted-foreground">Cargando seguro…</div>;
   }
 
-  const invalid = (k: 'name' | 'description') =>
+  const invalid = (k: 'name' | 'description' | 'email' | 'fiscalAddress') =>
     errors[k] ? 'border-destructive focus-visible:ring-destructive/30' : '';
 
   const phoneErrors = (
@@ -103,7 +110,7 @@ export function InsuranceEdit() {
     <div className="max-w-3xl mx-auto">
       <PageBreadcrumbs />
       <FormProvider {...methods}>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6" noValidate>
+        <form onSubmit={handleSubmit(onSubmit, (errs) => notifyFormErrors(errs))} className="space-y-6" noValidate>
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="space-y-1">
               <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">
@@ -135,6 +142,40 @@ export function InsuranceEdit() {
                 ) : null}
               </div>
               <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="email" className="text-sm font-medium">
+                  Email <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
+                </Label>
+                <Input
+                  id="email"
+                  type="email"
+                  {...register('email')}
+                  className={cn('h-9', invalid('email'))}
+                />
+                {errors.email ? (
+                  <p className="text-xs text-destructive flex items-center gap-1 mt-1">
+                    <AlertTriangle className="w-3 h-3" />
+                    {errors.email.message}
+                  </p>
+                ) : null}
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="fiscalAddress" className="text-sm font-medium">
+                  Domicilio fiscal <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
+                </Label>
+                <Textarea
+                  id="fiscalAddress"
+                  rows={2}
+                  {...register('fiscalAddress')}
+                  className={invalid('fiscalAddress')}
+                />
+                {errors.fiscalAddress ? (
+                  <p className="text-xs text-destructive flex items-center gap-1 mt-1">
+                    <AlertTriangle className="w-3 h-3" />
+                    {errors.fiscalAddress.message}
+                  </p>
+                ) : null}
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="description" className="text-sm font-medium">
                   Descripción
                 </Label>
@@ -156,7 +197,7 @@ export function InsuranceEdit() {
 
           <FormSection
             title="Teléfonos"
-            description="Mínimo 1, máximo 10. Cada número con exactamente 11 dígitos."
+            description="Opcional. Hasta 10. Cada número con exactamente 11 dígitos."
           >
             <Controller
               name="phones"

@@ -1,8 +1,11 @@
+import type { Insurance } from '@/modules/insurances/domain/models/insurance';
+
 export interface Contractor {
   id: string;
   name: string;
   description?: string | null;
   isActive: boolean;
+  insurances?: Insurance[];
   createdAt?: string;
   updatedAt?: string;
   deletedAt?: string | null;
@@ -12,12 +15,14 @@ export interface CreateContractorDto {
   name: string;
   description?: string;
   isActive?: boolean;
+  insuranceIds?: string[];
 }
 
 export interface UpdateContractorDto {
   name?: string;
   description?: string | null;
   isActive?: boolean;
+  insuranceIds?: string[];
 }
 
 export interface ContractorsQuery {

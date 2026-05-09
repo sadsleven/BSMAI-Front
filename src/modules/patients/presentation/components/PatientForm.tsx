@@ -7,7 +7,6 @@ import { CedulaInput } from '@/components/ui/cedula-input';
 import { RifInput } from '@/components/ui/rif-input';
 import { DatePicker } from '@/components/ui/date-picker';
 import { PhoneListInput } from '@/components/ui/phone-list-input';
-import { InsuranceMultiSelect } from '@/components/ui/insurance-multi-select';
 import { ContractorMultiSelect } from '@/components/ui/contractor-multi-select';
 import { FormSwitch } from '@/components/ui/form-switch';
 import { FormSection, FormGrid } from '@/components/ui/form-section';
@@ -17,7 +16,6 @@ import {
 import { AlertTriangle, User, Building2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { PatientValues } from '@/lib/validations/schemas';
-import type { Insurance } from '@/modules/insurances/domain/models/insurance';
 import type { Contractor } from '@/modules/contractors/domain/models/contractor';
 
 interface FieldErrorProps {
@@ -34,14 +32,11 @@ function FieldError({ message }: FieldErrorProps) {
 }
 
 export type PatientFormProps = {
-  /** Pre-existing insurances (for showing stale chips on edit). */
-  existingInsurances?: Insurance[];
   /** Pre-existing contractors (for showing stale chips on edit). */
   existingContractors?: Contractor[];
 };
 
 export function PatientForm({
-  existingInsurances,
   existingContractors,
 }: PatientFormProps = {}) {
   const {
@@ -219,7 +214,7 @@ export function PatientForm({
           )}
           <div className="space-y-1.5">
             <Label htmlFor="email" className="text-sm font-medium">
-              Email <span className="text-destructive">*</span>
+              Email <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
             </Label>
             <Input
               id="email"
@@ -269,7 +264,7 @@ export function PatientForm({
 
       <FormSection
         title="Teléfonos"
-        description="Mínimo 1, máximo 10. Cada número con exactamente 11 dígitos."
+        description="Opcional. Hasta 10. Cada número con exactamente 11 dígitos."
       >
         <Controller
           name="phones"
@@ -288,30 +283,8 @@ export function PatientForm({
       </FormSection>
 
       <FormSection
-        title="Seguros"
-        description="Asigná uno o más seguros al paciente. Opcional."
-      >
-        <Controller
-          name="insuranceIds"
-          control={control}
-          render={({ field }) => (
-            <InsuranceMultiSelect
-              value={field.value ?? []}
-              onChange={field.onChange}
-              existing={existingInsurances}
-              error={
-                typeof errors.insuranceIds?.message === 'string'
-                  ? errors.insuranceIds.message
-                  : undefined
-              }
-            />
-          )}
-        />
-      </FormSection>
-
-      <FormSection
         title="Contratistas"
-        description="Asigná uno o más contratistas al paciente. Opcional."
+        description="Asigná uno o más contratistas al paciente. Los seguros del paciente se derivan de los contratistas asociados."
       >
         <Controller
           name="contractorIds"

@@ -110,8 +110,10 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
   for (let c = 1; c <= 5; c++) headerRow.getCell(c).border = thinBorder();
 
   const detailRow = ws.getRow(14);
-  const detail = [order.specialty?.name, order.serviceType?.name, order.pathology?.name]
-    .filter(Boolean)
+  const stNames = (order.serviceTypes ?? []).map((s) => s.name).join(', ');
+  const pathNames = (order.pathologies ?? []).map((p) => p.name).join(', ');
+  const detail = [order.specialty?.name, stNames, pathNames]
+    .filter((v) => !!v && v.length > 0)
     .join(' · ');
   detailRow.getCell(1).value = '01';
   detailRow.getCell(2).value = order.orderNumber;
@@ -202,8 +204,8 @@ export async function downloadOrdenInternaXlsx(order: Order): Promise<void> {
   ws.getCell('A9').value = 'Dirección:';
   ws.getCell('B9').value = '';
 
-  ws.getCell('A10').value = 'Patología:';
-  ws.getCell('B10').value = order.pathology?.name ?? '';
+  ws.getCell('A10').value = 'Patologías:';
+  ws.getCell('B10').value = (order.pathologies ?? []).map((p) => p.name).join(', ');
   ws.getCell('F10').value = 'Clave de Servicio:';
   ws.getCell('G10').value = order.orderNumber;
 
@@ -213,7 +215,7 @@ export async function downloadOrdenInternaXlsx(order: Order): Promise<void> {
   tiposHeader.alignment = { horizontal: 'center' };
   ws.mergeCells('A11:G11');
 
-  ws.getCell('A12').value = order.serviceType?.name ?? '';
+  ws.getCell('A12').value = (order.serviceTypes ?? []).map((s) => s.name).join(', ');
   ws.mergeCells('A12:G12');
 
   // Footer block

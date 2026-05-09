@@ -8,6 +8,8 @@ export interface Insurance {
   id: string;
   name: string;
   description?: string | null;
+  email?: string | null;
+  fiscalAddress?: string | null;
   isActive: boolean;
   phones: InsurancePhone[];
   createdAt?: string;
@@ -18,6 +20,8 @@ export interface Insurance {
 export interface CreateInsuranceDto {
   name: string;
   description?: string;
+  email?: string;
+  fiscalAddress?: string;
   phones: { number: string; label?: string }[];
   isActive?: boolean;
 }

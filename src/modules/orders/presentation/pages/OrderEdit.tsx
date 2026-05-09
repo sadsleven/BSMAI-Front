@@ -15,6 +15,7 @@ import type {
 } from '../../domain/models/order';
 import { orderSchema, type OrderValues } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
+import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import type { Patient } from '@/modules/patients/domain/models/patient';
 import type { ProviderSelectValue } from '../components/ProviderSearchSelect';
 import { patientGateway } from '@/modules/patients/infrastructure/patientGateway';
@@ -33,8 +34,8 @@ function buildDto(values: OrderValues): CreateOrderDto {
     doctorId: values.doctorId || undefined,
     careCenterId: values.careCenterId || undefined,
     specialtyId: values.specialtyId,
-    serviceTypeId: values.serviceTypeId,
-    pathologyId: values.pathologyId,
+    serviceTypeIds: values.serviceTypeIds ?? [],
+    pathologyIds: values.pathologyIds ?? [],
     orderDate: values.orderDate,
     appointmentDate: values.appointmentDate,
     priceCurrency: values.priceCurrency,
@@ -77,8 +78,8 @@ export function OrderEdit() {
       doctorId: '',
       careCenterId: '',
       specialtyId: '',
-      serviceTypeId: '',
-      pathologyId: '',
+      serviceTypeIds: [],
+      pathologyIds: [],
       orderDate: '',
       appointmentDate: '',
       priceCurrency: 'USD',
@@ -128,8 +129,8 @@ export function OrderEdit() {
           doctorId: order.doctorId ?? '',
           careCenterId: order.careCenterId ?? '',
           specialtyId: order.specialtyId,
-          serviceTypeId: order.serviceTypeId,
-          pathologyId: order.pathologyId,
+          serviceTypeIds: (order.serviceTypes ?? []).map((s) => s.id),
+          pathologyIds: (order.pathologies ?? []).map((p) => p.id),
           orderDate: order.orderDate.slice(0, 10),
           appointmentDate: order.appointmentDate.slice(0, 16),
           priceCurrency: order.priceCurrency,
@@ -179,7 +180,7 @@ export function OrderEdit() {
     <div className="max-w-4xl mx-auto">
       <PageBreadcrumbs />
       <FormProvider {...methods}>
-        <form onSubmit={methods.handleSubmit(onSubmit)} className="space-y-6">
+        <form onSubmit={methods.handleSubmit(onSubmit, (errs) => notifyFormErrors(errs))} className="space-y-6">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="space-y-1">
               <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">

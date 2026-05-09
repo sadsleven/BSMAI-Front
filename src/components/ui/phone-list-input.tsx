@@ -20,7 +20,7 @@ export type PhoneListInputProps = {
   max?: number;
 };
 
-const DEFAULT_MIN = 1;
+const DEFAULT_MIN = 0;
 const DEFAULT_MAX = 10;
 
 export function PhoneListInput({
@@ -31,7 +31,7 @@ export function PhoneListInput({
   min = DEFAULT_MIN,
   max = DEFAULT_MAX,
 }: PhoneListInputProps) {
-  const list = value.length > 0 ? value : [{ number: '', label: '' }];
+  const list = value;
   const canAdd = list.length < max;
   const canRemove = list.length > min;
 

@@ -1,6 +1,17 @@
 import type { Insurance } from '@/modules/insurances/domain/models/insurance';
 import type { Contractor } from '@/modules/contractors/domain/models/contractor';
 
+/** Une los seguros de todos los contratistas asociados al paciente, sin duplicados. */
+export function patientInsurancesFromContractors(p: { contractors?: Contractor[] }): Insurance[] {
+  const map = new Map<string, Insurance>();
+  for (const c of p.contractors ?? []) {
+    for (const i of c.insurances ?? []) {
+      if (!map.has(i.id)) map.set(i.id, i);
+    }
+  }
+  return Array.from(map.values());
+}
+
 export type PersonType = 'natural' | 'legal_entity';
 export const PERSON_TYPES: PersonType[] = ['natural', 'legal_entity'];
 
@@ -15,7 +26,7 @@ export interface Patient {
   personType: PersonType;
   /** Sólo natural. */
   cedula?: string | null;
-  email: string;
+  email?: string | null;
   /** Sólo natural. */
   firstName?: string | null;
   /** Sólo natural. */
@@ -28,7 +39,6 @@ export interface Patient {
   address: string;
   isActive: boolean;
   phones: PatientPhone[];
-  insurances: Insurance[];
   contractors: Contractor[];
   createdAt?: string;
   updatedAt?: string;
@@ -38,7 +48,7 @@ export interface Patient {
 export interface CreatePatientDto {
   personType: PersonType;
   cedula?: string;
-  email: string;
+  email?: string;
   firstName?: string;
   lastName?: string;
   businessName?: string;
@@ -46,7 +56,6 @@ export interface CreatePatientDto {
   birthDate: string;
   address: string;
   phones: { number: string; label?: string }[];
-  insuranceIds?: string[];
   contractorIds?: string[];
   isActive?: boolean;
 }

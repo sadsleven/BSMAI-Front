@@ -8,7 +8,11 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { UserRound, Building2 } from 'lucide-react';
 import { patientGateway } from '../../infrastructure/patientGateway';
-import { displayName, type Patient } from '../../domain/models/patient';
+import {
+  displayName,
+  patientInsurancesFromContractors,
+  type Patient,
+} from '../../domain/models/patient';
 import { notify } from '@/lib/notifications/toast';
 
 export type PatientDetailProps = {
@@ -102,33 +106,40 @@ export function PatientDetail({ patientId, open, onOpenChange }: PatientDetailPr
             />
           </DetailSection>
 
-          <DetailSection title={`Seguros (${patient.insurances?.length ?? 0})`}>
-            {patient.insurances?.length ? (
-              <div className="flex flex-wrap gap-1.5">
-                {patient.insurances.map((i) => {
-                  const stale = i.deletedAt || i.isActive === false;
-                  return (
-                    <Badge
-                      key={i.id}
-                      variant="outline"
-                      className={stale ? 'border-dashed text-muted-foreground' : ''}
-                      title={
-                        i.deletedAt
-                          ? 'Seguro en papelera'
-                          : i.isActive === false
-                            ? 'Seguro deshabilitado'
-                            : undefined
-                      }
-                    >
-                      {i.name}
-                    </Badge>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground italic">Sin seguros asignados.</p>
-            )}
-          </DetailSection>
+          {(() => {
+            const list = patientInsurancesFromContractors(patient);
+            return (
+              <DetailSection title={`Seguros (${list.length}) — derivados de contratistas`}>
+                {list.length ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {list.map((i) => {
+                      const stale = i.deletedAt || i.isActive === false;
+                      return (
+                        <Badge
+                          key={i.id}
+                          variant="outline"
+                          className={stale ? 'border-dashed text-muted-foreground' : ''}
+                          title={
+                            i.deletedAt
+                              ? 'Seguro en papelera'
+                              : i.isActive === false
+                                ? 'Seguro deshabilitado'
+                                : undefined
+                          }
+                        >
+                          {i.name}
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground italic">
+                    Sin seguros (los seguros se derivan de los contratistas asociados).
+                  </p>
+                )}
+              </DetailSection>
+            );
+          })()}
 
           <DetailSection title={`Contratistas (${patient.contractors?.length ?? 0})`}>
             {patient.contractors?.length ? (

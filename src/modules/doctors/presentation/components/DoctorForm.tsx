@@ -99,7 +99,7 @@ export function DoctorForm({ existingSpecialties }: DoctorFormProps) {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="email" className="text-sm font-medium">
-              Email <span className="text-destructive">*</span>
+              Email <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
             </Label>
             <Input
               id="email"
@@ -172,7 +172,7 @@ export function DoctorForm({ existingSpecialties }: DoctorFormProps) {
 
       <FormSection
         title="Teléfonos"
-        description="Mínimo 1, máximo 10. Cada número con exactamente 11 dígitos."
+        description="Opcional. Hasta 10. Cada número con exactamente 11 dígitos."
       >
         <Controller
           name="phones"

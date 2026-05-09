@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
 import {
   Select,
@@ -261,7 +261,9 @@ export function OrderForm({
   }, [provider]);
 
   const holderContractors = holder?.contractors ?? [];
-  const holderInsurances = holder?.insurances ?? [];
+  const selectedContractorId = useWatch({ control, name: 'contractorId' }) as string | '' | undefined;
+  const selectedContractor = holderContractors.find((c) => c.id === selectedContractorId);
+  const insurancesForSelectedContractor = selectedContractor?.insurances ?? [];
 
   const branchSelect = (() => {
     if (userBranches.length === 0) {
@@ -306,10 +308,80 @@ export function OrderForm({
 
   const priceAmount = useWatch({ control, name: 'priceAmount' }) as number | undefined;
   const diff = (priceAmount ?? 0) - totalPaid;
+  const diffBs =
+    currentRate && currentRate.amountBs ? diff * Number(currentRate.amountBs) : null;
 
   const showPayments = type === 'cash';
   const isCashea = type === 'cashea';
   const casheaNet = isCashea ? +(((priceAmount ?? 0) * 0.9).toFixed(2)) : 0;
+
+  // Price breakdown derived from selected service types + insurance/Particular.
+  const serviceTypeIds = (useWatch({ control, name: 'serviceTypeIds' }) ?? []) as string[];
+  const insuranceId = useWatch({ control, name: 'insuranceId' }) as string | '' | undefined;
+  const isInsuranceOrder = type === 'insurance';
+
+  type PriceLine = {
+    id: string;
+    name: string;
+    /** null si el ST no tiene precio definido para esta combinación. */
+    amount: number | null;
+  };
+
+  const priceLines: PriceLine[] = useMemo(() => {
+    const lookupKey: string | null = isInsuranceOrder ? (insuranceId || null) : null;
+    const ccy = (priceCurrency as 'USD' | 'EUR' | undefined) ?? 'USD';
+    return serviceTypeIds.map((id) => {
+      const st = serviceTypes.find((s) => s.id === id);
+      if (!st) return { id, name: '—', amount: null };
+      const row = (st.prices ?? []).find((p) =>
+        lookupKey === null ? !p.insuranceId : p.insuranceId === lookupKey,
+      );
+      if (!row) return { id, name: st.name, amount: null };
+      const raw = ccy === 'USD' ? row.priceUsd : row.priceEur;
+      const num = raw === null || raw === undefined ? null : Number(raw);
+      return {
+        id,
+        name: st.name,
+        amount: num !== null && Number.isFinite(num) ? num : null,
+      };
+    });
+  }, [serviceTypeIds, serviceTypes, insuranceId, isInsuranceOrder, priceCurrency]);
+
+  const computedPriceSum = useMemo(
+    () => priceLines.reduce((acc, l) => acc + (l.amount ?? 0), 0),
+    [priceLines],
+  );
+  const hasMissingPrices = priceLines.some((l) => l.amount === null);
+
+  // Auto-set priceAmount when selección/moneda cambian.
+  // Insurance: locked → siempre sincroniza con la suma calculada (ignora input manual).
+  // Cash/credit/cashea: overwrite cuando cambian inputs — el usuario puede editar luego.
+  const lastAppliedSumRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (priceLines.length === 0) return;
+    const rounded = +computedPriceSum.toFixed(2);
+    const current = priceAmount ?? 0;
+    if (isInsuranceOrder) {
+      if (rounded !== current) {
+        setValue('priceAmount', rounded, { shouldDirty: true, shouldValidate: true });
+      }
+      lastAppliedSumRef.current = rounded;
+      return;
+    }
+    // No-insurance: respetar edición manual posterior al último auto-set.
+    const userEdited =
+      lastAppliedSumRef.current !== null &&
+      Math.abs(current - lastAppliedSumRef.current) > 0.001;
+    if (userEdited) {
+      lastAppliedSumRef.current = rounded; // resync baseline so next change re-applies
+      return;
+    }
+    if (rounded !== current) {
+      setValue('priceAmount', rounded, { shouldDirty: true, shouldValidate: true });
+    }
+    lastAppliedSumRef.current = rounded;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [computedPriceSum, isInsuranceOrder, insuranceId, priceCurrency, serviceTypeIds.join(',')]);
 
   const orderSteps = buildOrderSteps(!!savedOrder);
   const renderStep1 = currentStep === 'register';
@@ -497,7 +569,10 @@ export function OrderForm({
                   render={({ field }) => (
                     <Select
                       value={field.value || ''}
-                      onValueChange={field.onChange}
+                      onValueChange={(v) => {
+                        field.onChange(v);
+                        setValue('insuranceId', '', { shouldDirty: true });
+                      }}
                       disabled={!holder || holderContractors.length === 0}
                     >
                       <SelectTrigger
@@ -538,7 +613,7 @@ export function OrderForm({
                     <Select
                       value={field.value || ''}
                       onValueChange={field.onChange}
-                      disabled={!holder || holderInsurances.length === 0}
+                      disabled={!selectedContractor || insurancesForSelectedContractor.length === 0}
                     >
                       <SelectTrigger
                         className={cn(
@@ -548,16 +623,16 @@ export function OrderForm({
                       >
                         <SelectValue
                           placeholder={
-                            !holder
-                              ? 'Seleccioná un titular primero'
-                              : holderInsurances.length === 0
-                                ? 'Titular sin seguros'
+                            !selectedContractor
+                              ? 'Seleccioná un contratista primero'
+                              : insurancesForSelectedContractor.length === 0
+                                ? 'Contratista sin seguros'
                                 : 'Seleccioná seguro'
                           }
                         />
                       </SelectTrigger>
                       <SelectContent>
-                        {holderInsurances.map((i) => (
+                        {insurancesForSelectedContractor.map((i) => (
                           <SelectItem key={i.id} value={i.id}>
                             {i.name}
                           </SelectItem>
@@ -645,54 +720,118 @@ export function OrderForm({
             <FieldError message={errors.specialtyId?.message} />
           </div>
 
-          <div className="space-y-1.5">
-            <RequiredLabel required>Tipo de servicio</RequiredLabel>
+          <div className="space-y-1.5 sm:col-span-2">
+            <RequiredLabel required>Tipos de servicio</RequiredLabel>
             <Controller
               control={control}
-              name="serviceTypeId"
-              render={({ field }) => (
-                <Select value={field.value || ''} onValueChange={field.onChange}>
-                  <SelectTrigger
-                    className={cn('h-9', errors.serviceTypeId?.message && 'border-destructive')}
+              name="serviceTypeIds"
+              render={({ field }) => {
+                const selected: string[] = Array.isArray(field.value) ? field.value : [];
+                const toggle = (id: string) =>
+                  field.onChange(
+                    selected.includes(id)
+                      ? selected.filter((v) => v !== id)
+                      : [...selected, id],
+                  );
+                return (
+                  <div
+                    className={cn(
+                      'flex flex-wrap gap-2 p-3 border rounded-lg bg-muted/20 min-h-[44px]',
+                      errors.serviceTypeIds?.message && 'border-destructive',
+                    )}
                   >
-                    <SelectValue placeholder="Seleccioná tipo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {serviceTypes.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>
-                        {s.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+                    {serviceTypes.length === 0 ? (
+                      <span className="text-xs text-muted-foreground">
+                        No hay tipos de servicio activos.
+                      </span>
+                    ) : (
+                      serviceTypes.map((s) => {
+                        const active = selected.includes(s.id);
+                        return (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => toggle(s.id)}
+                            className={cn(
+                              'inline-flex items-center rounded-md border px-2 py-1 text-xs font-medium transition-colors',
+                              active
+                                ? 'bg-primary text-primary-foreground border-primary'
+                                : 'bg-background hover:bg-accent',
+                            )}
+                          >
+                            {s.name}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                );
+              }}
             />
-            <FieldError message={errors.serviceTypeId?.message} />
+            <FieldError
+              message={
+                typeof errors.serviceTypeIds?.message === 'string'
+                  ? errors.serviceTypeIds.message
+                  : undefined
+              }
+            />
           </div>
 
           <div className="space-y-1.5 sm:col-span-2">
-            <RequiredLabel required>Patología</RequiredLabel>
+            <RequiredLabel>Patologías (opcional)</RequiredLabel>
             <Controller
               control={control}
-              name="pathologyId"
-              render={({ field }) => (
-                <Select value={field.value || ''} onValueChange={field.onChange}>
-                  <SelectTrigger
-                    className={cn('h-9', errors.pathologyId?.message && 'border-destructive')}
+              name="pathologyIds"
+              render={({ field }) => {
+                const selected: string[] = Array.isArray(field.value) ? field.value : [];
+                const toggle = (id: string) =>
+                  field.onChange(
+                    selected.includes(id)
+                      ? selected.filter((v) => v !== id)
+                      : [...selected, id],
+                  );
+                return (
+                  <div
+                    className={cn(
+                      'flex flex-wrap gap-2 p-3 border rounded-lg bg-muted/20 min-h-[44px]',
+                      errors.pathologyIds?.message && 'border-destructive',
+                    )}
                   >
-                    <SelectValue placeholder="Seleccioná patología" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {pathologies.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+                    {pathologies.length === 0 ? (
+                      <span className="text-xs text-muted-foreground">
+                        No hay patologías activas.
+                      </span>
+                    ) : (
+                      pathologies.map((p) => {
+                        const active = selected.includes(p.id);
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => toggle(p.id)}
+                            className={cn(
+                              'inline-flex items-center rounded-md border px-2 py-1 text-xs font-medium transition-colors',
+                              active
+                                ? 'bg-primary text-primary-foreground border-primary'
+                                : 'bg-background hover:bg-accent',
+                            )}
+                          >
+                            {p.name}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                );
+              }}
             />
-            <FieldError message={errors.pathologyId?.message} />
+            <FieldError
+              message={
+                typeof errors.pathologyIds?.message === 'string'
+                  ? errors.pathologyIds.message
+                  : undefined
+              }
+            />
           </div>
         </FormGrid>
       </FormSection>
@@ -735,7 +874,14 @@ export function OrderForm({
         </FormGrid>
       </FormSection>
 
-      <FormSection title="Precio" description="Monto que se cobra al titular por el servicio.">
+      <FormSection
+        title="Precio"
+        description={
+          isInsuranceOrder
+            ? 'Precio fijo según los precios definidos del seguro para cada tipo de servicio.'
+            : 'Suma de los precios "Particular" de cada tipo de servicio. Editable.'
+        }
+      >
         <FormGrid>
           <div className="space-y-1.5">
             <RequiredLabel required>Moneda</RequiredLabel>
@@ -756,7 +902,9 @@ export function OrderForm({
             />
           </div>
           <div className="space-y-1.5">
-            <RequiredLabel required>Monto</RequiredLabel>
+            <RequiredLabel required>
+              Monto {isInsuranceOrder ? '(fijo)' : ''}
+            </RequiredLabel>
             <Controller
               control={control}
               name="priceAmount"
@@ -765,6 +913,7 @@ export function OrderForm({
                   value={typeof field.value === 'number' ? field.value : undefined}
                   onChange={(v) => field.onChange(v ?? 0)}
                   currencyPrefix={priceCurrency || 'USD'}
+                  disabled={isInsuranceOrder}
                   className={cn(errors.priceAmount?.message && 'border-destructive')}
                 />
               )}
@@ -772,6 +921,49 @@ export function OrderForm({
             <FieldError message={errors.priceAmount?.message} />
           </div>
         </FormGrid>
+
+        {priceLines.length > 0 ? (
+          <div className="mt-4 rounded-lg border bg-muted/20">
+            <div className="px-3 py-2 border-b text-[11px] uppercase tracking-[0.06em] text-muted-foreground flex items-center justify-between">
+              <span>
+                Detalle por tipo de servicio · {isInsuranceOrder ? 'Tarifa de seguro' : 'Particular'}
+              </span>
+              <span>{priceCurrency || 'USD'}</span>
+            </div>
+            <div className="divide-y">
+              {priceLines.map((l) => (
+                <div
+                  key={l.id}
+                  className="flex items-center justify-between px-3 py-2 text-sm"
+                >
+                  <span className="truncate">{l.name}</span>
+                  <span
+                    className={cn(
+                      'font-mono',
+                      l.amount === null && 'text-warning',
+                    )}
+                  >
+                    {l.amount === null
+                      ? 'Sin precio definido'
+                      : l.amount.toFixed(2)}
+                  </span>
+                </div>
+              ))}
+              <div className="flex items-center justify-between px-3 py-2 text-sm font-semibold bg-muted/40">
+                <span>Total</span>
+                <span className="font-mono">
+                  {computedPriceSum.toFixed(2)} {priceCurrency || 'USD'}
+                </span>
+              </div>
+            </div>
+            {hasMissingPrices ? (
+              <div className="px-3 py-2 text-[11px] text-warning border-t">
+                Hay tipos de servicio sin precio definido para esta combinación. Definí los precios
+                desde el módulo Tipos de Servicio.
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         {isCashea ? (
           <div className="mt-4 rounded-lg border border-dashed bg-warning-soft/40 px-4 py-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1">
@@ -810,14 +1002,35 @@ export function OrderForm({
           <Controller
             control={control}
             name="payments"
-            render={({ field }) => (
-              <OrderPaymentForm
-                payments={field.value ?? []}
-                onChange={(next) => field.onChange(next)}
-                orderCurrency={(priceCurrency as OrderCurrency) ?? 'USD'}
-                currentRate={currentRate}
-              />
-            )}
+            render={({ field }) => {
+              const rawPaymentsErrors = errors.payments as unknown;
+              const paymentsErrors = Array.isArray(rawPaymentsErrors)
+                ? (rawPaymentsErrors as Array<
+                    Record<string, { message?: string } | undefined> | undefined
+                  >).map((e) =>
+                    e
+                      ? {
+                          type: e.type?.message,
+                          paymentDate: e.paymentDate?.message,
+                          referenceNumber: e.referenceNumber?.message,
+                          bankCode: e.bankCode?.message,
+                          exchangeRateId: e.exchangeRateId?.message,
+                          amountCurrency: e.amountCurrency?.message,
+                          amountValue: e.amountValue?.message,
+                        }
+                      : undefined,
+                  )
+                : undefined;
+              return (
+                <OrderPaymentForm
+                  payments={field.value ?? []}
+                  onChange={(next) => field.onChange(next)}
+                  orderCurrency={(priceCurrency as OrderCurrency) ?? 'USD'}
+                  currentRate={currentRate}
+                  errors={paymentsErrors}
+                />
+              );
+            }}
           />
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 pt-3 border-t">
@@ -852,6 +1065,26 @@ export function OrderForm({
                   </Badge>
                 )}
               </div>
+              {Math.abs(diff) >= 0.01 ? (
+                diffBs !== null ? (
+                  <div className="text-xs text-muted-foreground">
+                    {diff > 0 ? 'Faltan' : 'Excede'}{' '}
+                    <span className="font-mono">
+                      Bs. {Math.abs(diffBs).toLocaleString('es-VE', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                    <span className="ml-1 text-[10px]">
+                      (tasa {Number(currentRate?.amountBs ?? 0).toFixed(2)} Bs/{priceCurrency})
+                    </span>
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted-foreground italic">
+                    Sin tasa de cambio activa para {priceCurrency} — no se puede calcular diferencia en Bs.
+                  </div>
+                )
+              ) : null}
             </div>
           </div>
         </FormSection>

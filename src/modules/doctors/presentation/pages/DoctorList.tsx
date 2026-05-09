@@ -390,7 +390,7 @@ export function DoctorList() {
                           )}
                         </div>
                         <div className="text-xs text-muted-foreground truncate">
-                          {d.email}
+                          {d.email || '—'}
                         </div>
                       </div>
                     </div>

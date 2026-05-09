@@ -5,13 +5,13 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { patientGateway } from '../../infrastructure/patientGateway';
 import { displayName } from '../../domain/models/patient';
 import type { UpdatePatientDto } from '../../domain/models/patient';
-import type { Insurance } from '@/modules/insurances/domain/models/insurance';
 import type { Contractor } from '@/modules/contractors/domain/models/contractor';
 import { Button } from '@/components/ui/button';
 import { PatientForm } from '../components/PatientForm';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { patientSchema, type PatientValues } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
+import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { ChevronLeft } from 'lucide-react';
 
 export function PatientEdit() {
@@ -19,7 +19,6 @@ export function PatientEdit() {
   const navigate = useNavigate();
   const [fetching, setFetching] = useState(true);
   const [headerLabel, setHeaderLabel] = useState('');
-  const [existingInsurances, setExistingInsurances] = useState<Insurance[]>([]);
   const [existingContractors, setExistingContractors] = useState<Contractor[]>([]);
 
   const methods = useForm<PatientValues>({
@@ -35,8 +34,7 @@ export function PatientEdit() {
       rif: '',
       birthDate: '',
       address: '',
-      phones: [{ number: '', label: '' }],
-      insuranceIds: [],
+      phones: [],
       contractorIds: [],
       isActive: true,
     },
@@ -50,7 +48,7 @@ export function PatientEdit() {
         methods.reset({
           personType: p.personType,
           cedula: p.cedula ?? '',
-          email: p.email,
+          email: p.email ?? '',
           firstName: p.firstName ?? '',
           lastName: p.lastName ?? '',
           businessName: p.businessName ?? '',
@@ -60,13 +58,11 @@ export function PatientEdit() {
           phones:
             p.phones?.length > 0
               ? p.phones.map((ph) => ({ number: ph.number, label: ph.label ?? '' }))
-              : [{ number: '', label: '' }],
-          insuranceIds: (p.insurances ?? []).map((i) => i.id),
+              : [],
           contractorIds: (p.contractors ?? []).map((c) => c.id),
           isActive: p.isActive,
         });
         setHeaderLabel(displayName(p));
-        setExistingInsurances(p.insurances ?? []);
         setExistingContractors(p.contractors ?? []);
       } catch (e) {
         notify.fromError(e, 'No se pudo cargar el paciente.');
@@ -82,14 +78,13 @@ export function PatientEdit() {
     try {
       const dto: UpdatePatientDto = {
         personType: values.personType,
-        email: values.email,
+        email: values.email?.trim() || '',
         birthDate: values.birthDate,
         address: values.address,
         phones: values.phones.map((p) => ({
           number: p.number,
           label: p.label || undefined,
         })),
-        insuranceIds: values.insuranceIds ?? [],
         contractorIds: values.contractorIds ?? [],
         isActive: values.isActive,
       };
@@ -117,7 +112,7 @@ export function PatientEdit() {
     <div className="max-w-3xl mx-auto">
       <PageBreadcrumbs />
       <FormProvider {...methods}>
-        <form onSubmit={methods.handleSubmit(onSubmit)} className="space-y-6">
+        <form onSubmit={methods.handleSubmit(onSubmit, (errs) => notifyFormErrors(errs))} className="space-y-6">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="space-y-1">
               <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">
@@ -134,10 +129,7 @@ export function PatientEdit() {
             </button>
           </div>
 
-          <PatientForm
-            existingInsurances={existingInsurances}
-            existingContractors={existingContractors}
-          />
+          <PatientForm existingContractors={existingContractors} />
 
           <div className="flex items-center justify-between gap-3 pt-2">
             <p className="text-xs text-muted-foreground">

@@ -12,6 +12,7 @@ import {
   type PaymentMethodValues,
 } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
+import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { ChevronLeft } from 'lucide-react';
 
 function cleanPaymentMethod(m: PaymentMethodValues): DoctorPaymentMethod {
@@ -47,7 +48,7 @@ export function DoctorCreate() {
       lastName: '',
       isLegalEntity: false,
       rif: '',
-      phones: [{ number: '', label: '' }],
+      phones: [],
       specialtyIds: [],
       paymentMethods: [],
       isActive: true,
@@ -60,7 +61,7 @@ export function DoctorCreate() {
     try {
       await doctorGateway.create({
         cedula: values.cedula,
-        email: values.email,
+        email: values.email?.trim() || undefined,
         firstName: values.firstName,
         lastName: values.lastName,
         isLegalEntity: values.isLegalEntity,
@@ -84,7 +85,7 @@ export function DoctorCreate() {
     <div className="max-w-3xl mx-auto">
       <PageBreadcrumbs />
       <FormProvider {...methods}>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        <form onSubmit={handleSubmit(onSubmit, (errs) => notifyFormErrors(errs))} className="space-y-6">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="space-y-1">
               <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">

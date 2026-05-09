@@ -15,6 +15,7 @@ import {
   type ChangeOwnPasswordValues,
 } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
+import { notifyFormErrors } from '@/lib/notifications/formErrors';
 
 export function ProfilePage() {
   const user = useAuthStore((s) => s.user);
@@ -87,7 +88,7 @@ export function ProfilePage() {
           <CardTitle>Datos personales</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={profileForm.handleSubmit(onProfileSubmit)} className="space-y-4" noValidate>
+          <form onSubmit={profileForm.handleSubmit(onProfileSubmit, (errs) => notifyFormErrors(errs))} className="space-y-4" noValidate>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="firstName">Nombre</Label>
@@ -144,7 +145,7 @@ export function ProfilePage() {
         </CardHeader>
         <CardContent>
           <form
-            onSubmit={passwordForm.handleSubmit(onPasswordSubmit)}
+            onSubmit={passwordForm.handleSubmit(onPasswordSubmit, (errs) => notifyFormErrors(errs))}
             className="space-y-4"
             noValidate
           >

@@ -62,10 +62,8 @@ export interface Order {
   careCenter?: OrderRefSummary | null;
   specialtyId: string;
   specialty?: { id: string; name: string };
-  serviceTypeId: string;
-  serviceType?: { id: string; name: string };
-  pathologyId: string;
-  pathology?: { id: string; name: string };
+  serviceTypes?: Array<{ id: string; name: string }>;
+  pathologies?: Array<{ id: string; name: string }>;
   orderDate: string;
   appointmentDate: string;
   priceCurrency: OrderCurrency;
@@ -88,8 +86,8 @@ export interface CreateOrderDto {
   doctorId?: string;
   careCenterId?: string;
   specialtyId: string;
-  serviceTypeId: string;
-  pathologyId: string;
+  serviceTypeIds: string[];
+  pathologyIds?: string[];
   orderDate: string;
   appointmentDate: string;
   priceCurrency: OrderCurrency;

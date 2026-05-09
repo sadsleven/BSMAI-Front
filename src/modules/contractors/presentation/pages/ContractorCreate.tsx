@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { contractorGateway } from '../../infrastructure/contractorGateway';
 import { Button } from '@/components/ui/button';
@@ -8,9 +8,11 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { FormSwitch } from '@/components/ui/form-switch';
 import { FormSection, FormGrid } from '@/components/ui/form-section';
+import { InsuranceMultiSelect } from '@/components/ui/insurance-multi-select';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { contractorSchema, type ContractorValues } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
+import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { ChevronLeft, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -22,11 +24,12 @@ export function ContractorCreate() {
     handleSubmit,
     setValue,
     watch,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<ContractorValues>({
     resolver: zodResolver(contractorSchema),
     mode: 'onBlur',
-    defaultValues: { name: '', description: '', isActive: true },
+    defaultValues: { name: '', description: '', insuranceIds: [], isActive: true },
   });
 
   const isActive = watch('isActive') ?? true;
@@ -39,6 +42,7 @@ export function ContractorCreate() {
         name: values.name,
         description: values.description || undefined,
         isActive: values.isActive,
+        insuranceIds: values.insuranceIds ?? [],
       });
       notify.success('Contratista creado exitosamente');
       navigate('/contractors');
@@ -50,7 +54,7 @@ export function ContractorCreate() {
   return (
     <div className="max-w-3xl mx-auto">
       <PageBreadcrumbs />
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6" noValidate>
+      <form onSubmit={handleSubmit(onSubmit, (errs) => notifyFormErrors(errs))} className="space-y-6" noValidate>
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="space-y-1">
             <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">
@@ -101,6 +105,27 @@ export function ContractorCreate() {
               ) : null}
             </div>
           </FormGrid>
+        </FormSection>
+
+        <FormSection
+          title="Seguros"
+          description="Asigná los seguros que ofrece este contratista. Los pacientes con este contratista heredarán estos seguros."
+        >
+          <Controller
+            name="insuranceIds"
+            control={control}
+            render={({ field }) => (
+              <InsuranceMultiSelect
+                value={field.value ?? []}
+                onChange={field.onChange}
+                error={
+                  typeof errors.insuranceIds?.message === 'string'
+                    ? errors.insuranceIds.message
+                    : undefined
+                }
+              />
+            )}
+          />
         </FormSection>
 
         <FormSection title="Estado">

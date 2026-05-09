@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -11,11 +12,18 @@ import { FormSection, FormGrid } from '@/components/ui/form-section';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { serviceTypeSchema, type ServiceTypeValues } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
+import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { ChevronLeft, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+  ServiceTypePricesInput,
+  pricesToPayload,
+  type ServiceTypePricesValue,
+} from '../components/ServiceTypePricesInput';
 
 export function ServiceTypeCreate() {
   const navigate = useNavigate();
+  const [priceRows, setPriceRows] = useState<ServiceTypePricesValue['rows']>([]);
 
   const {
     register,
@@ -39,6 +47,7 @@ export function ServiceTypeCreate() {
         name: values.name,
         description: values.description || undefined,
         isActive: values.isActive,
+        prices: pricesToPayload(priceRows),
       });
       notify.success('Tipo de servicio creado exitosamente');
       navigate('/service-types');
@@ -50,7 +59,7 @@ export function ServiceTypeCreate() {
   return (
     <div className="max-w-3xl mx-auto">
       <PageBreadcrumbs />
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6" noValidate>
+      <form onSubmit={handleSubmit(onSubmit, (errs) => notifyFormErrors(errs))} className="space-y-6" noValidate>
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="space-y-1">
             <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">
@@ -98,6 +107,13 @@ export function ServiceTypeCreate() {
               ) : null}
             </div>
           </FormGrid>
+        </FormSection>
+
+        <FormSection
+          title="Precios"
+          description="Asigná precio en USD y/o EUR para cada seguro y para órdenes Particular (sin seguro). Dejá un campo vacío si no aplica."
+        >
+          <ServiceTypePricesInput value={priceRows} onChange={setPriceRows} />
         </FormSection>
 
         <FormSection title="Estado">

@@ -16,6 +16,7 @@ import { Can } from '@/modules/auth/presentation/components/Can';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { roleSchema, type RoleValues } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
+import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { ChevronLeft, AlertTriangle, Shield } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -125,7 +126,7 @@ export function RoleEdit() {
         </button>
       </div>
 
-      <form id="role-edit-form" onSubmit={handleSubmit(onSubmit)} className="space-y-6" noValidate>
+      <form id="role-edit-form" onSubmit={handleSubmit(onSubmit, (errs) => notifyFormErrors(errs))} className="space-y-6" noValidate>
         <FormSection title="Información del rol">
           <FormGrid>
             <div className="space-y-1.5 sm:col-span-2">

@@ -139,10 +139,12 @@ Todas las tablas de la app deben seguir este patrón — **no hay controles de s
 
 ## Validación de formularios
 
-- Schemas Zod centralizados en `src/lib/validations/schemas.ts`: `loginSchema`, `profileSchema`, `createUserSchema`, `updateUserSchema`, `changeOwnPasswordSchema`, `adminChangePasswordSchema`, `roleSchema`, `specialtySchema`, `patientSchema` (con `insuranceIds`), `doctorSchema`, `careCenterSchema`, `paymentMethodSchema`, `insuranceSchema`, `pathologySchema`, `serviceTypeSchema`.
+- Schemas Zod centralizados en `src/lib/validations/schemas.ts`: `loginSchema`, `profileSchema`, `createUserSchema`, `updateUserSchema`, `changeOwnPasswordSchema`, `adminChangePasswordSchema`, `roleSchema`, `specialtySchema`, `patientSchema` (sin `insuranceIds` — los seguros se derivan de contratistas), `doctorSchema`, `careCenterSchema`, `paymentMethodSchema`, `insuranceSchema` (con `email` y `fiscalAddress`), `pathologySchema`, `serviceTypeSchema`, `contractorSchema` (con `insuranceIds`), `orderSchema` (con `serviceTypeIds: array.min(1)` + `pathologyIds: array.optional()`).
 - Conectados a React Hook Form via `zodResolver`. Modo de validación: `onBlur` consistente.
-- Reglas reutilizables: `emailSchema`, `nameSchema(label)`, `phoneSchema`, `passwordSchema`, `cedulaSchema`, `rifSchema`, `phoneNumberSchema`, `phoneItemSchema`, `phonesArraySchema`, `paymentMethodsArraySchema`. Mensajes en español.
+- Reglas reutilizables: `emailSchema`, **`optionalEmailSchema`**, `nameSchema(label)`, `phoneSchema`, `passwordSchema`, `cedulaSchema`, `rifSchema`, **`optionalRifSchema`**, `phoneNumberSchema`, `phoneItemSchema`, `phonesArraySchema`, `paymentMethodsArraySchema`. Mensajes en español.
 - Reglas duras: nombre 1-150 chars solo letras/acentos/`ñ`; teléfono opcional pero exactamente 11 dígitos si presente; password 8-100 con mayúscula+minúscula+número+especial; cédula `V/E-XX.XXX.XXX`; RIF `J/G/V/E-XX.XXX.XXX-D`; teléfonos para owners 11 dígitos exactos.
+- **Campos opcionales con UNIQUE en BE**: el FE espeja con `optionalEmailSchema` / `optionalRifSchema` (empty string passes; valida formato sólo si filled). Forms muestran el label como `Campo (opcional)` sin asterisco. En update, el FE envía `''` (string vacío) para limpiar y `undefined` para no tocar; el BE mapea `''` → `null` y skip uniqueness check si vacío.
+- **Teléfonos opcionales**: `phonesArraySchema` ya no exige `.min(1)`. Forms inicializan `phones: []`. `<PhoneListInput>` por defecto `min = 0` y NO renderiza una fila vacía automática.
 - Cross-validation con `superRefine`:
   - `doctorSchema` valida `isLegalEntity ↔ rif` (RIF requerido y formato si jurídica; ausente si natural).
   - `paymentMethodSchema` valida campos por tipo (`mobile_payment` exige bankCode + phoneNumber + idDocument; `bank_transfer` exige bankCode + accountNumber + accountHolderName + idDocument; `other` exige description ≥3 chars).
@@ -159,18 +161,33 @@ Todas las tablas de la app deben seguir este patrón — **no hay controles de s
 - `<SpecialtyMultiSelect>` (`src/components/ui/specialty-multi-select.tsx`) — multi-select con búsqueda. Carga `/specialties/assignable`. Especialidades ya asignadas que dejaron de ser asignables aparecen como chip punteado, **quitables pero no re-agregables**. Pasar `existing` para mantenerlas.
 - `<InsuranceMultiSelect>` (`src/components/ui/insurance-multi-select.tsx`) — multi-select de seguros. Mismo patrón que `<SpecialtyMultiSelect>` (consume `/insurances/assignable`, soporta `existing` para chips stale). Convención general: cualquier relación N-a-M visible en formularios usa este patrón con endpoint `/<resource>/assignable`.
 - `<PaymentMethodsInput>` (`src/components/ui/payment-methods-input.tsx`) — lista dinámica de métodos de pago. Type discriminator: `mobile_payment | bank_transfer | other`, cada uno renderiza fields propios. Carga `GET /banks` para `<Select>` de banco. Soporta `defaults` (cedula/rif/fullName/firstPhone): autocompleta al cambiar de tipo o agregar uno nuevo, **sin pisar lo ya tipeado** — el usuario puede sobreescribir manualmente.
+- `<ServiceTypePricesInput>` (`src/modules/service-types/presentation/components/ServiceTypePricesInput.tsx`) — editor de precios por tipo de servicio. Renderiza una fila "Particular" + una por cada `Insurance` asignable, cada una con `<CurrencyAmountInput currencyPrefix="USD">` + `currencyPrefix="EUR"`. Helpers: `pricesToPayload(rows)` filtra filas vacías al guardar. **Reutilizar siempre que se editen precios per-seguro**.
 
 ### Módulos clínicos
 
 - `specialties` — CRUD simple. Forms con `name` + `description` + `isActive`. List con icon-tile cyan-soft.
-- `patients` — Form con `<CedulaInput>` + email + nombres + birthDate + dirección + `<PhoneListInput>` + `<InsuranceMultiSelect>` + estado. List muestra primeros 2 seguros como badges debajo del email + filtro Select por seguro (server-side via subquery, no rompe otros seguros del paciente). Detail muestra sección "Seguros" con chips stale para deshabilitados/papelera.
-- `doctors` — Form con `<CedulaInput>` + email + nombres + `<FormSwitch>` `isLegalEntity` + `<RifInput>` condicional + `<PhoneListInput>` + `<SpecialtyMultiSelect>` + `<PaymentMethodsInput>` (defaults desde cedula/rif/nombre/primer teléfono) + estado. List con badge "Jurídica" y filtro `entityType` server-side.
-- `care-centers` — Form con `name` + email + `<RifInput>` (siempre obligatorio) + `<PhoneListInput>` + `<SpecialtyMultiSelect>` + `<PaymentMethodsInput>` + estado.
+- `patients` — Form con `<CedulaInput>` + email **(opcional)** + nombres + birthDate + dirección + `<PhoneListInput>` (opcional) + `<ContractorMultiSelect>` + estado. **Sin `<InsuranceMultiSelect>`** — los seguros del paciente se derivan dinámicamente de los contratistas asignados (helper `patientInsurancesFromContractors(p)` en `src/modules/patients/domain/models/patient.ts`). List muestra primeros 2 seguros derivados como badges + filtro Select por seguro (server-side cruza `patient_contractors` con `contractor_insurances`).
+- `doctors` — Form con `<CedulaInput>` + email **(opcional)** + nombres + `<FormSwitch>` `isLegalEntity` + `<RifInput>` condicional + `<PhoneListInput>` (opcional) + `<SpecialtyMultiSelect>` + `<PaymentMethodsInput>` (defaults desde cedula/rif/nombre/primer teléfono) + estado. List con badge "Jurídica" y filtro `entityType` server-side.
+- `care-centers` — Form con `businessName` + email **(opcional)** + `<RifInput>` **(opcional)** + `<PhoneListInput>` (opcional) + `<SpecialtyMultiSelect>` + `<PaymentMethodsInput>` + estado.
 - `banks` — gateway sólo lectura. Único consumidor actual: `<PaymentMethodsInput>`.
-- `insurances` — Form con `name` + `description` + `<PhoneListInput>` + estado. List con icon Shield + columna teléfono. Sidebar bajo "Catálogos".
+- `insurances` — Form con `name` + `description` + email **(opcional)** + `fiscalAddress` (textarea, opcional) + `<PhoneListInput>` (opcional) + estado. **Asociado a contratistas, no a pacientes**. List con icon Shield. Sidebar bajo "Catálogos".
+- `contractors` — Form con `name` + `description` + `<InsuranceMultiSelect>` + estado. Los pacientes con este contratista heredan estos seguros visualmente. Sidebar bajo "Catálogos".
 - `pathologies` — CRUD simple paralelo a `specialties` (icon Activity). Sidebar bajo "Catálogos".
-- `service-types` — CRUD simple paralelo a `specialties` (icon FileText, ej. "Radiografía de tórax"). Sidebar bajo "Catálogos".
-- **Replace-all en update**: el FE envía siempre el array completo de phones / paymentMethods. En edit los items existentes preservan `id` (campo opcional en el schema); los nuevos van sin id. El backend hace diff por id.
+- `service-types` — CRUD simple **+ precios** vía `<ServiceTypePricesInput>` (Particular + 1 fila por seguro asignable, USD + EUR). Sidebar bajo "Catálogos".
+- `orders` — ver sección dedicada abajo.
+- **Replace-all en update**: el FE envía siempre el array completo de phones / paymentMethods / prices. En edit los items existentes preservan `id` (campo opcional en el schema); los nuevos van sin id. El backend hace diff por id (o delete-and-insert según el recurso).
+
+### Módulo de Órdenes (`/orders`) — pricing + UX
+
+- **Service types y patologías M2M**: `<OrderForm>` renderiza chips toggle inline (no `*MultiSelect` separado). `serviceTypeIds` (≥1, requerido) y `pathologyIds` (0..N, opcional). El BE devuelve `serviceTypes: ServiceType[]` y `pathologies: Pathology[]` en el detalle.
+- **Auto-pricing desde `ServiceType.prices`**:
+  - `type === 'insurance'` → `priceAmount` se calcula como suma de los precios `(USD|EUR)` que cada `ServiceType` tiene definidos para el `Insurance` seleccionado. El `<CurrencyAmountInput>` se renderiza `disabled` (label "Monto (fijo)").
+  - `type ∈ {cash, credit, cashea}` → suma prefilada de los precios "Particular" (insuranceId IS NULL) de cada ST. Editable; `lastAppliedSumRef` (useRef) permite que la edición manual del usuario persista hasta que cambie selección/moneda.
+  - El form muestra el desglose por ST en una mini-tabla (label + monto USD/EUR), con label "Sin precio definido" en `text-warning` cuando falta el precio para esa combinación + nota a pie de la sección.
+  - El gateway `serviceTypeGateway.listAssignable()` devuelve los `prices` eager para que el cálculo viva en cliente sin round-trips.
+- **Diferencia en Bs en pagos**: además de `Diferencia` en moneda de la orden, se calcula `diffBs = diff × currentRate.amountBs` y se renderiza debajo del badge ("Faltan/Excede Bs. X,XX (tasa Y Bs/USD)"). Si no hay tasa activa se muestra notice italic muted.
+- **Errores per-pago**: `<OrderForm>` mapea `errors.payments` (RHF) al shape `PaymentItemErrors[]` que `<OrderPaymentForm>` ya consume per-fila para mostrar borde rojo + mensaje inline en cada campo (banco, referencia, monto, etc.).
+- **`orderNumber`**: número auto-incremental simple (sin formato `ORD-YYYY-NNNNNN`). El backend lo controla con la env `ORDER_NUMBER_START` (idempotente, `OnModuleInit` bumpea `orders_seq`).
 
 ## Notificaciones (`notify`)
 
@@ -178,6 +195,21 @@ Todas las tablas de la app deben seguir este patrón — **no hay controles de s
 - `<Toaster richColors closeButton position="top-right" />` se monta en `App.tsx`.
 - Errores de red (sin `response`) se notifican automáticamente desde el interceptor de Axios.
 - Disparados en login, logout, todos los CRUD de usuarios y roles, asignación de permisos, cambio de contraseña, actualización de perfil.
+
+### Toast de errores de validación de formulario
+
+`src/lib/notifications/formErrors.ts` expone `notifyFormErrors(errors, opts?)` y `COMMON_LABELS` (mapa path → label visible para todos los campos del sistema: auth, person, doctor/care-center, order, payments, prices, etc.).
+
+**Convención obligatoria**: todo `<form>` usa la firma:
+
+```tsx
+<form onSubmit={handleSubmit(onSubmit, (errs) => notifyFormErrors(errs))}>
+```
+
+- El helper recorre recursivamente `FieldErrors` (objetos + arrays anidados como `payments.0.bankCode`).
+- Emite un único toast con bullet list (max 5 items + "…y N más"). Description con `whiteSpace: pre-wrap`, duration 7s.
+- Per-form override de labels: `notifyFormErrors(errs, { labels: { foo: 'Campo Foo' } })` — se mergea sobre `COMMON_LABELS`.
+- Aplicado en **todos los forms del sistema** (orders, patients, doctors, care-centers, insurances, contractors, specialties, pathologies, service-types, exchange-rates, branches, users, roles, login, profile, password).
 
 ## Roles del sistema
 

@@ -6,6 +6,7 @@ import {
   displayName,
   displayIdentifier,
   patientInitials,
+  patientInsurancesFromContractors,
   type PersonType,
   type Patient,
 } from '../../domain/models/patient';
@@ -462,25 +463,29 @@ export function PatientList() {
                         <div className="font-semibold text-foreground truncate">
                           {displayName(p)}
                         </div>
-                        <div className="text-xs text-muted-foreground truncate">{p.email}</div>
-                        {p.insurances?.length ? (
-                          <div className="flex flex-wrap gap-1 mt-1 max-w-[280px]">
-                            {p.insurances.slice(0, 2).map((i) => (
-                              <Badge
-                                key={i.id}
-                                variant="outline"
-                                className="text-[10px] py-0 px-1.5"
-                              >
-                                {i.name}
-                              </Badge>
-                            ))}
-                            {p.insurances.length > 2 && (
-                              <span className="text-[10px] text-muted-foreground self-center">
-                                +{p.insurances.length - 2}
-                              </span>
-                            )}
-                          </div>
-                        ) : null}
+                        <div className="text-xs text-muted-foreground truncate">{p.email || '—'}</div>
+                        {(() => {
+                          const list = patientInsurancesFromContractors(p);
+                          if (!list.length) return null;
+                          return (
+                            <div className="flex flex-wrap gap-1 mt-1 max-w-[280px]">
+                              {list.slice(0, 2).map((i) => (
+                                <Badge
+                                  key={i.id}
+                                  variant="outline"
+                                  className="text-[10px] py-0 px-1.5"
+                                >
+                                  {i.name}
+                                </Badge>
+                              ))}
+                              {list.length > 2 && (
+                                <span className="text-[10px] text-muted-foreground self-center">
+                                  +{list.length - 2}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   </TableCell>

@@ -367,13 +367,13 @@ export function CareCenterList() {
                           {c.businessName}
                         </div>
                         <div className="text-xs text-muted-foreground truncate">
-                          {c.email}
+                          {c.email || '—'}
                         </div>
                       </div>
                     </div>
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono text-muted-foreground">
-                    {c.rif}
+                    {c.rif || '—'}
                   </TableCell>
                   <TableCell className="py-3.5 px-4">
                     <div className="flex flex-wrap gap-1 max-w-[280px]">

@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { loginSchema, type LoginValues } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
+import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { getHttpErrorMessage } from '@/lib/api';
 import { Mail, Lock, Eye, EyeOff, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -96,7 +97,7 @@ export function LoginPage() {
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+        <form onSubmit={handleSubmit(onSubmit, (errs) => notifyFormErrors(errs))} className="space-y-4" noValidate>
           <div className="space-y-1.5">
             <Label htmlFor="email" className="text-sm font-medium">
               Email

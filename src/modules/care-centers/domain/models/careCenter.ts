@@ -24,8 +24,8 @@ export interface CareCenterPaymentMethod {
 export interface CareCenter {
   id: string;
   businessName: string;
-  email: string;
-  rif: string;
+  email?: string | null;
+  rif?: string | null;
   isActive: boolean;
   specialties: Specialty[];
   phones: CareCenterPhone[];
@@ -37,8 +37,8 @@ export interface CareCenter {
 
 export interface CreateCareCenterDto {
   businessName: string;
-  email: string;
-  rif: string;
+  email?: string;
+  rif?: string;
   phones: { number: string; label?: string }[];
   specialtyIds: string[];
   paymentMethods?: CareCenterPaymentMethod[];
