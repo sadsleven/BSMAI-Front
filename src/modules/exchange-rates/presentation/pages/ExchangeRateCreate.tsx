@@ -160,6 +160,7 @@ export function ExchangeRateCreate() {
                     onChange={(v) => field.onChange(v ?? '')}
                     onBlur={field.onBlur}
                     invalid={!!errors.effectiveDate}
+                    disableFuture
                   />
                 )}
               />

@@ -243,7 +243,7 @@ export function PatientForm({
                   onChange={(v) => field.onChange(v ?? '')}
                   onBlur={field.onBlur}
                   invalid={!!errors.birthDate}
-                  toYear={new Date().getFullYear()}
+                  disableFuture
                 />
               )}
             />

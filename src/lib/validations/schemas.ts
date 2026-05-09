@@ -11,6 +11,22 @@ const PHONE_REGEX = /^\d+$/;
 const PASSWORD_REGEX =
   /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,100}$/;
 
+/** True when ISO `YYYY-MM-DD` (or longer) is today or earlier. Empty passes. */
+function isoDateNotFuture(v: string | undefined): boolean {
+  if (!v) return true;
+  const d = new Date();
+  const todayIso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return v.slice(0, 10) <= todayIso;
+}
+
+/** True when ISO datetime is now or earlier. Empty passes. */
+function isoDateTimeNotFuture(v: string | undefined): boolean {
+  if (!v) return true;
+  const t = new Date(v).getTime();
+  if (Number.isNaN(t)) return true;
+  return t <= Date.now();
+}
+
 export const emailSchema = z
   .string({ error: 'El email es obligatorio' })
   .min(1, 'El email es obligatorio')
@@ -149,7 +165,10 @@ export const patientSchema = z
     email: emailSchema,
     birthDate: z
       .string({ error: 'La fecha de nacimiento es obligatoria' })
-      .min(1, 'La fecha de nacimiento es obligatoria'),
+      .min(1, 'La fecha de nacimiento es obligatoria')
+      .refine(isoDateNotFuture, {
+        message: 'La fecha no puede ser posterior a hoy',
+      }),
     address: z
       .string({ error: 'La dirección es obligatoria' })
       .min(3, 'La dirección debe tener al menos 3 caracteres')
@@ -292,7 +311,10 @@ export const exchangeRateSchema = z.object({
     }),
   effectiveDate: z
     .string({ error: 'La fecha efectiva es obligatoria' })
-    .min(1, 'La fecha efectiva es obligatoria'),
+    .min(1, 'La fecha efectiva es obligatoria')
+    .refine(isoDateTimeNotFuture, {
+      message: 'La fecha no puede ser posterior al momento actual',
+    }),
   isActive: z.boolean().optional(),
 });
 export type ExchangeRateValues = z.infer<typeof exchangeRateSchema>;
@@ -541,7 +563,12 @@ export const orderSchema = z
     specialtyId: z.string().uuid({ message: 'Especialidad requerida' }),
     serviceTypeId: z.string().uuid({ message: 'Tipo de servicio requerido' }),
     pathologyId: z.string().uuid({ message: 'Patología requerida' }),
-    orderDate: z.string().min(1, 'Fecha de orden requerida'),
+    orderDate: z
+      .string()
+      .min(1, 'Fecha de orden requerida')
+      .refine(isoDateNotFuture, {
+        message: 'La fecha no puede ser posterior a hoy',
+      }),
     appointmentDate: z.string().min(1, 'Fecha de atención requerida'),
     priceCurrency: z.enum(ORDER_CURRENCIES, { error: 'Moneda requerida' }),
     priceAmount: z

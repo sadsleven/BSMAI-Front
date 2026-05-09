@@ -710,6 +710,7 @@ export function OrderForm({
                   onChange={(v) => field.onChange(v ?? '')}
                   onBlur={field.onBlur}
                   invalid={!!errors.orderDate?.message}
+                  disableFuture
                 />
               )}
             />
