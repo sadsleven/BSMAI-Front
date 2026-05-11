@@ -1,5 +1,5 @@
 import { toast as sonnerToast, type ExternalToast } from 'sonner';
-import { getHttpErrorMessage } from '@/lib/api';
+import { getHttpErrorMessage } from '@/lib/api/httpError';
 
 type Options = ExternalToast;
 

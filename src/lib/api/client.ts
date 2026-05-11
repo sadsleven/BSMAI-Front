@@ -1,6 +1,7 @@
 import axios, { type AxiosError } from 'axios';
 import { getApiBaseUrl } from './config';
 import { getAccessToken, clearAccessToken } from '@/modules/auth/infrastructure/tokenStorage';
+import { notify } from '@/lib/notifications/toast';
 
 const baseURL = getApiBaseUrl() || undefined;
 
@@ -39,9 +40,7 @@ api.interceptors.response.use(
 
     // Surface unhandled network errors (no response from server) globally.
     if (!error.response && error.code !== 'ERR_CANCELED') {
-      void import('@/lib/notifications/toast').then(({ notify }) => {
-        notify.error('No se pudo conectar con el servidor. Verificá tu conexión.');
-      });
+      notify.error('No se pudo conectar con el servidor. Verificá tu conexión.');
     }
 
     return Promise.reject(error);
