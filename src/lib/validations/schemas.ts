@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   cedulaSchema,
+  optionalRifSchema,
   phoneNumberSchema,
   phonesArraySchema,
   rifSchema,
@@ -11,11 +12,38 @@ const PHONE_REGEX = /^\d+$/;
 const PASSWORD_REGEX =
   /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,100}$/;
 
+/** True when ISO `YYYY-MM-DD` (or longer) is today or earlier. Empty passes. */
+function isoDateNotFuture(v: string | undefined): boolean {
+  if (!v) return true;
+  const d = new Date();
+  const todayIso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return v.slice(0, 10) <= todayIso;
+}
+
+/** True when ISO datetime is now or earlier. Empty passes. */
+function isoDateTimeNotFuture(v: string | undefined): boolean {
+  if (!v) return true;
+  const t = new Date(v).getTime();
+  if (Number.isNaN(t)) return true;
+  return t <= Date.now();
+}
+
 export const emailSchema = z
   .string({ error: 'El email es obligatorio' })
   .min(1, 'El email es obligatorio')
   .max(200, 'El email no puede superar 200 caracteres')
   .email('El email no tiene un formato válido');
+
+/** Email opcional. Empty string passes; if filled, must be valid email ≤ 200. */
+export const optionalEmailSchema = z
+  .string()
+  .optional()
+  .refine((v) => !v || v.length <= 200, {
+    message: 'El email no puede superar 200 caracteres',
+  })
+  .refine((v) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), {
+    message: 'El email no tiene un formato válido',
+  });
 
 export const nameSchema = (label: string) =>
   z
@@ -146,19 +174,18 @@ export const patientSchema = z
     lastName: z.string().optional().or(z.literal('')),
     businessName: z.string().optional().or(z.literal('')),
     rif: z.string().optional().or(z.literal('')),
-    email: emailSchema,
+    email: optionalEmailSchema,
     birthDate: z
       .string({ error: 'La fecha de nacimiento es obligatoria' })
-      .min(1, 'La fecha de nacimiento es obligatoria'),
+      .min(1, 'La fecha de nacimiento es obligatoria')
+      .refine(isoDateNotFuture, {
+        message: 'La fecha no puede ser posterior a hoy',
+      }),
     address: z
       .string({ error: 'La dirección es obligatoria' })
       .min(3, 'La dirección debe tener al menos 3 caracteres')
       .max(500, 'La dirección no puede superar 500 caracteres'),
     phones: phonesArraySchema,
-    insuranceIds: z
-      .array(z.string().uuid())
-      .max(50, 'Máximo 50 seguros por paciente')
-      .optional(),
     contractorIds: z
       .array(z.string().uuid())
       .max(50, 'Máximo 50 contratistas por paciente')
@@ -273,6 +300,10 @@ export const contractorSchema = z.object({
     .string()
     .max(500, 'La descripción no puede superar 500 caracteres')
     .optional(),
+  insuranceIds: z
+    .array(z.string().uuid())
+    .max(50, 'Máximo 50 seguros por contratista')
+    .optional(),
   isActive: z.boolean().optional(),
 });
 export type ContractorValues = z.infer<typeof contractorSchema>;
@@ -292,7 +323,10 @@ export const exchangeRateSchema = z.object({
     }),
   effectiveDate: z
     .string({ error: 'La fecha efectiva es obligatoria' })
-    .min(1, 'La fecha efectiva es obligatoria'),
+    .min(1, 'La fecha efectiva es obligatoria')
+    .refine(isoDateTimeNotFuture, {
+      message: 'La fecha no puede ser posterior al momento actual',
+    }),
   isActive: z.boolean().optional(),
 });
 export type ExchangeRateValues = z.infer<typeof exchangeRateSchema>;
@@ -305,6 +339,15 @@ export const insuranceSchema = z.object({
   description: z
     .string()
     .max(500, 'La descripción no puede superar 500 caracteres')
+    .optional(),
+  email: optionalEmailSchema,
+  fiscalAddress: z
+    .string()
+    .max(500, 'El domicilio fiscal no puede superar 500 caracteres')
+    .optional(),
+  policyNumber: z
+    .string()
+    .max(64, 'El número de póliza no puede superar 64 caracteres')
     .optional(),
   phones: phonesArraySchema,
   isActive: z.boolean().optional(),
@@ -394,7 +437,7 @@ export const paymentMethodsArraySchema = z
 export const doctorSchema = z
   .object({
     cedula: cedulaSchema,
-    email: emailSchema,
+    email: optionalEmailSchema,
     firstName: nameSchema('El nombre'),
     lastName: nameSchema('El apellido'),
     isLegalEntity: z.boolean(),
@@ -437,8 +480,8 @@ export const careCenterSchema = z.object({
     .string({ error: 'La razón social es obligatoria' })
     .min(2, 'La razón social debe tener al menos 2 caracteres')
     .max(200, 'La razón social no puede superar 200 caracteres'),
-  email: emailSchema,
-  rif: rifSchema,
+  email: optionalEmailSchema,
+  rif: optionalRifSchema,
   phones: phonesArraySchema,
   specialtyIds: z
     .array(z.string().uuid())
@@ -539,9 +582,20 @@ export const orderSchema = z
     doctorId: z.string().uuid().optional().or(z.literal('')),
     careCenterId: z.string().uuid().optional().or(z.literal('')),
     specialtyId: z.string().uuid({ message: 'Especialidad requerida' }),
-    serviceTypeId: z.string().uuid({ message: 'Tipo de servicio requerido' }),
-    pathologyId: z.string().uuid({ message: 'Patología requerida' }),
-    orderDate: z.string().min(1, 'Fecha de orden requerida'),
+    serviceTypeIds: z
+      .array(z.string().uuid())
+      .min(1, 'Asigná al menos un tipo de servicio')
+      .max(50, 'Máximo 50 tipos de servicio'),
+    pathologyIds: z
+      .array(z.string().uuid())
+      .max(50, 'Máximo 50 patologías')
+      .optional(),
+    orderDate: z
+      .string()
+      .min(1, 'Fecha de orden requerida')
+      .refine(isoDateNotFuture, {
+        message: 'La fecha no puede ser posterior a hoy',
+      }),
     appointmentDate: z.string().min(1, 'Fecha de atención requerida'),
     priceCurrency: z.enum(ORDER_CURRENCIES, { error: 'Moneda requerida' }),
     priceAmount: z

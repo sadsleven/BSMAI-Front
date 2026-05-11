@@ -70,7 +70,9 @@ Código transversal en `src/lib/` (utilidades), `src/components/ui/` (shadcn), `
 - **`pathologies/`** — CRUD simple de patologías. Endpoint `assignable`.
 - **`service-types/`** — CRUD simple de tipos de servicio. Endpoint `assignable`.
 - **`branches/`** — CRUD sucursales (name único + description + isActive). Endpoint `assignable` para `<BranchMultiSelect>`. Asignación M2M a usuarios; el Super Admin tiene acceso implícito a todas (no se replican filas en `user_branches`). Helper `getUserBranches(currentUser)` en `src/lib/auth/branches.ts` es la única forma correcta de leer las sucursales del usuario actual.
-- **`orders/`** — Paso 1 implementado (registro). Wizard con stepper (5 pasos visibles, pasos 2-5 marcados "Próximamente"). Estados (`draft|in_progress|attended|report_issued|finalized|cancelled`) reemplazan `isActive`. Edición sólo en `draft`. Filtrado por sucursales del usuario (server-side). Última sucursal usada persistida en `localStorage` (`lastBranchId:${userId}`). Sub-recurso pagos (`POST /orders/:id/payments`) con tasa histórica guardada por pago. Componentes `<PatientSearchSelect>` + `<PatientCreateModal>` (patrón "selector + crear inline"), `<ProviderSearchSelect>`, `<OrderPaymentForm>`.
+- **`orders/`** — Paso 1 implementado (registro). Wizard con stepper de 4 pasos canónicos: **Creación de orden / Atención del paciente / Informe médico y estudios / Facturación y liquidación**. Pasos 2-4 con `available: false` (planned). Estados (`draft|in_progress|attended|report_issued|finalized|cancelled`) reemplazan `isActive`. Edición sólo en `draft`. Filtrado por sucursales del usuario (server-side). Última sucursal usada persistida en `localStorage` (`lastBranchId:${userId}`). Sub-recurso pagos (`POST /orders/:id/payments`) con tasa histórica guardada por pago. Componentes `<PatientSearchSelect>` + `<PatientCreateModal>` (patrón "selector + crear inline"), `<ProviderSearchSelect>`, `<OrderPaymentForm>`.
+- **`accounts-payable/`** — **Cuentas por pagar**. Auto-generadas al crear orden (1 por orden, recipient = doctor o centro de atención). Status `paid|unpaid`. Sin create/eliminar/deshabilitar manual; solo Ver + Editar + acción "+ Registrar pago" (multi-select cuentas + sub-form de pagos al estilo `<OrderPaymentForm>`). Permisos `accounts-payable.{list, view, update}`.
+- **`accounts-receivable/`** — **Cuentas por cobrar**. Auto-generadas solo cuando `order.type === 'insurance'` (deudor = seguro). Status `collected|uncollected`. Mismo patrón UI que payable; acción "+ Registrar cobro". Sin cap de monto (seguro suele pagar por encima). Permisos `accounts-receivable.{list, view, update}`.
 
 ## HTTP
 
@@ -139,10 +141,12 @@ Todas las tablas de la app deben seguir este patrón — **no hay controles de s
 
 ## Validación de formularios
 
-- Schemas Zod centralizados en `src/lib/validations/schemas.ts`: `loginSchema`, `profileSchema`, `createUserSchema`, `updateUserSchema`, `changeOwnPasswordSchema`, `adminChangePasswordSchema`, `roleSchema`, `specialtySchema`, `patientSchema` (con `insuranceIds`), `doctorSchema`, `careCenterSchema`, `paymentMethodSchema`, `insuranceSchema`, `pathologySchema`, `serviceTypeSchema`.
+- Schemas Zod centralizados en `src/lib/validations/schemas.ts`: `loginSchema`, `profileSchema`, `createUserSchema`, `updateUserSchema`, `changeOwnPasswordSchema`, `adminChangePasswordSchema`, `roleSchema`, `specialtySchema`, `patientSchema` (sin `insuranceIds` — los seguros se derivan de contratistas), `doctorSchema`, `careCenterSchema`, `paymentMethodSchema`, `insuranceSchema` (con `email` y `fiscalAddress`), `pathologySchema`, `serviceTypeSchema`, `contractorSchema` (con `insuranceIds`), `orderSchema` (con `serviceTypeIds: array.min(1)` + `pathologyIds: array.optional()`).
 - Conectados a React Hook Form via `zodResolver`. Modo de validación: `onBlur` consistente.
-- Reglas reutilizables: `emailSchema`, `nameSchema(label)`, `phoneSchema`, `passwordSchema`, `cedulaSchema`, `rifSchema`, `phoneNumberSchema`, `phoneItemSchema`, `phonesArraySchema`, `paymentMethodsArraySchema`. Mensajes en español.
+- Reglas reutilizables: `emailSchema`, **`optionalEmailSchema`**, `nameSchema(label)`, `phoneSchema`, `passwordSchema`, `cedulaSchema`, `rifSchema`, **`optionalRifSchema`**, `phoneNumberSchema`, `phoneItemSchema`, `phonesArraySchema`, `paymentMethodsArraySchema`. Mensajes en español.
 - Reglas duras: nombre 1-150 chars solo letras/acentos/`ñ`; teléfono opcional pero exactamente 11 dígitos si presente; password 8-100 con mayúscula+minúscula+número+especial; cédula `V/E-XX.XXX.XXX`; RIF `J/G/V/E-XX.XXX.XXX-D`; teléfonos para owners 11 dígitos exactos.
+- **Campos opcionales con UNIQUE en BE**: el FE espeja con `optionalEmailSchema` / `optionalRifSchema` (empty string passes; valida formato sólo si filled). Forms muestran el label como `Campo (opcional)` sin asterisco. En update, el FE envía `''` (string vacío) para limpiar y `undefined` para no tocar; el BE mapea `''` → `null` y skip uniqueness check si vacío.
+- **Teléfonos opcionales**: `phonesArraySchema` ya no exige `.min(1)`. Forms inicializan `phones: []`. `<PhoneListInput>` por defecto `min = 0` y NO renderiza una fila vacía automática.
 - Cross-validation con `superRefine`:
   - `doctorSchema` valida `isLegalEntity ↔ rif` (RIF requerido y formato si jurídica; ausente si natural).
   - `paymentMethodSchema` valida campos por tipo (`mobile_payment` exige bankCode + phoneNumber + idDocument; `bank_transfer` exige bankCode + accountNumber + accountHolderName + idDocument; `other` exige description ≥3 chars).
@@ -159,18 +163,75 @@ Todas las tablas de la app deben seguir este patrón — **no hay controles de s
 - `<SpecialtyMultiSelect>` (`src/components/ui/specialty-multi-select.tsx`) — multi-select con búsqueda. Carga `/specialties/assignable`. Especialidades ya asignadas que dejaron de ser asignables aparecen como chip punteado, **quitables pero no re-agregables**. Pasar `existing` para mantenerlas.
 - `<InsuranceMultiSelect>` (`src/components/ui/insurance-multi-select.tsx`) — multi-select de seguros. Mismo patrón que `<SpecialtyMultiSelect>` (consume `/insurances/assignable`, soporta `existing` para chips stale). Convención general: cualquier relación N-a-M visible en formularios usa este patrón con endpoint `/<resource>/assignable`.
 - `<PaymentMethodsInput>` (`src/components/ui/payment-methods-input.tsx`) — lista dinámica de métodos de pago. Type discriminator: `mobile_payment | bank_transfer | other`, cada uno renderiza fields propios. Carga `GET /banks` para `<Select>` de banco. Soporta `defaults` (cedula/rif/fullName/firstPhone): autocompleta al cambiar de tipo o agregar uno nuevo, **sin pisar lo ya tipeado** — el usuario puede sobreescribir manualmente.
+- `<ServiceTypePricesInput>` (`src/modules/service-types/presentation/components/ServiceTypePricesInput.tsx`) — editor de precios por tipo de servicio. Renderiza una fila "Particular" + una por cada `Insurance` asignable, cada una con `<CurrencyAmountInput currencyPrefix="USD">` + `currencyPrefix="EUR"`. Helpers: `pricesToPayload(rows)` filtra filas vacías al guardar. **Reutilizar siempre que se editen precios per-seguro**.
 
 ### Módulos clínicos
 
 - `specialties` — CRUD simple. Forms con `name` + `description` + `isActive`. List con icon-tile cyan-soft.
-- `patients` — Form con `<CedulaInput>` + email + nombres + birthDate + dirección + `<PhoneListInput>` + `<InsuranceMultiSelect>` + estado. List muestra primeros 2 seguros como badges debajo del email + filtro Select por seguro (server-side via subquery, no rompe otros seguros del paciente). Detail muestra sección "Seguros" con chips stale para deshabilitados/papelera.
-- `doctors` — Form con `<CedulaInput>` + email + nombres + `<FormSwitch>` `isLegalEntity` + `<RifInput>` condicional + `<PhoneListInput>` + `<SpecialtyMultiSelect>` + `<PaymentMethodsInput>` (defaults desde cedula/rif/nombre/primer teléfono) + estado. List con badge "Jurídica" y filtro `entityType` server-side.
-- `care-centers` — Form con `name` + email + `<RifInput>` (siempre obligatorio) + `<PhoneListInput>` + `<SpecialtyMultiSelect>` + `<PaymentMethodsInput>` + estado.
+- `patients` — Form con `<CedulaInput>` + email **(opcional)** + nombres + birthDate + dirección + `<PhoneListInput>` (opcional) + `<ContractorMultiSelect>` + estado. **Sin `<InsuranceMultiSelect>`** — los seguros del paciente se derivan dinámicamente de los contratistas asignados (helper `patientInsurancesFromContractors(p)` en `src/modules/patients/domain/models/patient.ts`). List muestra primeros 2 seguros derivados como badges + filtro Select por seguro (server-side cruza `patient_contractors` con `contractor_insurances`).
+- `doctors` — Form con `<CedulaInput>` + email **(opcional)** + nombres + `<FormSwitch>` `isLegalEntity` + `<RifInput>` condicional + `<PhoneListInput>` (opcional) + `<SpecialtyMultiSelect>` + `<PaymentMethodsInput>` (defaults desde cedula/rif/nombre/primer teléfono) + estado. List con badge "Jurídica" y filtro `entityType` server-side.
+- `care-centers` — Form con `businessName` + email **(opcional)** + `<RifInput>` **(opcional)** + `<PhoneListInput>` (opcional) + `<SpecialtyMultiSelect>` + `<PaymentMethodsInput>` + estado.
 - `banks` — gateway sólo lectura. Único consumidor actual: `<PaymentMethodsInput>`.
-- `insurances` — Form con `name` + `description` + `<PhoneListInput>` + estado. List con icon Shield + columna teléfono. Sidebar bajo "Catálogos".
+- `insurances` — Form con `name` + `description` + email **(opcional)** + `fiscalAddress` (textarea, opcional) + `<PhoneListInput>` (opcional) + estado. **Asociado a contratistas, no a pacientes**. List con icon Shield. Sidebar bajo "Catálogos".
+- `contractors` — Form con `name` + `description` + `<InsuranceMultiSelect>` + estado. Los pacientes con este contratista heredan estos seguros visualmente. Sidebar bajo "Catálogos".
 - `pathologies` — CRUD simple paralelo a `specialties` (icon Activity). Sidebar bajo "Catálogos".
-- `service-types` — CRUD simple paralelo a `specialties` (icon FileText, ej. "Radiografía de tórax"). Sidebar bajo "Catálogos".
-- **Replace-all en update**: el FE envía siempre el array completo de phones / paymentMethods. En edit los items existentes preservan `id` (campo opcional en el schema); los nuevos van sin id. El backend hace diff por id.
+- `service-types` — CRUD simple **+ precios** vía `<ServiceTypePricesInput>` (Particular + 1 fila por seguro asignable, USD + EUR). Sidebar bajo "Catálogos".
+- `orders` — ver sección dedicada abajo.
+- **Replace-all en update**: el FE envía siempre el array completo de phones / paymentMethods / prices. En edit los items existentes preservan `id` (campo opcional en el schema); los nuevos van sin id. El backend hace diff por id (o delete-and-insert según el recurso).
+
+### Módulo de Órdenes (`/orders`) — pricing + UX
+
+- **Service types y patologías M2M**: `<OrderForm>` renderiza chips toggle inline (no `*MultiSelect` separado). `serviceTypeIds` (≥1, requerido) y `pathologyIds` (0..N, opcional). El BE devuelve `serviceTypes: ServiceType[]` y `pathologies: Pathology[]` en el detalle.
+- **Auto-pricing desde `ServiceType.prices`**:
+  - `type === 'insurance'` → `priceAmount` se calcula como suma de los precios `(USD|EUR)` que cada `ServiceType` tiene definidos para el `Insurance` seleccionado. El `<CurrencyAmountInput>` se renderiza `disabled` (label "Monto (fijo)").
+  - `type ∈ {cash, credit, cashea}` → suma prefilada de los precios "Particular" (insuranceId IS NULL) de cada ST. Editable; `lastAppliedSumRef` (useRef) permite que la edición manual del usuario persista hasta que cambie selección/moneda.
+  - El form muestra el desglose por ST en una mini-tabla (label + monto USD/EUR), con label "Sin precio definido" en `text-warning` cuando falta el precio para esa combinación + nota a pie de la sección.
+  - El gateway `serviceTypeGateway.listAssignable()` devuelve los `prices` eager para que el cálculo viva en cliente sin round-trips.
+- **Diferencia en Bs en pagos**: además de `Diferencia` en moneda de la orden, se calcula `diffBs = diff × currentRate.amountBs` y se renderiza debajo del badge ("Faltan/Excede Bs. X,XX (tasa Y Bs/USD)"). Si no hay tasa activa se muestra notice italic muted.
+- **Errores per-pago**: `<OrderForm>` mapea `errors.payments` (RHF) al shape `PaymentItemErrors[]` que `<OrderPaymentForm>` ya consume per-fila para mostrar borde rojo + mensaje inline en cada campo (banco, referencia, monto, etc.).
+- **`orderNumber`**: número auto-incremental simple (sin formato `ORD-YYYY-NNNNNN`). El backend lo controla con la env `ORDER_NUMBER_START` (idempotente, `OnModuleInit` bumpea `orders_seq`).
+
+### Módulo de Órdenes — pasos 2-4 (implementado, file storage Paso 3 TBD)
+
+Stepper ya muestra los 4 pasos canónicos; pasos 2-4 con `available: false` hasta implementación. Naming canónico UI:
+
+- **2. Atención del paciente** — `<FormSwitch>` "Atendido" + `<DateTimePicker>` para `attendedAt`. Activable cuando `status === 'in_progress'`. Botón "Marcar atendido" → `PATCH /orders/:id/attend` → transición a `attended`.
+- **3. Informe médico y estudios** — `<FileDropzone>` (multi-file, accept `.pdf,.png,.jpg,.jpeg,.webp`) — **FE-only en MVP**, BE storage TBD. Estado de archivos en componente local; cuando exista endpoint, envío como `FormData`. + `<Textarea>` "Otros estudios". Botón "Emitir informe" → `PATCH /orders/:id/report` → transición a `report_issued`.
+- **4. Facturación y liquidación**:
+  - Botón "Descargar factura" — link a `GET /orders/:id/invoice.pdf` (PDF gen TBD).
+  - `<CurrencyAmountInput>` para `doctorAmount` + `<Select>` `doctorAmountCurrency ∈ {USD, EUR, BS}`. Cap visualizado: convertido a `priceCurrency` vía tasa de la orden (`billingExchangeRateId`) — error inline si excede `priceAmount`.
+  - Si `providerType === 'doctor'`: panel "Impuesto" con `taxRate` derivado (3% natural / 5% jurídico) + monto en moneda original + monto en Bs.
+  - Panel "Ganancia neta empresa" = `priceAmount - doctorAmount` en `priceCurrency`. Tax NO se resta — es retención al doctor, no costo empresa.
+  - **NO** se llena `<OrderPaymentForm>` aquí — los pagos al doctor/centro y los cobros al seguro viven en los módulos `accounts-payable` / `accounts-receivable`.
+  - Botón "Finalizar orden" → `PATCH /orders/:id/billing` → transición a `finalized` (orden inmutable después salvo soft delete).
+
+### Módulos `accounts-payable` / `accounts-receivable` (implementado)
+
+UI labels canónicos: **Cuentas por pagar** / **Cuentas por cobrar**. Sidebar bajo **Operaciones** (junto a Órdenes).
+
+- **Auto-generadas al crear orden** — sin botón "Crear" en tabla. Sin "Eliminar". Sin "Deshabilitar". Solo `Ver` + `Editar` + acción primaria "**Registrar pago**" / "**Registrar cobro**".
+- Permisos: `accounts-payable.{list, view, update}`, `accounts-receivable.{list, view, update}` — sin `create | toggle-active | *delete | restore` en el catálogo (excepción a `buildResource`).
+
+#### Tabla
+
+- **Cuentas por pagar**: orden número | recipient (doctor/centro) | `doctorAmount` | tax (si doctor) | `amountToReceive` | status pill (`Pagada` `bg-success-soft` / `No pagada` `bg-warning-soft`).
+- **Cuentas por cobrar**: orden número | seguro | `priceAmount` | total cobrado | diferencia | status pill (`Cobrada` / `No cobrada`).
+- Filtros server-side: status, doctor/centro (payable) o seguro (receivable), branch, búsqueda por `orderNumber`.
+- Sort en headers (orden número, fecha, monto). Convención `<SortableHeader>` ya documentada.
+- Acción primaria: botón "**+ Registrar pago**" / "**+ Registrar cobro**" (estilo `+ Nuevo doctor`) — abre modal con multi-select de cuentas + sub-form de pagos.
+
+#### Registrar pago / Registrar cobro (modal)
+
+- **Sección 1**: selección de cuentas — checkbox list de cuentas pendientes filtradas por mismo doctor/centro (payable) o mismo seguro (receivable). Al marcar la primera, las demás se restringen al mismo recipient/seguro.
+- **Sección 2**: `<OrderPaymentForm>` reusado — 1+ pagos (mismo componente que en órdenes; tipos `mobile_payment | bank_transfer | cash_foreign | cash_bs | other` + `exchangeRateId` actual).
+- **Sección 3 (resumen)**: `Σ amountToReceive(cuentas)` (en cada moneda) vs `Σ pagos` (en cada moneda) — diferencia con badge en Bs (vía tasa actual). Para payable: bloquea submit si `Σ ≠`. Para receivable: muestra diferencia, permite submit.
+- Tras éxito: cuentas pasan a `paid`/`collected`. Toast `notify.success` "Pago registrado: X cuentas".
+
+#### `amountToReceive` (payable)
+
+- recipient = doctor: `doctorAmount × (1 - taxRate)` con `taxRate = doctor.isLegalEntity ? 0.05 : 0.03`.
+- recipient = careCenter: `doctorAmount`.
+- Calculado en cliente con `doctor.isLegalEntity` cargado eager por el gateway. Mostrado per-fila en la tabla y en el modal.
 
 ## Notificaciones (`notify`)
 
@@ -178,6 +239,21 @@ Todas las tablas de la app deben seguir este patrón — **no hay controles de s
 - `<Toaster richColors closeButton position="top-right" />` se monta en `App.tsx`.
 - Errores de red (sin `response`) se notifican automáticamente desde el interceptor de Axios.
 - Disparados en login, logout, todos los CRUD de usuarios y roles, asignación de permisos, cambio de contraseña, actualización de perfil.
+
+### Toast de errores de validación de formulario
+
+`src/lib/notifications/formErrors.ts` expone `notifyFormErrors(errors, opts?)` y `COMMON_LABELS` (mapa path → label visible para todos los campos del sistema: auth, person, doctor/care-center, order, payments, prices, etc.).
+
+**Convención obligatoria**: todo `<form>` usa la firma:
+
+```tsx
+<form onSubmit={handleSubmit(onSubmit, (errs) => notifyFormErrors(errs))}>
+```
+
+- El helper recorre recursivamente `FieldErrors` (objetos + arrays anidados como `payments.0.bankCode`).
+- Emite un único toast con bullet list (max 5 items + "…y N más"). Description con `whiteSpace: pre-wrap`, duration 7s.
+- Per-form override de labels: `notifyFormErrors(errs, { labels: { foo: 'Campo Foo' } })` — se mergea sobre `COMMON_LABELS`.
+- Aplicado en **todos los forms del sistema** (orders, patients, doctors, care-centers, insurances, contractors, specialties, pathologies, service-types, exchange-rates, branches, users, roles, login, profile, password).
 
 ## Roles del sistema
 

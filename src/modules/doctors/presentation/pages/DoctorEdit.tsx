@@ -14,6 +14,7 @@ import {
   type PaymentMethodValues,
 } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
+import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { ChevronLeft } from 'lucide-react';
 
 function cleanPaymentMethod(m: PaymentMethodValues): DoctorPaymentMethod {
@@ -54,7 +55,7 @@ export function DoctorEdit() {
       lastName: '',
       isLegalEntity: false,
       rif: '',
-      phones: [{ number: '', label: '' }],
+      phones: [],
       specialtyIds: [],
       paymentMethods: [],
       isActive: true,
@@ -68,7 +69,7 @@ export function DoctorEdit() {
         const d = await doctorGateway.getById(id);
         methods.reset({
           cedula: d.cedula,
-          email: d.email,
+          email: d.email ?? '',
           firstName: d.firstName,
           lastName: d.lastName,
           isLegalEntity: d.isLegalEntity,
@@ -76,7 +77,7 @@ export function DoctorEdit() {
           phones:
             d.phones?.length > 0
               ? d.phones.map((ph) => ({ number: ph.number, label: ph.label ?? '' }))
-              : [{ number: '', label: '' }],
+              : [],
           specialtyIds: (d.specialties ?? []).map((s) => s.id),
           paymentMethods: (d.paymentMethods ?? []).map((m) => ({
             id: m.id,
@@ -107,7 +108,7 @@ export function DoctorEdit() {
     try {
       await doctorGateway.update(id, {
         cedula: values.cedula,
-        email: values.email,
+        email: values.email?.trim() || '',
         firstName: values.firstName,
         lastName: values.lastName,
         isLegalEntity: values.isLegalEntity,
@@ -135,7 +136,7 @@ export function DoctorEdit() {
     <div className="max-w-3xl mx-auto">
       <PageBreadcrumbs />
       <FormProvider {...methods}>
-        <form onSubmit={methods.handleSubmit(onSubmit)} className="space-y-6">
+        <form onSubmit={methods.handleSubmit(onSubmit, (errs) => notifyFormErrors(errs))} className="space-y-6">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="space-y-1">
               <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">

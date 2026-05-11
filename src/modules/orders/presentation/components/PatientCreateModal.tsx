@@ -13,6 +13,7 @@ import { PatientForm } from '@/modules/patients/presentation/components/PatientF
 import { patientGateway } from '@/modules/patients/infrastructure/patientGateway';
 import { patientSchema, type PatientValues } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
+import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { UserRound, X } from 'lucide-react';
 import type { CreatePatientDto, Patient } from '@/modules/patients/domain/models/patient';
 
@@ -41,8 +42,7 @@ export function PatientCreateModal({ open, onOpenChange, onCreated }: PatientCre
       rif: '',
       birthDate: '',
       address: '',
-      phones: [{ number: '', label: '' }],
-      insuranceIds: [],
+      phones: [],
       contractorIds: [],
       isActive: true,
     },
@@ -58,7 +58,6 @@ export function PatientCreateModal({ open, onOpenChange, onCreated }: PatientCre
         birthDate: values.birthDate,
         address: values.address,
         phones: values.phones.map((p) => ({ number: p.number, label: p.label || undefined })),
-        insuranceIds: values.insuranceIds ?? [],
         contractorIds: values.contractorIds ?? [],
         isActive: values.isActive,
       };
@@ -108,7 +107,7 @@ export function PatientCreateModal({ open, onOpenChange, onCreated }: PatientCre
         </AlertDialogHeader>
         <FormProvider {...methods}>
           <form
-            onSubmit={handleSubmit(onSubmit)}
+            onSubmit={handleSubmit(onSubmit, (errs) => notifyFormErrors(errs))}
             className="flex flex-col flex-1 overflow-hidden"
           >
             <div className="px-6 overflow-y-auto flex-1 py-4">

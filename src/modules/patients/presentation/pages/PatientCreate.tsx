@@ -7,6 +7,7 @@ import { PatientForm } from '../components/PatientForm';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { patientSchema, type PatientValues } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
+import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { ChevronLeft } from 'lucide-react';
 import type { CreatePatientDto } from '../../domain/models/patient';
 
@@ -26,8 +27,7 @@ export function PatientCreate() {
       rif: '',
       birthDate: '',
       address: '',
-      phones: [{ number: '', label: '' }],
-      insuranceIds: [],
+      phones: [],
       contractorIds: [],
       isActive: true,
     },
@@ -39,14 +39,13 @@ export function PatientCreate() {
     try {
       const dto: CreatePatientDto = {
         personType: values.personType,
-        email: values.email,
+        email: values.email?.trim() || undefined,
         birthDate: values.birthDate,
         address: values.address,
         phones: values.phones.map((p) => ({
           number: p.number,
           label: p.label || undefined,
         })),
-        insuranceIds: values.insuranceIds ?? [],
         contractorIds: values.contractorIds ?? [],
         isActive: values.isActive,
       };
@@ -70,7 +69,7 @@ export function PatientCreate() {
     <div className="max-w-3xl mx-auto">
       <PageBreadcrumbs />
       <FormProvider {...methods}>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        <form onSubmit={handleSubmit(onSubmit, (errs) => notifyFormErrors(errs))} className="space-y-6">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="space-y-1">
               <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">

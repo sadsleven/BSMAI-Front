@@ -56,4 +56,14 @@ export const PERMISSIONS = {
     HARD_DELETE: 'orders.hard-delete',
     RESTORE: 'orders.restore',
   },
+  ACCOUNTS_PAYABLE: {
+    LIST: 'accounts-payable.list',
+    VIEW: 'accounts-payable.view',
+    UPDATE: 'accounts-payable.update',
+  },
+  ACCOUNTS_RECEIVABLE: {
+    LIST: 'accounts-receivable.list',
+    VIEW: 'accounts-receivable.view',
+    UPDATE: 'accounts-receivable.update',
+  },
 } as const;

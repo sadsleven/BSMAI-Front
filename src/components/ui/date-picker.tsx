@@ -20,6 +20,8 @@ export type DatePickerProps = {
   fromYear?: number;
   /** Upper bound for selectable dates. Default: current year + 5. */
   toYear?: number;
+  /** Disable any date strictly after today. Caps `toYear` at current year. */
+  disableFuture?: boolean;
 };
 
 function parseIsoDate(v: string | undefined): Date | undefined {
@@ -50,10 +52,18 @@ export function DatePicker({
   className,
   fromYear = 1900,
   toYear,
+  disableFuture = false,
 }: DatePickerProps) {
   const [open, setOpen] = React.useState(false);
   const selected = parseIsoDate(value);
-  const endYear = toYear ?? new Date().getFullYear() + 5;
+  const today = React.useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+  const effectiveToYear =
+    toYear ?? (disableFuture ? today.getFullYear() : today.getFullYear() + 5);
+  const endYear = effectiveToYear;
 
   return (
     <Popover
@@ -96,6 +106,7 @@ export function DatePicker({
           startMonth={new Date(fromYear, 0)}
           endMonth={new Date(endYear, 11)}
           defaultMonth={selected ?? new Date()}
+          disabled={disableFuture ? { after: today } : undefined}
         />
       </PopoverContent>
     </Popover>

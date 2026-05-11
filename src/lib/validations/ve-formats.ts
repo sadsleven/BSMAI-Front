@@ -17,6 +17,14 @@ export const rifSchema = z
   .string({ message: 'El RIF es requerido' })
   .regex(RIF_REGEX, 'Formato inválido. Ej: J-12.345.678-9');
 
+/** RIF opcional. Empty/undefined passes; if filled, must match RIF_REGEX. */
+export const optionalRifSchema = z
+  .string()
+  .optional()
+  .refine((v) => !v || RIF_REGEX.test(v), {
+    message: 'Formato inválido. Ej: J-12.345.678-9',
+  });
+
 export const phoneNumberSchema = z
   .string({ message: 'El teléfono es requerido' })
   .regex(PHONE_REGEX, 'Debe tener exactamente 11 dígitos');
@@ -28,7 +36,6 @@ export const phoneItemSchema = z.object({
 
 export const phonesArraySchema = z
   .array(phoneItemSchema)
-  .min(1, 'Debe ingresar al menos un teléfono')
   .max(10, 'Máximo 10 teléfonos');
 
 export type PhoneItemValue = z.infer<typeof phoneItemSchema>;

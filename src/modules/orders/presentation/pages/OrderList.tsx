@@ -31,7 +31,7 @@ import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
-import { Plus, Pencil, Trash2, Eye, Undo2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Eye, Undo2, ListChecks } from 'lucide-react';
 import { useOrderStore } from '../../domain/store/orderStore';
 import { orderGateway } from '../../infrastructure/orderGateway';
 import {
@@ -474,6 +474,18 @@ export function OrderList() {
                               className="w-8 h-8"
                             >
                               <Eye className="w-4 h-4" />
+                            </Button>
+                          </Link>
+                        </Can>
+                        <Can permission={PERMISSIONS.ORDERS.UPDATE}>
+                          <Link to={`/orders/edit/${order.id}`}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Continuar flujo (atención / informe / facturación)"
+                              className="w-8 h-8"
+                            >
+                              <ListChecks className="w-4 h-4" />
                             </Button>
                           </Link>
                         </Can>

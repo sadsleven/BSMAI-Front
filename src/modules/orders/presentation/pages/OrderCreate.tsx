@@ -11,6 +11,7 @@ import { orderGateway } from '../../infrastructure/orderGateway';
 import type { CreateOrderDto } from '../../domain/models/order';
 import { orderSchema, type OrderValues } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
+import { notifyFormErrors } from '@/lib/notifications/formErrors';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -26,8 +27,8 @@ function buildDto(values: OrderValues): CreateOrderDto {
     doctorId: values.doctorId || undefined,
     careCenterId: values.careCenterId || undefined,
     specialtyId: values.specialtyId,
-    serviceTypeId: values.serviceTypeId,
-    pathologyId: values.pathologyId,
+    serviceTypeIds: values.serviceTypeIds ?? [],
+    pathologyIds: values.pathologyIds ?? [],
     orderDate: values.orderDate,
     appointmentDate: values.appointmentDate,
     priceCurrency: values.priceCurrency,
@@ -63,8 +64,8 @@ export function OrderCreate() {
       doctorId: '',
       careCenterId: '',
       specialtyId: '',
-      serviceTypeId: '',
-      pathologyId: '',
+      serviceTypeIds: [],
+      pathologyIds: [],
       orderDate: todayIso(),
       appointmentDate: '',
       priceCurrency: 'USD',
@@ -78,9 +79,9 @@ export function OrderCreate() {
   const onSubmit = async (values: OrderValues) => {
     try {
       const dto = buildDto(values);
-      await orderGateway.create(dto);
-      notify.success('Orden creada en borrador');
-      navigate('/orders');
+      const created = await orderGateway.create(dto);
+      notify.success('Orden creada en borrador. Continuá con el Paso 2.');
+      navigate(`/orders/edit/${created.id}`);
     } catch (err) {
       notify.fromError(err, 'No se pudo crear la orden.');
     }
@@ -95,7 +96,7 @@ export function OrderCreate() {
     <div className="max-w-4xl mx-auto">
       <PageBreadcrumbs />
       <FormProvider {...methods}>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        <form onSubmit={handleSubmit(onSubmit, (errs) => notifyFormErrors(errs))} className="space-y-6">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="space-y-1">
               <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">
@@ -124,14 +125,6 @@ export function OrderCreate() {
             <div className="flex items-center gap-2 flex-wrap">
               <Button type="button" variant="outline" onClick={tryCancel}>
                 Cancelar
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                disabled
-                title="Guardá el borrador para acceder al Paso 2"
-              >
-                Continuar al Paso 2
               </Button>
               <Button type="submit" disabled={formState.isSubmitting}>
                 {formState.isSubmitting ? 'Guardando…' : 'Guardar borrador'}

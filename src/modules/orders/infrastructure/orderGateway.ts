@@ -1,11 +1,14 @@
 import { api } from '@/lib/api';
 import type {
+  AttendOrderDto,
+  BillingOrderDto,
   CreateOrderDto,
   Order,
   OrderPayment,
   OrderPaymentInput,
   OrdersQuery,
   PaginatedResponse,
+  ReportOrderDto,
   UpdateOrderDto,
 } from '../domain/models/order';
 
@@ -77,5 +80,18 @@ export const orderGateway = {
   },
   async removePayment(orderId: string, paymentId: string): Promise<void> {
     await api.delete(`/orders/${orderId}/payments/${paymentId}`);
+  },
+  // ----- Pasos 2-4 -----
+  async attend(id: string, dto: AttendOrderDto): Promise<Order> {
+    const { data } = await api.patch<Order>(`/orders/${id}/attend`, dto);
+    return data;
+  },
+  async report(id: string, dto: ReportOrderDto): Promise<Order> {
+    const { data } = await api.patch<Order>(`/orders/${id}/report`, dto);
+    return data;
+  },
+  async billing(id: string, dto: BillingOrderDto): Promise<Order> {
+    const { data } = await api.patch<Order>(`/orders/${id}/billing`, dto);
+    return data;
   },
 };

@@ -20,6 +20,8 @@ export type DateTimePickerProps = {
   className?: string;
   fromYear?: number;
   toYear?: number;
+  /** Disable any datetime strictly after now. Caps `toYear` at current year. */
+  disableFuture?: boolean;
 };
 
 function parseValue(v: string | undefined): Date | undefined {
@@ -56,24 +58,35 @@ export function DateTimePicker({
   className,
   fromYear = 1900,
   toYear,
+  disableFuture = false,
 }: DateTimePickerProps) {
   const [open, setOpen] = React.useState(false);
   const current = parseValue(value);
-  const endYear = toYear ?? new Date().getFullYear() + 5;
+  const today = React.useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+  const endYear = toYear ?? (disableFuture ? today.getFullYear() : today.getFullYear() + 5);
 
   const timeValue = current ? `${pad(current.getHours())}:${pad(current.getMinutes())}` : '';
+
+  const clampToNow = (d: Date): Date => {
+    if (!disableFuture) return d;
+    const now = new Date();
+    return d.getTime() > now.getTime() ? now : d;
+  };
 
   const setDate = (d: Date | undefined) => {
     if (!d) {
       onChange(undefined);
       return;
     }
-    // Preserve existing time if present, else default to 00:00.
     const hours = current ? current.getHours() : 0;
     const minutes = current ? current.getMinutes() : 0;
     const next = new Date(d);
     next.setHours(hours, minutes, 0, 0);
-    onChange(toLocalIso(next));
+    onChange(toLocalIso(clampToNow(next)));
   };
 
   const setTime = (raw: string) => {
@@ -83,7 +96,7 @@ export function DateTimePicker({
     if (!Number.isFinite(h) || !Number.isFinite(m)) return;
     const base = current ? new Date(current) : new Date();
     base.setHours(h, m, 0, 0);
-    onChange(toLocalIso(base));
+    onChange(toLocalIso(clampToNow(base)));
   };
 
   return (
@@ -126,6 +139,7 @@ export function DateTimePicker({
           startMonth={new Date(fromYear, 0)}
           endMonth={new Date(endYear, 11)}
           defaultMonth={current ?? new Date()}
+          disabled={disableFuture ? { after: today } : undefined}
         />
         <div className="border-t p-3 space-y-1.5">
           <Label htmlFor={`${id ?? 'datetime'}-time`} className="text-xs font-medium flex items-center gap-1.5">

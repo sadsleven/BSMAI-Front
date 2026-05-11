@@ -14,6 +14,7 @@ import {
   type PaymentMethodValues,
 } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
+import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { ChevronLeft } from 'lucide-react';
 
 function cleanPaymentMethod(m: PaymentMethodValues): CareCenterPaymentMethod {
@@ -51,7 +52,7 @@ export function CareCenterEdit() {
       businessName: '',
       email: '',
       rif: '',
-      phones: [{ number: '', label: '' }],
+      phones: [],
       specialtyIds: [],
       paymentMethods: [],
       isActive: true,
@@ -65,12 +66,12 @@ export function CareCenterEdit() {
         const c = await careCenterGateway.getById(id);
         methods.reset({
           businessName: c.businessName,
-          email: c.email,
-          rif: c.rif,
+          email: c.email ?? '',
+          rif: c.rif ?? '',
           phones:
             c.phones?.length > 0
               ? c.phones.map((ph) => ({ number: ph.number, label: ph.label ?? '' }))
-              : [{ number: '', label: '' }],
+              : [],
           specialtyIds: (c.specialties ?? []).map((s) => s.id),
           paymentMethods: (c.paymentMethods ?? []).map((m) => ({
             id: m.id,
@@ -101,8 +102,8 @@ export function CareCenterEdit() {
     try {
       await careCenterGateway.update(id, {
         businessName: values.businessName,
-        email: values.email,
-        rif: values.rif,
+        email: values.email?.trim() || '',
+        rif: values.rif?.trim() || '',
         phones: values.phones.map((p) => ({
           number: p.number,
           label: p.label || undefined,
@@ -126,7 +127,7 @@ export function CareCenterEdit() {
     <div className="max-w-3xl mx-auto">
       <PageBreadcrumbs />
       <FormProvider {...methods}>
-        <form onSubmit={methods.handleSubmit(onSubmit)} className="space-y-6">
+        <form onSubmit={methods.handleSubmit(onSubmit, (errs) => notifyFormErrors(errs))} className="space-y-6">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="space-y-1">
               <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">

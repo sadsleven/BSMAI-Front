@@ -8,13 +8,15 @@ import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { ChevronLeft, AlertTriangle } from 'lucide-react';
 import { OrderForm } from '../components/OrderForm';
 import { orderGateway } from '../../infrastructure/orderGateway';
-import type {
-  CreateOrderDto,
-  Order,
-  OrderPaymentInput,
+import {
+  ORDER_STATUS_LABEL,
+  type CreateOrderDto,
+  type Order,
+  type OrderPaymentInput,
 } from '../../domain/models/order';
 import { orderSchema, type OrderValues } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
+import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import type { Patient } from '@/modules/patients/domain/models/patient';
 import type { ProviderSelectValue } from '../components/ProviderSearchSelect';
 import { patientGateway } from '@/modules/patients/infrastructure/patientGateway';
@@ -33,8 +35,8 @@ function buildDto(values: OrderValues): CreateOrderDto {
     doctorId: values.doctorId || undefined,
     careCenterId: values.careCenterId || undefined,
     specialtyId: values.specialtyId,
-    serviceTypeId: values.serviceTypeId,
-    pathologyId: values.pathologyId,
+    serviceTypeIds: values.serviceTypeIds ?? [],
+    pathologyIds: values.pathologyIds ?? [],
     orderDate: values.orderDate,
     appointmentDate: values.appointmentDate,
     priceCurrency: values.priceCurrency,
@@ -77,8 +79,8 @@ export function OrderEdit() {
       doctorId: '',
       careCenterId: '',
       specialtyId: '',
-      serviceTypeId: '',
-      pathologyId: '',
+      serviceTypeIds: [],
+      pathologyIds: [],
       orderDate: '',
       appointmentDate: '',
       priceCurrency: 'USD',
@@ -87,17 +89,19 @@ export function OrderEdit() {
     },
   });
 
+  const fetchOrder = async () => {
+    if (!id) return null;
+    const order = await orderGateway.getById(id);
+    setInitialOrder(order);
+    return order;
+  };
+
   useEffect(() => {
     if (!id) return;
     (async () => {
       try {
-        const order = await orderGateway.getById(id);
-        setInitialOrder(order);
-        if (order.status !== 'draft') {
-          notify.warning('Esta orden no está en borrador y no puede editarse.');
-          navigate('/orders');
-          return;
-        }
+        const order = await fetchOrder();
+        if (!order) return;
         const [h, p, prov] = await Promise.all([
           patientGateway.getById(order.holderId),
           order.patientId === order.holderId
@@ -128,8 +132,8 @@ export function OrderEdit() {
           doctorId: order.doctorId ?? '',
           careCenterId: order.careCenterId ?? '',
           specialtyId: order.specialtyId,
-          serviceTypeId: order.serviceTypeId,
-          pathologyId: order.pathologyId,
+          serviceTypeIds: (order.serviceTypes ?? []).map((s) => s.id),
+          pathologyIds: (order.pathologies ?? []).map((p) => p.id),
           orderDate: order.orderDate.slice(0, 10),
           appointmentDate: order.appointmentDate.slice(0, 16),
           priceCurrency: order.priceCurrency,
@@ -179,15 +183,15 @@ export function OrderEdit() {
     <div className="max-w-4xl mx-auto">
       <PageBreadcrumbs />
       <FormProvider {...methods}>
-        <form onSubmit={methods.handleSubmit(onSubmit)} className="space-y-6">
+        <form onSubmit={methods.handleSubmit(onSubmit, (errs) => notifyFormErrors(errs))} className="space-y-6">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="space-y-1">
               <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">
-                Editar orden
+                {initialOrder?.status === 'draft' ? 'Editar orden' : 'Flujo de orden'}
               </h1>
               {initialOrder ? (
                 <p className="text-sm text-muted-foreground">
-                  {initialOrder.orderNumber} · Borrador
+                  {initialOrder.orderNumber} · {ORDER_STATUS_LABEL[initialOrder.status]}
                 </p>
               ) : null}
             </div>
@@ -207,6 +211,7 @@ export function OrderEdit() {
             savedOrder={initialOrder}
             currentStep={currentStep}
             onStepChange={setCurrentStep}
+            onOrderRefresh={fetchOrder}
           />
 
           <div className="flex items-center justify-between gap-3 pt-2 flex-wrap">
@@ -217,32 +222,11 @@ export function OrderEdit() {
               <Button type="button" variant="outline" onClick={tryCancel}>
                 Cancelar
               </Button>
-              {currentStep === 'register' ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setCurrentStep('process')}
-                  disabled={!initialOrder}
-                  title={
-                    initialOrder
-                      ? 'Avanzar al Paso 2'
-                      : 'Guardá la orden primero para acceder al Paso 2'
-                  }
-                >
-                  Continuar al Paso 2
+              {currentStep === 'register' && initialOrder?.status === 'draft' ? (
+                <Button type="submit" disabled={methods.formState.isSubmitting}>
+                  {methods.formState.isSubmitting ? 'Guardando…' : 'Guardar cambios'}
                 </Button>
-              ) : (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setCurrentStep('register')}
-                >
-                  Volver al Paso 1
-                </Button>
-              )}
-              <Button type="submit" disabled={methods.formState.isSubmitting}>
-                {methods.formState.isSubmitting ? 'Guardando…' : 'Guardar cambios'}
-              </Button>
+              ) : null}
             </div>
           </div>
         </form>
