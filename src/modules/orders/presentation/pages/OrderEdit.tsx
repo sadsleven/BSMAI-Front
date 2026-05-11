@@ -211,7 +211,9 @@ export function OrderEdit() {
             savedOrder={initialOrder}
             currentStep={currentStep}
             onStepChange={setCurrentStep}
-            onOrderRefresh={fetchOrder}
+            onOrderRefresh={async () => {
+              await fetchOrder();
+            }}
           />
 
           <div className="flex items-center justify-between gap-3 pt-2 flex-wrap">

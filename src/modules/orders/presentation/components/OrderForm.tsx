@@ -45,8 +45,11 @@ import {
   ProviderSearchSelect,
   type ProviderSelectValue,
 } from './ProviderSearchSelect';
-import { OrderPaymentForm, paymentInOrderCurrency } from './OrderPaymentForm';
-import { Button } from '@/components/ui/button';
+import {
+  OrderPaymentForm,
+  paymentInOrderCurrency,
+  type PaymentItemErrors,
+} from './OrderPaymentForm';
 import type { Order } from '../../domain/models/order';
 import { OrderAttendStep } from './stages/OrderAttendStep';
 import { OrderReportStep } from './stages/OrderReportStep';
@@ -958,7 +961,7 @@ export function OrderForm({
             name="payments"
             render={({ field }) => {
               const rawPaymentsErrors = errors.payments as unknown;
-              const paymentsErrors = Array.isArray(rawPaymentsErrors)
+              const paymentsErrors: PaymentItemErrors[] | undefined = Array.isArray(rawPaymentsErrors)
                 ? (rawPaymentsErrors as Array<
                     Record<string, { message?: string } | undefined> | undefined
                   >).map((e) =>
@@ -972,7 +975,7 @@ export function OrderForm({
                           amountCurrency: e.amountCurrency?.message,
                           amountValue: e.amountValue?.message,
                         }
-                      : undefined,
+                      : {},
                   )
                 : undefined;
               return (
