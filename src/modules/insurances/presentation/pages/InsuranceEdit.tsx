@@ -31,6 +31,7 @@ export function InsuranceEdit() {
       description: '',
       email: '',
       fiscalAddress: '',
+      policyNumber: '',
       phones: [],
       isActive: true,
     },
@@ -58,6 +59,7 @@ export function InsuranceEdit() {
           description: i.description ?? '',
           email: i.email ?? '',
           fiscalAddress: i.fiscalAddress ?? '',
+          policyNumber: i.policyNumber ?? '',
           phones:
             i.phones?.length > 0
               ? i.phones.map((ph) => ({ number: ph.number, label: ph.label ?? '' }))
@@ -82,6 +84,7 @@ export function InsuranceEdit() {
         description: values.description ?? undefined,
         email: values.email?.trim() || '',
         fiscalAddress: values.fiscalAddress?.trim() ?? '',
+        policyNumber: values.policyNumber?.trim() ?? '',
         phones: values.phones.map((p) => ({
           number: p.number,
           label: p.label || undefined,
@@ -99,8 +102,9 @@ export function InsuranceEdit() {
     return <div className="text-sm text-muted-foreground">Cargando seguro…</div>;
   }
 
-  const invalid = (k: 'name' | 'description' | 'email' | 'fiscalAddress') =>
-    errors[k] ? 'border-destructive focus-visible:ring-destructive/30' : '';
+  const invalid = (
+    k: 'name' | 'description' | 'email' | 'fiscalAddress' | 'policyNumber',
+  ) => (errors[k] ? 'border-destructive focus-visible:ring-destructive/30' : '');
 
   const phoneErrors = (
     errors.phones as unknown as Array<{ number?: { message?: string } } | undefined>
@@ -172,6 +176,23 @@ export function InsuranceEdit() {
                   <p className="text-xs text-destructive flex items-center gap-1 mt-1">
                     <AlertTriangle className="w-3 h-3" />
                     {errors.fiscalAddress.message}
+                  </p>
+                ) : null}
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="policyNumber" className="text-sm font-medium">
+                  Número de póliza <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
+                </Label>
+                <Input
+                  id="policyNumber"
+                  maxLength={64}
+                  {...register('policyNumber')}
+                  className={cn('h-9', invalid('policyNumber'))}
+                />
+                {errors.policyNumber ? (
+                  <p className="text-xs text-destructive flex items-center gap-1 mt-1">
+                    <AlertTriangle className="w-3 h-3" />
+                    {errors.policyNumber.message}
                   </p>
                 ) : null}
               </div>

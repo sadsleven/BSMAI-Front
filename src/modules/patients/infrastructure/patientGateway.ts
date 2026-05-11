@@ -36,6 +36,16 @@ export const patientGateway = {
     const { data } = await api.get<Patient>(`/patients/${id}`);
     return data;
   },
+  /**
+   * Seguros disponibles para un paciente — derivados de los seguros asignados a
+   * sus contratistas activos. Endpoint dedicado del BE: `GET /patients/:id/available-insurances`.
+   */
+  async getAvailableInsurances(id: string): Promise<Array<{ id: string; name: string }>> {
+    const { data } = await api.get<Array<{ id: string; name: string }>>(
+      `/patients/${id}/available-insurances`,
+    );
+    return data;
+  },
   async create(dto: CreatePatientDto): Promise<Patient> {
     const { data } = await api.post<Patient>('/patients', dto);
     return data;

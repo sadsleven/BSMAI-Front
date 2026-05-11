@@ -40,6 +40,8 @@ export interface OrderRefSummary {
   rif?: string | null;
 }
 
+export type DoctorAmountCurrency = 'USD' | 'EUR' | 'BS';
+
 export interface Order {
   id: string;
   orderNumber: string;
@@ -57,7 +59,7 @@ export interface Order {
   insurance?: { id: string; name: string } | null;
   providerType: ProviderType;
   doctorId?: string | null;
-  doctor?: OrderRefSummary | null;
+  doctor?: (OrderRefSummary & { isLegalEntity?: boolean }) | null;
   careCenterId?: string | null;
   careCenter?: OrderRefSummary | null;
   specialtyId: string;
@@ -70,9 +72,37 @@ export interface Order {
   priceAmount: string | number;
   createdById: string;
   payments?: OrderPayment[];
+  // Pasos 2-4
+  attended?: boolean;
+  attendedAt?: string | null;
+  otherStudies?: string | null;
+  doctorAmount?: string | number | null;
+  doctorAmountCurrency?: DoctorAmountCurrency | null;
+  billingExchangeRateId?: string | null;
+  billingExchangeRate?: {
+    id: string;
+    currency: 'USD' | 'EUR';
+    amountBs: string | number;
+    effectiveDate: string;
+  } | null;
   createdAt?: string;
   updatedAt?: string;
   deletedAt?: string | null;
+}
+
+export interface AttendOrderDto {
+  attended: boolean;
+  attendedAt?: string;
+}
+
+export interface ReportOrderDto {
+  otherStudies?: string | null;
+}
+
+export interface BillingOrderDto {
+  doctorAmount: number;
+  doctorAmountCurrency: DoctorAmountCurrency;
+  billingExchangeRateId: string;
 }
 
 export interface CreateOrderDto {

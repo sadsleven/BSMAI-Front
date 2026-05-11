@@ -79,9 +79,9 @@ export function OrderCreate() {
   const onSubmit = async (values: OrderValues) => {
     try {
       const dto = buildDto(values);
-      await orderGateway.create(dto);
-      notify.success('Orden creada en borrador');
-      navigate('/orders');
+      const created = await orderGateway.create(dto);
+      notify.success('Orden creada en borrador. Continuá con el Paso 2.');
+      navigate(`/orders/edit/${created.id}`);
     } catch (err) {
       notify.fromError(err, 'No se pudo crear la orden.');
     }
@@ -125,14 +125,6 @@ export function OrderCreate() {
             <div className="flex items-center gap-2 flex-wrap">
               <Button type="button" variant="outline" onClick={tryCancel}>
                 Cancelar
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                disabled
-                title="Guardá el borrador para acceder al Paso 2"
-              >
-                Continuar al Paso 2
               </Button>
               <Button type="submit" disabled={formState.isSubmitting}>
                 {formState.isSubmitting ? 'Guardando…' : 'Guardar borrador'}

@@ -70,7 +70,9 @@ Código transversal en `src/lib/` (utilidades), `src/components/ui/` (shadcn), `
 - **`pathologies/`** — CRUD simple de patologías. Endpoint `assignable`.
 - **`service-types/`** — CRUD simple de tipos de servicio. Endpoint `assignable`.
 - **`branches/`** — CRUD sucursales (name único + description + isActive). Endpoint `assignable` para `<BranchMultiSelect>`. Asignación M2M a usuarios; el Super Admin tiene acceso implícito a todas (no se replican filas en `user_branches`). Helper `getUserBranches(currentUser)` en `src/lib/auth/branches.ts` es la única forma correcta de leer las sucursales del usuario actual.
-- **`orders/`** — Paso 1 implementado (registro). Wizard con stepper (5 pasos visibles, pasos 2-5 marcados "Próximamente"). Estados (`draft|in_progress|attended|report_issued|finalized|cancelled`) reemplazan `isActive`. Edición sólo en `draft`. Filtrado por sucursales del usuario (server-side). Última sucursal usada persistida en `localStorage` (`lastBranchId:${userId}`). Sub-recurso pagos (`POST /orders/:id/payments`) con tasa histórica guardada por pago. Componentes `<PatientSearchSelect>` + `<PatientCreateModal>` (patrón "selector + crear inline"), `<ProviderSearchSelect>`, `<OrderPaymentForm>`.
+- **`orders/`** — Paso 1 implementado (registro). Wizard con stepper de 4 pasos canónicos: **Creación de orden / Atención del paciente / Informe médico y estudios / Facturación y liquidación**. Pasos 2-4 con `available: false` (planned). Estados (`draft|in_progress|attended|report_issued|finalized|cancelled`) reemplazan `isActive`. Edición sólo en `draft`. Filtrado por sucursales del usuario (server-side). Última sucursal usada persistida en `localStorage` (`lastBranchId:${userId}`). Sub-recurso pagos (`POST /orders/:id/payments`) con tasa histórica guardada por pago. Componentes `<PatientSearchSelect>` + `<PatientCreateModal>` (patrón "selector + crear inline"), `<ProviderSearchSelect>`, `<OrderPaymentForm>`.
+- **`accounts-payable/`** — **Cuentas por pagar**. Auto-generadas al crear orden (1 por orden, recipient = doctor o centro de atención). Status `paid|unpaid`. Sin create/eliminar/deshabilitar manual; solo Ver + Editar + acción "+ Registrar pago" (multi-select cuentas + sub-form de pagos al estilo `<OrderPaymentForm>`). Permisos `accounts-payable.{list, view, update}`.
+- **`accounts-receivable/`** — **Cuentas por cobrar**. Auto-generadas solo cuando `order.type === 'insurance'` (deudor = seguro). Status `collected|uncollected`. Mismo patrón UI que payable; acción "+ Registrar cobro". Sin cap de monto (seguro suele pagar por encima). Permisos `accounts-receivable.{list, view, update}`.
 
 ## HTTP
 
@@ -188,6 +190,48 @@ Todas las tablas de la app deben seguir este patrón — **no hay controles de s
 - **Diferencia en Bs en pagos**: además de `Diferencia` en moneda de la orden, se calcula `diffBs = diff × currentRate.amountBs` y se renderiza debajo del badge ("Faltan/Excede Bs. X,XX (tasa Y Bs/USD)"). Si no hay tasa activa se muestra notice italic muted.
 - **Errores per-pago**: `<OrderForm>` mapea `errors.payments` (RHF) al shape `PaymentItemErrors[]` que `<OrderPaymentForm>` ya consume per-fila para mostrar borde rojo + mensaje inline en cada campo (banco, referencia, monto, etc.).
 - **`orderNumber`**: número auto-incremental simple (sin formato `ORD-YYYY-NNNNNN`). El backend lo controla con la env `ORDER_NUMBER_START` (idempotente, `OnModuleInit` bumpea `orders_seq`).
+
+### Módulo de Órdenes — pasos 2-4 (implementado, file storage Paso 3 TBD)
+
+Stepper ya muestra los 4 pasos canónicos; pasos 2-4 con `available: false` hasta implementación. Naming canónico UI:
+
+- **2. Atención del paciente** — `<FormSwitch>` "Atendido" + `<DateTimePicker>` para `attendedAt`. Activable cuando `status === 'in_progress'`. Botón "Marcar atendido" → `PATCH /orders/:id/attend` → transición a `attended`.
+- **3. Informe médico y estudios** — `<FileDropzone>` (multi-file, accept `.pdf,.png,.jpg,.jpeg,.webp`) — **FE-only en MVP**, BE storage TBD. Estado de archivos en componente local; cuando exista endpoint, envío como `FormData`. + `<Textarea>` "Otros estudios". Botón "Emitir informe" → `PATCH /orders/:id/report` → transición a `report_issued`.
+- **4. Facturación y liquidación**:
+  - Botón "Descargar factura" — link a `GET /orders/:id/invoice.pdf` (PDF gen TBD).
+  - `<CurrencyAmountInput>` para `doctorAmount` + `<Select>` `doctorAmountCurrency ∈ {USD, EUR, BS}`. Cap visualizado: convertido a `priceCurrency` vía tasa de la orden (`billingExchangeRateId`) — error inline si excede `priceAmount`.
+  - Si `providerType === 'doctor'`: panel "Impuesto" con `taxRate` derivado (3% natural / 5% jurídico) + monto en moneda original + monto en Bs.
+  - Panel "Ganancia neta empresa" = `priceAmount - doctorAmount` en `priceCurrency`. Tax NO se resta — es retención al doctor, no costo empresa.
+  - **NO** se llena `<OrderPaymentForm>` aquí — los pagos al doctor/centro y los cobros al seguro viven en los módulos `accounts-payable` / `accounts-receivable`.
+  - Botón "Finalizar orden" → `PATCH /orders/:id/billing` → transición a `finalized` (orden inmutable después salvo soft delete).
+
+### Módulos `accounts-payable` / `accounts-receivable` (implementado)
+
+UI labels canónicos: **Cuentas por pagar** / **Cuentas por cobrar**. Sidebar bajo **Operaciones** (junto a Órdenes).
+
+- **Auto-generadas al crear orden** — sin botón "Crear" en tabla. Sin "Eliminar". Sin "Deshabilitar". Solo `Ver` + `Editar` + acción primaria "**Registrar pago**" / "**Registrar cobro**".
+- Permisos: `accounts-payable.{list, view, update}`, `accounts-receivable.{list, view, update}` — sin `create | toggle-active | *delete | restore` en el catálogo (excepción a `buildResource`).
+
+#### Tabla
+
+- **Cuentas por pagar**: orden número | recipient (doctor/centro) | `doctorAmount` | tax (si doctor) | `amountToReceive` | status pill (`Pagada` `bg-success-soft` / `No pagada` `bg-warning-soft`).
+- **Cuentas por cobrar**: orden número | seguro | `priceAmount` | total cobrado | diferencia | status pill (`Cobrada` / `No cobrada`).
+- Filtros server-side: status, doctor/centro (payable) o seguro (receivable), branch, búsqueda por `orderNumber`.
+- Sort en headers (orden número, fecha, monto). Convención `<SortableHeader>` ya documentada.
+- Acción primaria: botón "**+ Registrar pago**" / "**+ Registrar cobro**" (estilo `+ Nuevo doctor`) — abre modal con multi-select de cuentas + sub-form de pagos.
+
+#### Registrar pago / Registrar cobro (modal)
+
+- **Sección 1**: selección de cuentas — checkbox list de cuentas pendientes filtradas por mismo doctor/centro (payable) o mismo seguro (receivable). Al marcar la primera, las demás se restringen al mismo recipient/seguro.
+- **Sección 2**: `<OrderPaymentForm>` reusado — 1+ pagos (mismo componente que en órdenes; tipos `mobile_payment | bank_transfer | cash_foreign | cash_bs | other` + `exchangeRateId` actual).
+- **Sección 3 (resumen)**: `Σ amountToReceive(cuentas)` (en cada moneda) vs `Σ pagos` (en cada moneda) — diferencia con badge en Bs (vía tasa actual). Para payable: bloquea submit si `Σ ≠`. Para receivable: muestra diferencia, permite submit.
+- Tras éxito: cuentas pasan a `paid`/`collected`. Toast `notify.success` "Pago registrado: X cuentas".
+
+#### `amountToReceive` (payable)
+
+- recipient = doctor: `doctorAmount × (1 - taxRate)` con `taxRate = doctor.isLegalEntity ? 0.05 : 0.03`.
+- recipient = careCenter: `doctorAmount`.
+- Calculado en cliente con `doctor.isLegalEntity` cargado eager por el gateway. Mostrado per-fila en la tabla y en el modal.
 
 ## Notificaciones (`notify`)
 

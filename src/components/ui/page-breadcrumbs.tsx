@@ -25,6 +25,11 @@ const PATH_LABELS: Record<string, string> = {
   contractors: 'Contratistas',
   'exchange-rates': 'Tasas de cambio',
   branches: 'Sucursales',
+  'accounts-payable': 'Cuentas por pagar',
+  'accounts-receivable': 'Cuentas por cobrar',
+  'register-payment': 'Registrar pago',
+  'register-collection': 'Registrar cobro',
+  stages: 'Flujo',
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

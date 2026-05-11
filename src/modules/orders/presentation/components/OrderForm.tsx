@@ -46,23 +46,38 @@ import {
   type ProviderSelectValue,
 } from './ProviderSearchSelect';
 import { OrderPaymentForm, paymentInOrderCurrency } from './OrderPaymentForm';
-import { downloadFacturacionXlsx, downloadOrdenInternaXlsx } from './orderExcel';
 import { Button } from '@/components/ui/button';
-import { FileSpreadsheet, Download } from 'lucide-react';
 import type { Order } from '../../domain/models/order';
+import { OrderAttendStep } from './stages/OrderAttendStep';
+import { OrderReportStep } from './stages/OrderReportStep';
+import { OrderBillingStep } from './stages/OrderBillingStep';
 
 function buildOrderSteps(savedOrderId: boolean): StepDef[] {
   return [
-    { id: 'register', label: '1. Registro', description: 'Datos de la orden', available: true },
     {
-      id: 'process',
-      label: '2. En proceso',
-      description: savedOrderId ? 'Documentos descargables' : '',
+      id: 'register',
+      label: '1. Creación de orden',
+      description: 'Datos de la orden',
+      available: true,
+    },
+    {
+      id: 'attention',
+      label: '2. Atención del paciente',
+      description: savedOrderId ? 'Marcar atendido + órdenes internas' : '',
       available: savedOrderId,
     },
-    { id: 'attended', label: '3. Atención', available: false },
-    { id: 'report', label: '4. Informe médico', available: false },
-    { id: 'finalized', label: '5. Facturación', available: false },
+    {
+      id: 'report',
+      label: '3. Informe médico y estudios',
+      description: 'Estudios y observaciones',
+      available: savedOrderId,
+    },
+    {
+      id: 'billing',
+      label: '4. Facturación y liquidación',
+      description: 'Cierre, factura y liquidación',
+      available: savedOrderId,
+    },
   ];
 }
 
@@ -103,11 +118,13 @@ export type OrderFormProps = {
   initialHolder?: Patient | null;
   initialPatient?: Patient | null;
   initialProvider?: ProviderSelectValue | null;
-  /** Orden ya persistida (modo edición). Habilita Paso 2. */
+  /** Orden ya persistida (modo edición). Habilita pasos 2-4. */
   savedOrder?: Order | null;
   /** Paso actual del wizard (controlado por la página padre). */
   currentStep?: string;
   onStepChange?: (id: string) => void;
+  /** Refresca la orden persistida tras transiciones (atender, informe, facturar). */
+  onOrderRefresh?: () => void | Promise<void>;
 };
 
 export function OrderForm({
@@ -117,6 +134,7 @@ export function OrderForm({
   savedOrder = null,
   currentStep: externalStep,
   onStepChange,
+  onOrderRefresh,
 }: OrderFormProps) {
   const me = useAuthStore((s) => s.user);
   const { control, setValue, formState } = useFormContext<OrderValues>();
@@ -128,8 +146,6 @@ export function OrderForm({
     if (onStepChange) onStepChange(id);
     else setInternalStep(id);
   };
-  const [downloadingFact, setDownloadingFact] = useState(false);
-  const [downloadingOrden, setDownloadingOrden] = useState(false);
   const [holder, setHolder] = useState<Patient | null>(initialHolder);
   const [patient, setPatient] = useState<Patient | null>(initialPatient);
   const [sameAsHolder, setSameAsHolder] = useState(
@@ -390,87 +406,25 @@ export function OrderForm({
     <>
       <Stepper steps={orderSteps} current={currentStep} onSelect={setCurrentStep} />
 
-      {!renderStep1 && currentStep === 'process' && savedOrder ? (
-        <FormSection
-          title="Paso 2 — Documentos"
-          description="Descargá los documentos generados para la orden registrada."
-        >
-          <div className="space-y-3">
-            <div className="rounded-md border border-dashed bg-brand-blue-soft/30 px-3 py-2 text-xs text-brand-blue-strong">
-              Orden <strong>{savedOrder.orderNumber}</strong> · {ORDER_TYPE_LABEL[savedOrder.type]} ·{' '}
-              {Number(savedOrder.priceAmount).toFixed(2)} {savedOrder.priceCurrency}
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    setDownloadingFact(true);
-                    await downloadFacturacionXlsx(savedOrder);
-                  } finally {
-                    setDownloadingFact(false);
-                  }
-                }}
-                disabled={downloadingFact}
-                className="rounded-lg border bg-card p-4 text-left hover:bg-accent transition-colors disabled:opacity-60"
-              >
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="w-10 h-10 rounded-md bg-success-soft text-success flex items-center justify-center">
-                    <FileSpreadsheet className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-sm font-semibold">Facturación</div>
-                    <div className="text-xs text-muted-foreground">
-                      Comprobante de facturación con datos del titular, contratante y servicios.
-                    </div>
-                  </div>
-                </div>
-                <span className="inline-flex items-center gap-1 text-xs text-brand-blue-strong">
-                  <Download className="w-3.5 h-3.5" />
-                  {downloadingFact ? 'Generando…' : 'Descargar XLSX'}
-                </span>
-              </button>
+      {!renderStep1 && currentStep === 'attention' && savedOrder ? (
+        <OrderAttendStep
+          order={savedOrder}
+          onSaved={() => onOrderRefresh?.()}
+        />
+      ) : null}
 
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    setDownloadingOrden(true);
-                    await downloadOrdenInternaXlsx(savedOrder);
-                  } finally {
-                    setDownloadingOrden(false);
-                  }
-                }}
-                disabled={downloadingOrden}
-                className="rounded-lg border bg-card p-4 text-left hover:bg-accent transition-colors disabled:opacity-60"
-              >
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="w-10 h-10 rounded-md bg-brand-blue-soft text-brand-blue-strong flex items-center justify-center">
-                    <FileSpreadsheet className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-sm font-semibold">Orden interna</div>
-                    <div className="text-xs text-muted-foreground">
-                      Orden interna de servicios con médico tratante, paciente y tipo de servicio.
-                    </div>
-                  </div>
-                </div>
-                <span className="inline-flex items-center gap-1 text-xs text-brand-blue-strong">
-                  <Download className="w-3.5 h-3.5" />
-                  {downloadingOrden ? 'Generando…' : 'Descargar XLSX'}
-                </span>
-              </button>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentStep('register')}
-            >
-              Volver al Paso 1
-            </Button>
-          </div>
-        </FormSection>
+      {!renderStep1 && currentStep === 'report' && savedOrder ? (
+        <OrderReportStep
+          order={savedOrder}
+          onSaved={() => onOrderRefresh?.()}
+        />
+      ) : null}
+
+      {!renderStep1 && currentStep === 'billing' && savedOrder ? (
+        <OrderBillingStep
+          order={savedOrder}
+          onSaved={() => onOrderRefresh?.()}
+        />
       ) : null}
 
       {!renderStep1 ? null : (

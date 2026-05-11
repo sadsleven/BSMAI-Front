@@ -155,10 +155,23 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
   );
 }
 
-export async function downloadOrdenInternaXlsx(order: Order): Promise<void> {
+/** Sanitiza string para nombre de archivo (sin chars problemáticos en Windows/macOS). */
+function safeFilenameSegment(s: string): string {
+  return s.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').trim().slice(0, 80) || 'sin_nombre';
+}
+
+/**
+ * Genera 1 XLSX de "Orden interna" para UN tipo de servicio específico.
+ * Convención: cada ST de la orden produce su propio archivo. Para descargar
+ * todos los ST de la orden, usar `downloadOrdenInternaForAllServiceTypes`.
+ */
+export async function downloadOrdenInternaForServiceType(
+  order: Order,
+  serviceType: { id: string; name: string },
+): Promise<void> {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'AFMI';
-  const ws = wb.addWorksheet('ORDENES INTERNAS');
+  const ws = wb.addWorksheet('ORDEN INTERNA');
 
   ws.columns = [
     { width: 18 },
@@ -210,12 +223,12 @@ export async function downloadOrdenInternaXlsx(order: Order): Promise<void> {
   ws.getCell('G10').value = order.orderNumber;
 
   const tiposHeader = ws.getRow(11);
-  tiposHeader.getCell(1).value = 'Tipos de Servicios';
+  tiposHeader.getCell(1).value = 'Tipo de Servicio';
   tiposHeader.font = { bold: true };
   tiposHeader.alignment = { horizontal: 'center' };
   ws.mergeCells('A11:G11');
 
-  ws.getCell('A12').value = (order.serviceTypes ?? []).map((s) => s.name).join(', ');
+  ws.getCell('A12').value = serviceType.name;
   ws.mergeCells('A12:G12');
 
   // Footer block
@@ -234,8 +247,17 @@ export async function downloadOrdenInternaXlsx(order: Order): Promise<void> {
   }
 
   const buf = await wb.xlsx.writeBuffer();
+  const stSlug = safeFilenameSegment(serviceType.name);
   saveAs(
     new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
-    `OrdenInterna-${order.orderNumber}.xlsx`,
+    `OrdenInterna-${order.orderNumber}-${stSlug}.xlsx`,
   );
+}
+
+/** Descarga 1 XLSX por cada tipo de servicio asignado a la orden. */
+export async function downloadOrdenInternaForAllServiceTypes(order: Order): Promise<void> {
+  const sts = order.serviceTypes ?? [];
+  for (const st of sts) {
+    await downloadOrdenInternaForServiceType(order, st);
+  }
 }

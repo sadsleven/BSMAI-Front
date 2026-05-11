@@ -46,6 +46,10 @@ import { BranchEdit } from './modules/branches/presentation/pages/BranchEdit';
 import { OrderList } from './modules/orders/presentation/pages/OrderList';
 import { OrderCreate } from './modules/orders/presentation/pages/OrderCreate';
 import { OrderEdit } from './modules/orders/presentation/pages/OrderEdit';
+import { AccountsPayableList } from './modules/accounts-payable/presentation/pages/AccountsPayableList';
+import { AccountsPayableRegisterPayment } from './modules/accounts-payable/presentation/pages/AccountsPayableRegisterPayment';
+import { AccountsReceivableList } from './modules/accounts-receivable/presentation/pages/AccountsReceivableList';
+import { AccountsReceivableRegisterCollection } from './modules/accounts-receivable/presentation/pages/AccountsReceivableRegisterCollection';
 
 function App() {
   return (
@@ -137,6 +141,20 @@ function App() {
             <Route index element={<OrderList />} />
             <Route path="create" element={<OrderCreate />} />
             <Route path="edit/:id" element={<OrderEdit />} />
+          </Route>
+          <Route path="accounts-payable">
+            <Route index element={<AccountsPayableList />} />
+            <Route
+              path="register-payment"
+              element={<AccountsPayableRegisterPayment />}
+            />
+          </Route>
+          <Route path="accounts-receivable">
+            <Route index element={<AccountsReceivableList />} />
+            <Route
+              path="register-collection"
+              element={<AccountsReceivableRegisterCollection />}
+            />
           </Route>
         </Route>
 

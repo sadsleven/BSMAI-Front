@@ -15,6 +15,8 @@ import {
   TrendingUp,
   Building,
   ClipboardList,
+  Wallet,
+  HandCoins,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -68,6 +70,18 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
           label: 'Órdenes',
           href: '/orders',
           show: has(PERMISSIONS.ORDERS.LIST),
+        },
+        {
+          icon: Wallet,
+          label: 'Cuentas por pagar',
+          href: '/accounts-payable',
+          show: has(PERMISSIONS.ACCOUNTS_PAYABLE.LIST),
+        },
+        {
+          icon: HandCoins,
+          label: 'Cuentas por cobrar',
+          href: '/accounts-receivable',
+          show: has(PERMISSIONS.ACCOUNTS_RECEIVABLE.LIST),
         },
         {
           icon: UserRound,
