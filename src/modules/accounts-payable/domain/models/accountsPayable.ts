@@ -101,3 +101,61 @@ export function amountToReceive(
   }
   return amount;
 }
+
+/** Suma en Bs de los pagos asociados a la cuenta. */
+export function paidBs(a: AccountsPayable): number {
+  return (a.payments ?? []).reduce((s, p) => s + Number(p.amountInBs || 0), 0);
+}
+
+/** Tasa de facturación de la orden (Bs por unidad de moneda extranjera). */
+export function billingRateBs(a: AccountsPayable): number | null {
+  const r = a.order.billingExchangeRate;
+  if (!r) return null;
+  const n = Number(r.amountBs);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** Pagado convertido a moneda original del doctorAmount. */
+export function paidOriginal(a: AccountsPayable): number | null {
+  const pBs = paidBs(a);
+  if (a.order.doctorAmountCurrency === 'BS') return pBs;
+  const r = billingRateBs(a);
+  if (r === null) return null;
+  return pBs / r;
+}
+
+/** Monto objetivo en Bs (a recibir × tasa de facturación). */
+export function targetBs(
+  a: AccountsPayable,
+  rates?: { doctorNaturalTaxRate: number; doctorLegalTaxRate: number } | null,
+): number | null {
+  const ar = amountToReceive(a, rates);
+  if (ar === null) return null;
+  if (a.order.doctorAmountCurrency === 'BS') return ar;
+  const r = billingRateBs(a);
+  if (r === null) return null;
+  return ar * r;
+}
+
+/** Pendiente en Bs. Nunca negativo (cap superior). */
+export function pendingBs(
+  a: AccountsPayable,
+  rates?: { doctorNaturalTaxRate: number; doctorLegalTaxRate: number } | null,
+): number | null {
+  const t = targetBs(a, rates);
+  if (t === null) return null;
+  return Math.max(0, t - paidBs(a));
+}
+
+/** Pendiente en la moneda original del doctorAmount. */
+export function pendingOriginal(
+  a: AccountsPayable,
+  rates?: { doctorNaturalTaxRate: number; doctorLegalTaxRate: number } | null,
+): number | null {
+  const p = pendingBs(a, rates);
+  if (p === null) return null;
+  if (a.order.doctorAmountCurrency === 'BS') return p;
+  const r = billingRateBs(a);
+  if (r === null) return null;
+  return p / r;
+}

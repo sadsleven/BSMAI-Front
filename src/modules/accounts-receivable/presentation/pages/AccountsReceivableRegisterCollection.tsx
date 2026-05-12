@@ -18,8 +18,15 @@ import {
 } from '@/modules/orders/presentation/components/OrderPaymentForm';
 import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
 import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchangeRate';
+import { Badge } from '@/components/ui/badge';
 import { accountsReceivableGateway } from '../../infrastructure/accountsReceivableGateway';
-import type { AccountsReceivable } from '../../domain/models/accountsReceivable';
+import {
+  collectedBs,
+  collectedOriginal,
+  pendingBs,
+  pendingOriginal,
+  type AccountsReceivable,
+} from '../../domain/models/accountsReceivable';
 import type { OrderCurrency } from '@/modules/orders/domain/models/order';
 
 const registerCollectionSchema = z.object({
@@ -105,14 +112,33 @@ export function AccountsReceivableRegisterCollection() {
   // Sum priceAmount in order currency (mostly homogenous; mark mixed)
   const totals = useMemo(() => {
     let totalOrders = 0;
+    let totalCollectedBs = 0;
+    let totalCollectedOriginal = 0;
+    let totalPendingBs = 0;
+    let totalPendingOriginal = 0;
     let unifiedCurrency: string | null = null;
     let mixedCurrency = false;
     for (const a of accounts) {
       totalOrders += Number(a.order.priceAmount);
+      totalCollectedBs += collectedBs(a);
+      const cOrig = collectedOriginal(a);
+      if (cOrig !== null) totalCollectedOriginal += cOrig;
+      const pBs = pendingBs(a);
+      if (pBs !== null) totalPendingBs += pBs;
+      const pOrig = pendingOriginal(a);
+      if (pOrig !== null) totalPendingOriginal += pOrig;
       if (unifiedCurrency === null) unifiedCurrency = a.order.priceCurrency;
       else if (unifiedCurrency !== a.order.priceCurrency) mixedCurrency = true;
     }
-    return { totalOrders, currency: unifiedCurrency, mixedCurrency };
+    return {
+      totalOrders,
+      totalCollectedBs,
+      totalCollectedOriginal,
+      totalPendingBs,
+      totalPendingOriginal,
+      currency: unifiedCurrency,
+      mixedCurrency,
+    };
   }, [accounts]);
 
   const watchedPayments = methods.watch('payments') ?? [];
@@ -228,6 +254,67 @@ export function AccountsReceivableRegisterCollection() {
             <p className="text-xs italic text-muted-foreground mt-1">
               Sin cap de monto — el seguro suele pagar por encima del agregado.
             </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 pt-3 border-t">
+              <div className="space-y-1">
+                <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+                  Total a cobrar
+                </div>
+                <div className="text-lg font-semibold">
+                  {totals.mixedCurrency
+                    ? '—'
+                    : `${totals.totalOrders.toFixed(2)} ${totals.currency ?? ''}`}
+                </div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+                  Ya cobrado
+                </div>
+                <div className="text-lg font-semibold">
+                  {totals.mixedCurrency
+                    ? `${totals.totalCollectedBs.toFixed(2)} Bs.`
+                    : `${totals.totalCollectedOriginal.toFixed(2)} ${totals.currency ?? ''}`}
+                </div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+                  Diferencia
+                </div>
+                <div className="text-lg font-semibold flex items-center gap-2">
+                  {Math.abs(totals.totalPendingBs) <= 0.01 ? (
+                    <Badge variant="default" className="bg-success text-white">
+                      Cuadrado
+                    </Badge>
+                  ) : totals.totalPendingBs < 0 ? (
+                    <Badge variant="default" className="bg-brand-blue text-white">
+                      Excede{' '}
+                      {totals.mixedCurrency
+                        ? `${Math.abs(totals.totalPendingBs).toFixed(2)} Bs.`
+                        : `${Math.abs(totals.totalPendingOriginal).toFixed(2)} ${totals.currency ?? ''}`}
+                    </Badge>
+                  ) : (
+                    <Badge variant="default" className="bg-warning text-white">
+                      Faltan{' '}
+                      {totals.mixedCurrency
+                        ? `${totals.totalPendingBs.toFixed(2)} Bs.`
+                        : `${totals.totalPendingOriginal.toFixed(2)} ${totals.currency ?? ''}`}
+                    </Badge>
+                  )}
+                </div>
+                {Math.abs(totals.totalPendingBs) >= 0.01 && (
+                  <div className="text-xs text-muted-foreground">
+                    {totals.totalPendingBs > 0 ? 'Faltan' : 'Excede'}{' '}
+                    <span className="font-mono">
+                      Bs.{' '}
+                      {Math.abs(totals.totalPendingBs).toLocaleString('es-VE', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
           </FormSection>
 
           <FormSection

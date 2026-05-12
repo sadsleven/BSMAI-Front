@@ -19,8 +19,13 @@ import {
 import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
 import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchangeRate';
 import { accountsPayableGateway } from '../../infrastructure/accountsPayableGateway';
+import { Badge } from '@/components/ui/badge';
 import {
   amountToReceive,
+  paidBs,
+  paidOriginal,
+  pendingBs,
+  pendingOriginal,
   recipientName,
   type AccountsPayable,
 } from '../../domain/models/accountsPayable';
@@ -120,6 +125,10 @@ export function AccountsPayableRegisterPayment() {
   const totals = useMemo(() => {
     let totalDoctorOriginal = 0;
     let totalToReceiveOriginal = 0;
+    let totalPaidBs = 0;
+    let totalPaidOriginal = 0;
+    let totalPendingBs = 0;
+    let totalPendingOriginal = 0;
     let unifiedCurrency: string | null = null;
     let mixedCurrency = false;
     for (const a of accounts) {
@@ -127,6 +136,13 @@ export function AccountsPayableRegisterPayment() {
       totalDoctorOriginal += Number(a.order.doctorAmount);
       const ar = amountToReceive(a, taxRates);
       if (ar !== null) totalToReceiveOriginal += ar;
+      totalPaidBs += paidBs(a);
+      const pdOrig = paidOriginal(a);
+      if (pdOrig !== null) totalPaidOriginal += pdOrig;
+      const pBs = pendingBs(a, taxRates);
+      if (pBs !== null) totalPendingBs += pBs;
+      const pOrig = pendingOriginal(a, taxRates);
+      if (pOrig !== null) totalPendingOriginal += pOrig;
       if (unifiedCurrency === null) unifiedCurrency = a.order.doctorAmountCurrency;
       else if (unifiedCurrency !== a.order.doctorAmountCurrency)
         mixedCurrency = true;
@@ -134,10 +150,14 @@ export function AccountsPayableRegisterPayment() {
     return {
       totalDoctorOriginal,
       totalToReceiveOriginal,
+      totalPaidBs,
+      totalPaidOriginal,
+      totalPendingBs,
+      totalPendingOriginal,
       currency: unifiedCurrency,
       mixedCurrency,
     };
-  }, [accounts]);
+  }, [accounts, taxRates]);
 
   const watchedPayments = methods.watch('payments') ?? [];
   const totalPaymentsInOrderCurrency = useMemo(() => {
@@ -262,6 +282,60 @@ export function AccountsPayableRegisterPayment() {
                 no agregable.
               </p>
             )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 pt-3 border-t">
+              <div className="space-y-1">
+                <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+                  Total a pagar
+                </div>
+                <div className="text-lg font-semibold">
+                  {totals.mixedCurrency
+                    ? '—'
+                    : `${totals.totalToReceiveOriginal.toFixed(2)} ${totals.currency ?? ''}`}
+                </div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+                  Ya pagado
+                </div>
+                <div className="text-lg font-semibold">
+                  {totals.mixedCurrency
+                    ? `${totals.totalPaidBs.toFixed(2)} Bs.`
+                    : `${totals.totalPaidOriginal.toFixed(2)} ${totals.currency ?? ''}`}
+                </div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+                  Diferencia
+                </div>
+                <div className="text-lg font-semibold flex items-center gap-2">
+                  {totals.totalPendingBs <= 0.01 ? (
+                    <Badge variant="default" className="bg-success text-white">
+                      Cuadrado
+                    </Badge>
+                  ) : (
+                    <Badge variant="default" className="bg-warning text-white">
+                      Faltan{' '}
+                      {totals.mixedCurrency
+                        ? `${totals.totalPendingBs.toFixed(2)} Bs.`
+                        : `${totals.totalPendingOriginal.toFixed(2)} ${totals.currency ?? ''}`}
+                    </Badge>
+                  )}
+                </div>
+                {totals.totalPendingBs > 0.01 && (
+                  <div className="text-xs text-muted-foreground">
+                    Faltan{' '}
+                    <span className="font-mono">
+                      Bs.{' '}
+                      {totals.totalPendingBs.toLocaleString('es-VE', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
           </FormSection>
 
           <FormSection

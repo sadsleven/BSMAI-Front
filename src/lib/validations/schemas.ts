@@ -345,10 +345,6 @@ export const insuranceSchema = z.object({
     .string()
     .max(500, 'El domicilio fiscal no puede superar 500 caracteres')
     .optional(),
-  policyNumber: z
-    .string()
-    .max(64, 'El número de póliza no puede superar 64 caracteres')
-    .optional(),
   phones: phonesArraySchema,
   isActive: z.boolean().optional(),
 });

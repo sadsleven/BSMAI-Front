@@ -64,14 +64,14 @@ function defaultsForType(
     paymentDate: todayIso,
     referenceNumber: '',
     bankCode: '',
-    exchangeRateId: '',
+    exchangeRateId: currentRateId ?? '',
     accountNumber: '',
     amountValue: 0,
   };
   if (type === 'mobile_payment' || type === 'bank_transfer' || type === 'cash_bs') {
-    return { ...base, amountCurrency: 'BS', exchangeRateId: currentRateId ?? '' };
+    return { ...base, amountCurrency: 'BS' };
   }
-  // cash_foreign, other
+  // cash_foreign, other → en moneda de la orden; el rate se necesita para Bs.
   return { ...base, amountCurrency: orderCurrency as PaymentCurrency };
 }
 
@@ -92,15 +92,15 @@ export function OrderPaymentForm({
       .catch(() => setBanks([]));
   }, []);
 
-  // Backfill exchangeRateId on BS-typed payments once currentRate is known.
+  // Backfill exchangeRateId once currentRate is known. BE requires it whenever
+  // amountCurrency != BS (for Bs conversion) and we also pre-fill BS-typed
+  // payments so the user sees the applied rate.
   useEffect(() => {
     if (!currentRate?.id) return;
     let dirty = false;
     const next = payments.map((p) => {
-      const needsRate =
-        (p.type === 'mobile_payment' || p.type === 'bank_transfer' || p.type === 'cash_bs') &&
-        !(p.exchangeRateId && p.exchangeRateId.trim());
-      if (needsRate) {
+      const hasRate = !!(p.exchangeRateId && p.exchangeRateId.trim());
+      if (!hasRate) {
         dirty = true;
         return { ...p, exchangeRateId: currentRate.id };
       }
@@ -190,26 +190,24 @@ export function OrderPaymentForm({
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {(isMobileOrTransfer || isBs) ? (
-                    <div className="space-y-1">
-                      <Label className="text-xs">Tasa de cambio</Label>
-                      <Input
-                        readOnly
-                        value={
-                          currentRate
-                            ? `1 ${currentRate.currency} = ${Number(currentRate.amountBs).toFixed(2)} Bs.`
-                            : '—'
-                        }
-                        className="h-9 bg-muted/30"
-                      />
-                      {err.exchangeRateId ? (
-                        <p className="text-xs text-destructive flex items-center gap-1">
-                          <AlertTriangle className="w-3 h-3" />
-                          {err.exchangeRateId}
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : null}
+                  <div className="space-y-1">
+                    <Label className="text-xs">Tasa de cambio</Label>
+                    <Input
+                      readOnly
+                      value={
+                        currentRate
+                          ? `1 ${currentRate.currency} = ${Number(currentRate.amountBs).toFixed(2)} Bs.`
+                          : '—'
+                      }
+                      className="h-9 bg-muted/30"
+                    />
+                    {err.exchangeRateId ? (
+                      <p className="text-xs text-destructive flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" />
+                        {err.exchangeRateId}
+                      </p>
+                    ) : null}
+                  </div>
 
                   {isMobileOrTransfer ? (
                     <div className="space-y-1">

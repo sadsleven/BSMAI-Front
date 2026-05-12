@@ -3,8 +3,8 @@ import { Download, FileSpreadsheet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { FormSection } from '@/components/ui/form-section';
 import { FormSwitch } from '@/components/ui/form-switch';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { DateTimePicker } from '@/components/ui/date-time-picker';
 import { notify } from '@/lib/notifications/toast';
 import { getHttpErrorMessage } from '@/lib/api';
 import { orderGateway } from '../../../infrastructure/orderGateway';
@@ -28,9 +28,7 @@ export function OrderAttendStep({
   onSaved: () => void;
 }) {
   const [attended, setAttended] = useState(!!order.attended);
-  const [attendedAt, setAttendedAt] = useState<string>(
-    order.attendedAt ? order.attendedAt.slice(0, 16) : '',
-  );
+  const [attendedAt, setAttendedAt] = useState<string>(order.attendedAt ?? '');
   const [saving, setSaving] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
@@ -118,12 +116,12 @@ export function OrderAttendStep({
         <div className="grid sm:grid-cols-2 gap-x-5 gap-y-[18px] mt-4">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="attendedAt">Fecha y hora de atención</Label>
-            <Input
+            <DateTimePicker
               id="attendedAt"
-              type="datetime-local"
-              value={attendedAt}
-              onChange={(e) => setAttendedAt(e.target.value)}
+              value={attendedAt || undefined}
+              onChange={(v) => setAttendedAt(v ?? '')}
               disabled={!attended}
+              disableFuture
             />
           </div>
         </div>

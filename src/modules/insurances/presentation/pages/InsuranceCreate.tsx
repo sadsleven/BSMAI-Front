@@ -27,7 +27,6 @@ export function InsuranceCreate() {
       description: '',
       email: '',
       fiscalAddress: '',
-      policyNumber: '',
       phones: [],
       isActive: true,
     },
@@ -44,7 +43,7 @@ export function InsuranceCreate() {
 
   const isActive = watch('isActive') ?? true;
   const invalid = (
-    k: 'name' | 'description' | 'email' | 'fiscalAddress' | 'policyNumber',
+    k: 'name' | 'description' | 'email' | 'fiscalAddress',
   ) => (errors[k] ? 'border-destructive focus-visible:ring-destructive/30' : '');
 
   const phoneErrors = (
@@ -58,7 +57,6 @@ export function InsuranceCreate() {
         description: values.description || undefined,
         email: values.email?.trim() || undefined,
         fiscalAddress: values.fiscalAddress?.trim() || undefined,
-        policyNumber: values.policyNumber?.trim() || undefined,
         phones: values.phones.map((p) => ({
           number: p.number,
           label: p.label || undefined,
@@ -137,23 +135,6 @@ export function InsuranceCreate() {
                   <p className="text-xs text-destructive flex items-center gap-1 mt-1">
                     <AlertTriangle className="w-3 h-3" />
                     {errors.fiscalAddress.message}
-                  </p>
-                ) : null}
-              </div>
-              <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="policyNumber" className="text-sm font-medium">
-                  Número de póliza <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
-                </Label>
-                <Input
-                  id="policyNumber"
-                  maxLength={64}
-                  {...register('policyNumber')}
-                  className={cn('h-9', invalid('policyNumber'))}
-                />
-                {errors.policyNumber ? (
-                  <p className="text-xs text-destructive flex items-center gap-1 mt-1">
-                    <AlertTriangle className="w-3 h-3" />
-                    {errors.policyNumber.message}
                   </p>
                 ) : null}
               </div>

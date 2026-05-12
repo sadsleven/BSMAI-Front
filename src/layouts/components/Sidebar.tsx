@@ -181,12 +181,16 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
     <div className="flex flex-col h-full">
       {/* Brand header */}
       <div className="px-5 py-5 border-b border-sidebar-border flex items-center gap-3">
-        <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-cyan to-brand-blue flex items-center justify-center text-white font-bold shadow-sm">
-          A
+        <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-cyan to-brand-blue flex items-center justify-center overflow-hidden shadow-sm">
+          <img
+            src="/logo-afmi-cuadrado.png"
+            alt="AFMI"
+            className="w-full h-full object-contain p-0.5"
+          />
         </div>
         <div className="flex flex-col leading-tight">
           <span className="text-[15px] font-bold text-sidebar-foreground">AFMI</span>
-          <span className="text-[11px] text-muted-foreground">Sistema clínico</span>
+          <span className="text-[11px] text-muted-foreground">Sistema de gestión médica</span>
         </div>
       </div>
 

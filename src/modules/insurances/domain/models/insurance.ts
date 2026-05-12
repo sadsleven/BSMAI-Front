@@ -10,8 +10,6 @@ export interface Insurance {
   description?: string | null;
   email?: string | null;
   fiscalAddress?: string | null;
-  /** Número/identificador del seguro. Opcional, sin restricción de unicidad. */
-  policyNumber?: string | null;
   isActive: boolean;
   phones: InsurancePhone[];
   createdAt?: string;
@@ -24,7 +22,6 @@ export interface CreateInsuranceDto {
   description?: string;
   email?: string;
   fiscalAddress?: string;
-  policyNumber?: string;
   phones: { number: string; label?: string }[];
   isActive?: boolean;
 }
