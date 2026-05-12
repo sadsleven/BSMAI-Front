@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
-import { ChevronLeft, AlertTriangle } from 'lucide-react';
+import { ChevronLeft, AlertTriangle, ArrowRight } from 'lucide-react';
 import { OrderForm } from '../components/OrderForm';
 import { orderGateway } from '../../infrastructure/orderGateway';
 import {
@@ -227,6 +227,16 @@ export function OrderEdit() {
               {currentStep === 'register' && initialOrder?.status === 'draft' ? (
                 <Button type="submit" disabled={methods.formState.isSubmitting}>
                   {methods.formState.isSubmitting ? 'Guardando…' : 'Guardar cambios'}
+                </Button>
+              ) : null}
+              {currentStep === 'register' && initialOrder ? (
+                <Button
+                  type="button"
+                  variant={initialOrder.status === 'draft' ? 'outline' : 'default'}
+                  onClick={() => setCurrentStep('attention')}
+                >
+                  Continuar a Atención
+                  <ArrowRight className="w-4 h-4 ml-1.5" />
                 </Button>
               ) : null}
             </div>

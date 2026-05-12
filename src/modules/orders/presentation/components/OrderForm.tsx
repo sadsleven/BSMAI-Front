@@ -55,7 +55,13 @@ import { OrderAttendStep } from './stages/OrderAttendStep';
 import { OrderReportStep } from './stages/OrderReportStep';
 import { OrderBillingStep } from './stages/OrderBillingStep';
 
-function buildOrderSteps(savedOrderId: boolean): StepDef[] {
+function buildOrderSteps(
+  savedOrderId: boolean,
+  status?: import('../../domain/models/order').OrderStatus,
+): StepDef[] {
+  const isAttendedOrLater =
+    status === 'attended' || status === 'report_issued' || status === 'finalized';
+  const isReportedOrLater = status === 'report_issued' || status === 'finalized';
   return [
     {
       id: 'register',
@@ -66,20 +72,23 @@ function buildOrderSteps(savedOrderId: boolean): StepDef[] {
     {
       id: 'attention',
       label: '2. Atención del paciente',
-      description: savedOrderId ? 'Marcar atendido + órdenes internas' : '',
+      description: 'Marcar atendido + órdenes internas',
       available: savedOrderId,
+      lockedReason: 'Guardá la orden primero',
     },
     {
       id: 'report',
       label: '3. Informe médico y estudios',
       description: 'Estudios y observaciones',
-      available: savedOrderId,
+      available: savedOrderId && isAttendedOrLater,
+      lockedReason: 'Marcá atendido primero',
     },
     {
       id: 'billing',
       label: '4. Facturación y liquidación',
       description: 'Cierre, factura y liquidación',
-      available: savedOrderId,
+      available: savedOrderId && isReportedOrLater,
+      lockedReason: 'Emití el informe primero',
     },
   ];
 }
@@ -402,7 +411,7 @@ export function OrderForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [computedPriceSum, isInsuranceOrder, insuranceId, priceCurrency, serviceTypeIds.join(',')]);
 
-  const orderSteps = buildOrderSteps(!!savedOrder);
+  const orderSteps = buildOrderSteps(!!savedOrder, savedOrder?.status);
   const renderStep1 = currentStep === 'register';
 
   return (
@@ -413,6 +422,7 @@ export function OrderForm({
         <OrderAttendStep
           order={savedOrder}
           onSaved={() => onOrderRefresh?.()}
+          onAdvance={() => setCurrentStep('report')}
         />
       ) : null}
 
@@ -420,6 +430,7 @@ export function OrderForm({
         <OrderReportStep
           order={savedOrder}
           onSaved={() => onOrderRefresh?.()}
+          onAdvance={() => setCurrentStep('billing')}
         />
       ) : null}
 

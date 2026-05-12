@@ -287,7 +287,7 @@ export function OrderBillingStep({
             )}
           </div>
           <div className="text-xs text-muted-foreground">
-            priceAmount − doctorAmount (sin restar tax).
+            Monto total de la orden − Monto al doctor/centro (sin restar impuestos).
           </div>
         </div>
 

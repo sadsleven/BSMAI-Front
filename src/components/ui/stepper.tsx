@@ -7,6 +7,8 @@ export type StepDef = {
   description?: string;
   /** Implementado y navegable. Pasos futuros marcar como `available: false`. */
   available: boolean;
+  /** Mensaje cuando `available = false`. Default: "Próximamente". */
+  lockedReason?: string;
 };
 
 export type StepperProps = {
@@ -64,7 +66,7 @@ export function Stepper({ steps, current, onSelect }: StepperProps) {
                 <div className="min-w-0">
                   <div className="text-[13px] font-semibold truncate">{s.label}</div>
                   <div className="text-[11px] text-muted-foreground truncate">
-                    {isDisabled ? 'Próximamente' : (s.description ?? '')}
+                    {isDisabled ? (s.lockedReason ?? 'Próximamente') : (s.description ?? '')}
                   </div>
                 </div>
               </div>
