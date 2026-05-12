@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Upload, X, FileText } from 'lucide-react';
+import { ArrowRight, Upload, X, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -19,9 +19,11 @@ const ACCEPT = '.pdf,.png,.jpg,.jpeg,.webp';
 export function OrderReportStep({
   order,
   onSaved,
+  onAdvance,
 }: {
   order: Order;
   onSaved: () => void;
+  onAdvance?: () => void;
 }) {
   const [otherStudies, setOtherStudies] = useState(order.otherStudies ?? '');
   const [files, setFiles] = useState<File[]>([]);
@@ -112,10 +114,17 @@ export function OrderReportStep({
         />
       </div>
 
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2 flex-wrap">
         <Button type="button" onClick={onSubmit} disabled={saving}>
           {saving ? 'Guardando...' : 'Emitir informe'}
         </Button>
+        {(order.status === 'report_issued' || order.status === 'finalized') &&
+        onAdvance ? (
+          <Button type="button" variant="outline" onClick={onAdvance}>
+            Continuar a Facturación
+            <ArrowRight className="w-4 h-4 ml-1.5" />
+          </Button>
+        ) : null}
       </div>
     </div>
   );

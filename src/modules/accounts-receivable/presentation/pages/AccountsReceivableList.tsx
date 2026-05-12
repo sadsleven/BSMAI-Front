@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, HandCoins } from 'lucide-react';
+import { Eye, Plus, HandCoins } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { AccountsReceivableDetail } from '../components/AccountsReceivableDetail';
 import {
   Table,
   TableBody,
@@ -29,6 +30,9 @@ import { notify } from '@/lib/notifications/toast';
 import { getHttpErrorMessage } from '@/lib/api';
 import { accountsReceivableGateway } from '../../infrastructure/accountsReceivableGateway';
 import {
+  collectedBs,
+  pendingBs,
+  pendingOriginal,
   STATUS_LABEL,
   type AccountsReceivable,
   type AccountsReceivableStatus,
@@ -58,6 +62,7 @@ export function AccountsReceivableList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   const updateParam = useCallback(
     (patch: Record<string, string | number | undefined>) => {
@@ -219,6 +224,9 @@ export function AccountsReceivableList() {
                 Monto orden
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                Falta por cobrar
+              </TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Estado
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
@@ -231,14 +239,17 @@ export function AccountsReceivableList() {
                   Creación
                 </SortableHeader>
               </TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">
+                Acciones
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <SkeletonTableRows rows={5} columns={7} />
+              <SkeletonTableRows rows={5} columns={9} />
             ) : data.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="p-0">
+                <TableCell colSpan={9} className="p-0">
                   <EmptyState
                     icon={HandCoins}
                     title={
@@ -256,6 +267,9 @@ export function AccountsReceivableList() {
               </TableRow>
             ) : (
               data.map((a) => {
+                const pBs = pendingBs(a);
+                const pOrig = pendingOriginal(a);
+                const collected = collectedBs(a);
                 // Permite seleccionar mientras no esté completamente cobrada.
                 // Receivable sin cap: 'overcollected' / 'collected' bloquean para evitar más cobros.
                 const isUncollected =
@@ -288,6 +302,40 @@ export function AccountsReceivableList() {
                     <TableCell className="py-3.5 px-4 text-sm font-mono">
                       {Number(a.order.priceAmount).toFixed(2)}{' '}
                       {a.order.priceCurrency}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono">
+                      {pBs !== null ? (
+                        <div
+                          className={
+                            Math.abs(pBs) <= 0.01
+                              ? 'text-success'
+                              : pBs < 0
+                                ? 'text-brand-blue-strong'
+                                : collected > 0
+                                  ? 'text-warning'
+                                  : 'text-foreground'
+                          }
+                        >
+                          {pOrig !== null ? (
+                            <>
+                              <div>
+                                {pBs < 0 ? '+' : ''}
+                                {Math.abs(pOrig).toFixed(2)} {a.order.priceCurrency}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                Bs. {Math.abs(pBs).toFixed(2)}
+                              </div>
+                            </>
+                          ) : (
+                            <div>
+                              {pBs < 0 ? '+' : ''}
+                              {Math.abs(pBs).toFixed(2)} Bs.
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        '—'
+                      )}
                     </TableCell>
                     <TableCell className="py-3.5 px-4">
                       {(() => {
@@ -328,12 +376,29 @@ export function AccountsReceivableList() {
                         ? new Date(a.createdAt).toLocaleDateString('es-VE')
                         : '—'}
                     </TableCell>
+                    <TableCell className="py-3.5 px-4 text-right">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setDetailId(a.id)}
+                        title="Ver detalle"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 );
               })
             )}
           </TableBody>
         </Table>
+
+        <AccountsReceivableDetail
+          accountId={detailId}
+          open={!!detailId}
+          onOpenChange={(o) => !o && setDetailId(null)}
+        />
 
         <DataTablePagination
           page={filters.page}

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, Wallet } from 'lucide-react';
+import { Eye, Plus, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { AccountsPayableDetail } from '../components/AccountsPayableDetail';
 import {
   Table,
   TableBody,
@@ -31,6 +32,9 @@ import { getHttpErrorMessage } from '@/lib/api';
 import { accountsPayableGateway } from '../../infrastructure/accountsPayableGateway';
 import {
   amountToReceive,
+  paidBs,
+  pendingBs,
+  pendingOriginal,
   recipientName,
   STATUS_LABEL,
   type AccountsPayable,
@@ -62,6 +66,7 @@ export function AccountsPayableList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [detailId, setDetailId] = useState<string | null>(null);
   const taxRates = useTaxRates();
 
   const updateParam = useCallback(
@@ -231,6 +236,9 @@ export function AccountsPayableList() {
                 Monto a recibir
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                Falta por pagar
+              </TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Estado
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
@@ -243,14 +251,17 @@ export function AccountsPayableList() {
                   Creación
                 </SortableHeader>
               </TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">
+                Acciones
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <SkeletonTableRows rows={5} columns={9} />
+              <SkeletonTableRows rows={5} columns={11} />
             ) : data.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="p-0">
+                <TableCell colSpan={11} className="p-0">
                   <EmptyState
                     icon={Wallet}
                     title={
@@ -269,6 +280,9 @@ export function AccountsPayableList() {
             ) : (
               data.map((a) => {
                 const ar = amountToReceive(a, taxRates);
+                const pBs = pendingBs(a, taxRates);
+                const pOrig = pendingOriginal(a, taxRates);
+                const paid = paidBs(a);
                 // Permitir selección si la cuenta no está pagada (allow re-paying partially_paid).
                 const isUnpaid = a.status !== 'paid';
                 return (
@@ -311,6 +325,36 @@ export function AccountsPayableList() {
                         ? `${ar.toFixed(2)} ${a.order.doctorAmountCurrency}`
                         : '—'}
                     </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono">
+                      {pBs !== null ? (
+                        <div
+                          className={
+                            pBs <= 0.01
+                              ? 'text-success'
+                              : paid > 0
+                                ? 'text-warning'
+                                : 'text-foreground'
+                          }
+                        >
+                          {pOrig !== null &&
+                          a.order.doctorAmountCurrency &&
+                          a.order.doctorAmountCurrency !== 'BS' ? (
+                            <>
+                              <div>
+                                {pOrig.toFixed(2)} {a.order.doctorAmountCurrency}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                Bs. {pBs.toFixed(2)}
+                              </div>
+                            </>
+                          ) : (
+                            <div>{pBs.toFixed(2)} Bs.</div>
+                          )}
+                        </div>
+                      ) : (
+                        '—'
+                      )}
+                    </TableCell>
                     <TableCell className="py-3.5 px-4">
                       <span
                         className={
@@ -338,12 +382,29 @@ export function AccountsPayableList() {
                         ? new Date(a.createdAt).toLocaleDateString('es-VE')
                         : '—'}
                     </TableCell>
+                    <TableCell className="py-3.5 px-4 text-right">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setDetailId(a.id)}
+                        title="Ver detalle"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 );
               })
             )}
           </TableBody>
         </Table>
+
+        <AccountsPayableDetail
+          accountId={detailId}
+          open={!!detailId}
+          onOpenChange={(o) => !o && setDetailId(null)}
+        />
 
         <DataTablePagination
           page={filters.page}

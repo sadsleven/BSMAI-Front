@@ -81,17 +81,21 @@ export function LoginPage() {
         {/* Brand */}
         <div className="flex flex-col items-center text-center space-y-3 mb-7">
           <div
-            className="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-cyan to-brand-blue flex items-center justify-center text-white text-2xl font-bold"
+            className="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-cyan to-brand-blue flex items-center justify-center overflow-hidden"
             style={{ boxShadow: '0 8px 24px -8px oklch(0.50 0.13 255 / 0.55)' }}
           >
-            A
+            <img
+              src="/logo-afmi-cuadrado.png"
+              alt="AFMI"
+              className="w-full h-full object-contain p-1"
+            />
           </div>
           <div className="space-y-1">
             <h1 className="text-[22px] font-bold tracking-[-0.01em] leading-tight">
               Bienvenido a AFMI
             </h1>
             <p className="text-[13px] text-muted-foreground">
-              Iniciá sesión para acceder al sistema clínico.
+              Iniciá sesión para acceder al sistema de gestión.
             </p>
           </div>
         </div>
@@ -178,7 +182,7 @@ export function LoginPage() {
         </form>
 
         <p className="text-[11px] text-muted-foreground text-center mt-6">
-          Sistema clínico AFMI · Acceso restringido
+          Sistema de gestión médica de AFMI · Acceso restringido
         </p>
       </div>
     </div>

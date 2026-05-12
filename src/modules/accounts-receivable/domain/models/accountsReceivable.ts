@@ -77,3 +77,48 @@ export const STATUS_LABEL: Record<AccountsReceivableStatus, string> = {
   partially_collected: 'Cobrada parcialmente',
   overcollected: 'Sobre-cobrada',
 };
+
+/** Suma en Bs de los cobros asociados. */
+export function collectedBs(a: AccountsReceivable): number {
+  return (a.payments ?? []).reduce((s, p) => s + Number(p.amountInBs || 0), 0);
+}
+
+export function billingRateBs(a: AccountsReceivable): number | null {
+  const r = a.order.billingExchangeRate;
+  if (!r) return null;
+  const n = Number(r.amountBs);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** Cobrado convertido a moneda original (priceCurrency). */
+export function collectedOriginal(a: AccountsReceivable): number | null {
+  const r = billingRateBs(a);
+  if (r === null) return null;
+  return collectedBs(a) / r;
+}
+
+/** priceAmount de la orden convertido a Bs vía billing rate. */
+export function targetBs(a: AccountsReceivable): number | null {
+  const amount = Number(a.order.priceAmount);
+  if (!Number.isFinite(amount)) return null;
+  // priceCurrency es siempre USD/EUR — necesita rate.
+  const r = billingRateBs(a);
+  if (r === null) return null;
+  return amount * r;
+}
+
+/** Pendiente en Bs. Puede ser negativo si overcollected. */
+export function pendingBs(a: AccountsReceivable): number | null {
+  const t = targetBs(a);
+  if (t === null) return null;
+  return t - collectedBs(a);
+}
+
+/** Pendiente en la moneda original (priceCurrency). */
+export function pendingOriginal(a: AccountsReceivable): number | null {
+  const p = pendingBs(a);
+  if (p === null) return null;
+  const r = billingRateBs(a);
+  if (r === null) return null;
+  return p / r;
+}
