@@ -42,6 +42,23 @@ export type PaymentItemErrors = {
   amountValue?: string;
 };
 
+/** Bloqueos por fila — campos pre-cargados desde método registrado. */
+export type PaymentLockedFields = {
+  type?: boolean;
+  bankCode?: boolean;
+  accountNumber?: boolean;
+};
+
+/** Info contextual del método registrado (no editable, sólo display). */
+export type PaymentMethodInfo = {
+  label?: string;
+  bankName?: string | null;
+  phoneNumber?: string | null;
+  accountHolderName?: string | null;
+  idDocument?: string | null;
+  description?: string | null;
+};
+
 export type OrderPaymentFormProps = {
   payments: OrderPaymentValues[];
   onChange: (next: OrderPaymentValues[]) => void;
@@ -51,6 +68,14 @@ export type OrderPaymentFormProps = {
   currentRate: ExchangeRate | null;
   errors?: PaymentItemErrors[];
   disabled?: boolean;
+  /** Oculta los botones internos "Agregar pago" (el padre los renderiza). */
+  hideAddButtons?: boolean;
+  /** Campos bloqueados por fila (prefill desde método registrado). */
+  lockedFields?: (PaymentLockedFields | null)[];
+  /** Info del método registrado por fila (display). */
+  methodInfo?: (PaymentMethodInfo | null)[];
+  /** Override del handler de quitar fila (sincroniza arrays paralelos). */
+  onRemovePayment?: (idx: number) => void;
 };
 
 function defaultsForType(
@@ -82,6 +107,10 @@ export function OrderPaymentForm({
   currentRate,
   errors,
   disabled,
+  hideAddButtons,
+  lockedFields,
+  methodInfo,
+  onRemovePayment,
 }: OrderPaymentFormProps) {
   const [banks, setBanks] = useState<Bank[]>([]);
 
@@ -118,7 +147,13 @@ export function OrderPaymentForm({
     onChange(next);
   };
 
-  const remove = (idx: number) => onChange(payments.filter((_, i) => i !== idx));
+  const remove = (idx: number) => {
+    if (onRemovePayment) {
+      onRemovePayment(idx);
+      return;
+    }
+    onChange(payments.filter((_, i) => i !== idx));
+  };
 
   const add = (type: OrderPaymentType) => {
     onChange([
@@ -143,6 +178,11 @@ export function OrderPaymentForm({
             const isBs = p.type === 'cash_bs';
             const isForeign = p.type === 'cash_foreign';
             const isOther = p.type === 'other';
+            const lock = lockedFields?.[i] ?? null;
+            const info = methodInfo?.[i] ?? null;
+            const typeLocked = !!lock?.type;
+            const bankLocked = !!lock?.bankCode;
+            const accountLocked = !!lock?.accountNumber;
             return (
               <div key={i} className="rounded-lg border p-3 space-y-3 bg-card">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -151,7 +191,7 @@ export function OrderPaymentForm({
                     <Select
                       value={p.type}
                       onValueChange={(v) => changeType(i, v as OrderPaymentType)}
-                      disabled={disabled}
+                      disabled={disabled || typeLocked}
                     >
                       <SelectTrigger className="h-9">
                         <SelectValue />
@@ -215,7 +255,7 @@ export function OrderPaymentForm({
                       <Select
                         value={p.bankCode || ''}
                         onValueChange={(v) => update(i, { bankCode: v })}
-                        disabled={disabled}
+                        disabled={disabled || bankLocked}
                       >
                         <SelectTrigger className={cn('h-9', err.bankCode && 'border-destructive')}>
                           <SelectValue placeholder="Seleccioná banco" />
@@ -257,8 +297,9 @@ export function OrderPaymentForm({
                         value={p.accountNumber ?? ''}
                         onChange={(e) => update(i, { accountNumber: e.target.value })}
                         maxLength={40}
-                        disabled={disabled}
-                        className="h-9"
+                        disabled={disabled || accountLocked}
+                        readOnly={accountLocked}
+                        className={cn('h-9', accountLocked && 'bg-muted/30')}
                       />
                     </div>
                   ) : null}
@@ -283,26 +324,76 @@ export function OrderPaymentForm({
                     ) : null}
                   </div>
                 </div>
+
+                {info ? (
+                  <div className="rounded-md border border-dashed bg-muted/30 px-3 py-2 text-xs space-y-1">
+                    {info.label ? (
+                      <div className="font-semibold text-foreground">
+                        {info.label}
+                      </div>
+                    ) : null}
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
+                      {info.bankName ? (
+                        <span>
+                          <span className="font-medium text-foreground">Banco:</span>{' '}
+                          {info.bankName}
+                        </span>
+                      ) : null}
+                      {info.accountHolderName ? (
+                        <span>
+                          <span className="font-medium text-foreground">Titular:</span>{' '}
+                          {info.accountHolderName}
+                        </span>
+                      ) : null}
+                      {info.idDocument ? (
+                        <span>
+                          <span className="font-medium text-foreground">CI/RIF:</span>{' '}
+                          {info.idDocument}
+                        </span>
+                      ) : null}
+                      {info.phoneNumber ? (
+                        <span>
+                          <span className="font-medium text-foreground">Teléfono:</span>{' '}
+                          {info.phoneNumber}
+                        </span>
+                      ) : null}
+                      {p.accountNumber && !isOther ? (
+                        <span>
+                          <span className="font-medium text-foreground">Cuenta:</span>{' '}
+                          {p.accountNumber}
+                        </span>
+                      ) : null}
+                      {info.description ? (
+                        <span>
+                          <span className="font-medium text-foreground">Nota:</span>{' '}
+                          {info.description}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             );
           })}
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2">
-        {ALL_TYPES.map((t) => (
-          <Button
-            key={t}
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => add(t)}
-            disabled={disabled}
-          >
-            <Plus className="w-3.5 h-3.5 mr-1" /> {PAYMENT_TYPE_LABEL[t]}
-          </Button>
-        ))}
-      </div>
+      {hideAddButtons ? null : (
+        <div className="flex flex-wrap gap-2">
+          {ALL_TYPES.map((t) => (
+            <Button
+              key={t}
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => add(t)}
+              disabled={disabled}
+            >
+              <Plus className="w-3.5 h-3.5 mr-1" /> {PAYMENT_TYPE_LABEL[t]}
+            </Button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

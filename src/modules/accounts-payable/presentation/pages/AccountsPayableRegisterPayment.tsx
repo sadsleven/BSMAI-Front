@@ -3,8 +3,19 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Controller, FormProvider, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, ChevronDown, Plus, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { FormSection } from '@/components/ui/form-section';
 import { notify } from '@/lib/notifications/toast';
@@ -13,8 +24,10 @@ import { getHttpErrorMessage } from '@/lib/api';
 import { orderPaymentSchema, type OrderPaymentValues } from '@/lib/validations/schemas';
 import {
   OrderPaymentForm,
-  type PaymentItemErrors,
   paymentInOrderCurrency,
+  type PaymentItemErrors,
+  type PaymentLockedFields,
+  type PaymentMethodInfo,
 } from '@/modules/orders/presentation/components/OrderPaymentForm';
 import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
 import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchangeRate';
@@ -22,6 +35,7 @@ import { accountsPayableGateway } from '../../infrastructure/accountsPayableGate
 import { Badge } from '@/components/ui/badge';
 import {
   amountToReceive,
+  canSelectForPayment,
   paidBs,
   paidOriginal,
   pendingBs,
@@ -29,8 +43,18 @@ import {
   recipientName,
   type AccountsPayable,
 } from '../../domain/models/accountsPayable';
-import type { OrderCurrency } from '@/modules/orders/domain/models/order';
+import {
+  PAYMENT_TYPE_LABEL,
+  type OrderCurrency,
+  type OrderPaymentType,
+} from '@/modules/orders/domain/models/order';
 import { useTaxRates } from '@/lib/config/taxRates';
+import { doctorGateway } from '@/modules/doctors/infrastructure/doctorGateway';
+import { careCenterGateway } from '@/modules/care-centers/infrastructure/careCenterGateway';
+import { bankGateway } from '@/modules/banks/infrastructure/bankGateway';
+import type { DoctorPaymentMethod } from '@/modules/doctors/domain/models/doctor';
+import type { CareCenterPaymentMethod } from '@/modules/care-centers/domain/models/careCenter';
+import type { Bank } from '@/modules/banks/domain/models/bank';
 
 const registerPaymentSchema = z.object({
   payments: z.array(orderPaymentSchema).min(1, 'Registrá al menos un pago'),
@@ -39,15 +63,36 @@ type RegisterPaymentValues = z.infer<typeof registerPaymentSchema>;
 
 type LocationState = { payableIds?: string[] } | null;
 
+type SavedPaymentMethod = DoctorPaymentMethod | CareCenterPaymentMethod;
+
+const STANDARD_TYPES: OrderPaymentType[] = [
+  'mobile_payment',
+  'bank_transfer',
+  'cash_foreign',
+  'cash_bs',
+  'other',
+];
+
 export function AccountsPayableRegisterPayment() {
   const navigate = useNavigate();
   const location = useLocation();
   const state = location.state as LocationState;
-  const payableIds = useMemo(() => state?.payableIds ?? [], [state?.payableIds]);
+  const initialIds = useMemo(() => state?.payableIds ?? [], [state?.payableIds]);
+  const [payableIds, setPayableIds] = useState<string[]>(initialIds);
+  const [candidates, setCandidates] = useState<AccountsPayable[]>([]);
+  const [candidateSearch, setCandidateSearch] = useState('');
+  const [candidatesOpen, setCandidatesOpen] = useState(false);
 
   const [accounts, setAccounts] = useState<AccountsPayable[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentRate, setCurrentRate] = useState<ExchangeRate | null>(null);
+  const [savedMethods, setSavedMethods] = useState<SavedPaymentMethod[]>([]);
+  const [banks, setBanks] = useState<Bank[]>([]);
+  const [selectedSavedMethodId, setSelectedSavedMethodId] = useState<string>('');
+  const [snapshots, setSnapshots] = useState<(PaymentMethodInfo | null)[]>([]);
+  const [lockedFields, setLockedFields] = useState<(PaymentLockedFields | null)[]>(
+    [],
+  );
   const taxRates = useTaxRates();
 
   const methods = useForm<RegisterPaymentValues>({
@@ -55,15 +100,15 @@ export function AccountsPayableRegisterPayment() {
     mode: 'onBlur',
     defaultValues: { payments: [] },
   });
-  const { handleSubmit, formState, control } = methods;
+  const { handleSubmit, formState, control, setValue, getValues } = methods;
 
-  // Redirect back if no IDs in state.
+  // Redirect back if no initial IDs (entered without selection).
   useEffect(() => {
-    if (payableIds.length === 0) {
+    if (initialIds.length === 0) {
       notify.warning('No hay cuentas seleccionadas');
       navigate('/accounts-payable', { replace: true });
     }
-  }, [payableIds, navigate]);
+  }, [initialIds, navigate]);
 
   // Load selected accounts.
   const load = useCallback(async () => {
@@ -84,6 +129,141 @@ export function AccountsPayableRegisterPayment() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Load banks (for friendly name in info chip + selector label).
+  useEffect(() => {
+    bankGateway
+      .list()
+      .then(setBanks)
+      .catch(() => setBanks([]));
+  }, []);
+
+  // Resolve unified recipient (doctor or care center) shared across selected accounts.
+  const recipient = useMemo(() => {
+    if (accounts.length === 0) return null;
+    const doctorIds = new Set(accounts.map((a) => a.doctorId).filter(Boolean));
+    const careCenterIds = new Set(accounts.map((a) => a.careCenterId).filter(Boolean));
+    if (doctorIds.size === 1 && careCenterIds.size === 0) {
+      const id = [...doctorIds][0] as string;
+      return { kind: 'doctor' as const, id };
+    }
+    if (careCenterIds.size === 1 && doctorIds.size === 0) {
+      const id = [...careCenterIds][0] as string;
+      return { kind: 'care_center' as const, id };
+    }
+    return null;
+  }, [accounts]);
+
+  // Load candidate accounts for same recipient (to allow agregar más cuentas inline).
+  useEffect(() => {
+    if (!recipient) {
+      setCandidates([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await accountsPayableGateway.list({
+          [recipient.kind === 'doctor' ? 'doctorId' : 'careCenterId']: recipient.id,
+          limit: 100,
+          sortBy: 'createdAt',
+          sortDir: 'DESC',
+        });
+        if (cancelled) return;
+        setCandidates(res.data);
+      } catch {
+        if (!cancelled) setCandidates([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [recipient]);
+
+  const eligibleCandidates = useMemo(() => {
+    const selectedSet = new Set(payableIds);
+    const term = candidateSearch.trim().toLowerCase();
+    return candidates
+      .filter((c) => !selectedSet.has(c.id))
+      .filter((c) => canSelectForPayment(c))
+      .filter((c) => {
+        if (!term) return true;
+        const num = String(c.order?.orderNumber ?? '').toLowerCase();
+        const pNum = String(c.payableNumber ?? '').toLowerCase();
+        return num.includes(term) || pNum.includes(term);
+      });
+  }, [candidates, payableIds, candidateSearch]);
+
+  const toggleCandidate = (id: string) => {
+    setPayableIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  };
+
+  const removeSelected = (id: string) => {
+    if (payableIds.length <= 1) {
+      notify.warning('Debe quedar al menos una cuenta seleccionada');
+      return;
+    }
+    setPayableIds((prev) => prev.filter((x) => x !== id));
+  };
+
+  // Load doctor/careCenter to get registered payment methods.
+  useEffect(() => {
+    if (!recipient) {
+      setSavedMethods([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const entity =
+          recipient.kind === 'doctor'
+            ? await doctorGateway.getById(recipient.id)
+            : await careCenterGateway.getById(recipient.id);
+        if (cancelled) return;
+        const list = (entity.paymentMethods ?? []).filter(
+          (m) => m.isActive !== false,
+        );
+        setSavedMethods(list);
+      } catch {
+        if (!cancelled) setSavedMethods([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [recipient]);
+
+  const bankName = useCallback(
+    (code?: string | null) => {
+      if (!code) return null;
+      return banks.find((b) => b.code === code)?.name ?? code;
+    },
+    [banks],
+  );
+
+  const savedMethodLabel = useCallback(
+    (m: SavedPaymentMethod): string => {
+      const typeLabel = PAYMENT_TYPE_LABEL[m.type as OrderPaymentType];
+      const parts: string[] = [typeLabel];
+      if (m.type === 'mobile_payment') {
+        if (m.bankCode) parts.push(bankName(m.bankCode) ?? m.bankCode);
+        if (m.phoneNumber) parts.push(m.phoneNumber);
+      } else if (m.type === 'bank_transfer') {
+        if (m.bankCode) parts.push(bankName(m.bankCode) ?? m.bankCode);
+        if (m.accountNumber) {
+          const last4 = m.accountNumber.slice(-4);
+          parts.push(`****${last4}`);
+        }
+      } else if (m.type === 'other') {
+        if (m.description) parts.push(m.description);
+        else if (m.accountNumber) parts.push(m.accountNumber);
+      }
+      return parts.join(' · ');
+    },
+    [bankName],
+  );
 
   // Resolve currency to use for OrderPaymentForm. Use first account's order's priceCurrency.
   const orderCurrency: OrderCurrency = useMemo(() => {
@@ -158,6 +338,71 @@ export function AccountsPayableRegisterPayment() {
       mixedCurrency,
     };
   }, [accounts, taxRates]);
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+
+  const paymentDefaults = (type: OrderPaymentType): OrderPaymentValues => {
+    const base = {
+      type,
+      paymentDate: todayIso,
+      referenceNumber: '',
+      bankCode: '',
+      exchangeRateId: currentRate?.id ?? '',
+      accountNumber: '',
+      amountValue: 0,
+    };
+    if (type === 'mobile_payment' || type === 'bank_transfer' || type === 'cash_bs') {
+      return { ...base, amountCurrency: 'BS' };
+    }
+    return { ...base, amountCurrency: orderCurrency as 'USD' | 'EUR' };
+  };
+
+  const addStandardPayment = (type: OrderPaymentType) => {
+    const next = [...(getValues('payments') ?? []), paymentDefaults(type)];
+    setValue('payments', next, { shouldDirty: true });
+    setSnapshots((s) => [...s, null]);
+    setLockedFields((l) => [...l, null]);
+  };
+
+  const addPaymentFromSavedMethod = (methodId: string) => {
+    const m = savedMethods.find((x) => x.id === methodId);
+    if (!m) return;
+    const type = m.type as OrderPaymentType;
+    const base = paymentDefaults(type);
+    const next: OrderPaymentValues = {
+      ...base,
+      bankCode: m.bankCode ?? '',
+      accountNumber: m.accountNumber ?? '',
+    };
+    const info: PaymentMethodInfo = {
+      label: `Método registrado: ${PAYMENT_TYPE_LABEL[type]}`,
+      bankName: bankName(m.bankCode),
+      accountHolderName: m.accountHolderName ?? null,
+      idDocument: m.idDocument ?? null,
+      phoneNumber: m.phoneNumber ?? null,
+      description: m.description ?? null,
+    };
+    const lock: PaymentLockedFields =
+      type === 'mobile_payment' || type === 'bank_transfer'
+        ? { type: true, bankCode: true }
+        : { type: true, accountNumber: !!m.accountNumber };
+    const nextPayments = [...(getValues('payments') ?? []), next];
+    setValue('payments', nextPayments, { shouldDirty: true });
+    setSnapshots((s) => [...s, info]);
+    setLockedFields((l) => [...l, lock]);
+    setSelectedSavedMethodId('');
+  };
+
+  const removePaymentAt = (idx: number) => {
+    const current = getValues('payments') ?? [];
+    setValue(
+      'payments',
+      current.filter((_, i) => i !== idx),
+      { shouldDirty: true },
+    );
+    setSnapshots((s) => s.filter((_, i) => i !== idx));
+    setLockedFields((l) => l.filter((_, i) => i !== idx));
+  };
 
   const watchedPayments = methods.watch('payments') ?? [];
   const totalPaymentsInOrderCurrency = useMemo(() => {
@@ -242,6 +487,84 @@ export function AccountsPayableRegisterPayment() {
             title="Cuentas seleccionadas"
             description="Resumen de los montos a saldar."
           >
+            <div className="flex justify-end mb-2">
+              <Popover open={candidatesOpen} onOpenChange={setCandidatesOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!recipient}
+                  >
+                    <Plus className="w-3.5 h-3.5 mr-1" />
+                    Agregar cuentas
+                    <span className="ml-1 text-[11px] text-muted-foreground">
+                      ({eligibleCandidates.length})
+                    </span>
+                    <ChevronDown className="w-3.5 h-3.5 ml-1" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  className="w-96 p-0"
+                  align="end"
+                  onOpenAutoFocus={(e) => e.preventDefault()}
+                >
+                  <div className="p-3 border-b">
+                    <div className="relative">
+                      <Search className="absolute left-2 top-2 w-3.5 h-3.5 text-muted-foreground" />
+                      <Input
+                        placeholder="Buscar por N° orden o cuenta…"
+                        value={candidateSearch}
+                        onChange={(e) => setCandidateSearch(e.target.value)}
+                        className="h-8 pl-7 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto py-1">
+                    {eligibleCandidates.length === 0 ? (
+                      <p className="px-3 py-4 text-xs text-muted-foreground text-center">
+                        Sin cuentas disponibles para este destinatario.
+                      </p>
+                    ) : (
+                      eligibleCandidates.map((c) => {
+                        const ar = amountToReceive(c, taxRates);
+                        return (
+                          <label
+                            key={c.id}
+                            className="flex items-start gap-2 px-3 py-2 hover:bg-muted/40 cursor-pointer"
+                          >
+                            <Checkbox
+                              checked={payableIds.includes(c.id)}
+                              onCheckedChange={() => toggleCandidate(c.id)}
+                              className="mt-0.5"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 text-xs">
+                                <span className="font-mono font-semibold">
+                                  {c.payableNumber}
+                                </span>
+                                <span className="text-muted-foreground">
+                                  · N° orden{' '}
+                                  <span className="font-mono">
+                                    {c.order.orderNumber}
+                                  </span>
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-muted-foreground truncate">
+                                {ar !== null
+                                  ? `${ar.toFixed(2)} ${c.order.doctorAmountCurrency}`
+                                  : '—'}
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+
             <ul className="text-sm divide-y">
               {accounts.map((a) => {
                 const ar = amountToReceive(a, taxRates);
@@ -259,10 +582,23 @@ export function AccountsPayableRegisterPayment() {
                         {a.recipientType === 'doctor' ? 'Doctor' : 'Centro'}
                       </div>
                     </div>
-                    <div className="text-sm font-mono shrink-0">
-                      {ar !== null
-                        ? `${ar.toFixed(2)} ${a.order.doctorAmountCurrency}`
-                        : '—'}
+                    <div className="flex items-center gap-3 shrink-0">
+                      <div className="text-sm font-mono">
+                        {ar !== null
+                          ? `${ar.toFixed(2)} ${a.order.doctorAmountCurrency}`
+                          : '—'}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                        onClick={() => removeSelected(a.id)}
+                        title="Quitar"
+                        disabled={accounts.length <= 1}
+                      >
+                        ×
+                      </Button>
                     </div>
                   </li>
                 );
@@ -340,8 +676,50 @@ export function AccountsPayableRegisterPayment() {
 
           <FormSection
             title="Pagos"
-            description="Mismo componente de pagos usado al crear órdenes. Se aceptan múltiples pagos."
+            description="Pre-cargá un método registrado del doctor/centro o agregá un pago manual."
           >
+            <div className="rounded-lg border bg-muted/20 p-3 space-y-3 mb-4">
+              <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+                <div className="flex-1 min-w-0 space-y-1">
+                  <Label className="text-xs">Método de pago registrado</Label>
+                  <Select
+                    value={selectedSavedMethodId}
+                    onValueChange={(v) => setSelectedSavedMethodId(v)}
+                    disabled={savedMethods.length === 0}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue
+                        placeholder={
+                          savedMethods.length === 0
+                            ? 'No hay métodos registrados activos'
+                            : 'Seleccioná un método registrado'
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {savedMethods.map((m) => (
+                        <SelectItem key={m.id} value={m.id ?? ''}>
+                          {savedMethodLabel(m)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => addPaymentFromSavedMethod(selectedSavedMethodId)}
+                  disabled={!selectedSavedMethodId}
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" /> Agregar pago con este método
+                </Button>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Banco y cuenta quedan bloqueados con los datos registrados. Sólo
+                ingresá referencia, monto y fecha.
+              </p>
+            </div>
+
             <Controller
               control={control}
               name="payments"
@@ -375,10 +753,28 @@ export function AccountsPayableRegisterPayment() {
                     orderCurrency={orderCurrency}
                     currentRate={currentRate}
                     errors={paymentsErrors}
+                    hideAddButtons
+                    lockedFields={lockedFields}
+                    methodInfo={snapshots}
+                    onRemovePayment={removePaymentAt}
                   />
                 );
               }}
             />
+
+            <div className="flex flex-wrap gap-2 mt-3">
+              {STANDARD_TYPES.map((t) => (
+                <Button
+                  key={t}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => addStandardPayment(t)}
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" /> {PAYMENT_TYPE_LABEL[t]}
+                </Button>
+              ))}
+            </div>
 
             {currentRate ? (
               <div className="mt-4 grid grid-cols-2 gap-3 text-sm">

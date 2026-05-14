@@ -3,8 +3,11 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Controller, FormProvider, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, ChevronDown, Plus, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { FormSection } from '@/components/ui/form-section';
 import { notify } from '@/lib/notifications/toast';
@@ -40,14 +43,18 @@ export function AccountsReceivableRegisterCollection() {
   const navigate = useNavigate();
   const location = useLocation();
   const state = location.state as LocationState;
-  const receivableIds = useMemo(
+  const initialIds = useMemo(
     () => state?.receivableIds ?? [],
     [state?.receivableIds],
   );
+  const [receivableIds, setReceivableIds] = useState<string[]>(initialIds);
 
   const [accounts, setAccounts] = useState<AccountsReceivable[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentRate, setCurrentRate] = useState<ExchangeRate | null>(null);
+  const [candidates, setCandidates] = useState<AccountsReceivable[]>([]);
+  const [candidateSearch, setCandidateSearch] = useState('');
+  const [candidatesOpen, setCandidatesOpen] = useState(false);
 
   const methods = useForm<RegisterCollectionValues>({
     resolver: zodResolver(registerCollectionSchema),
@@ -57,11 +64,11 @@ export function AccountsReceivableRegisterCollection() {
   const { handleSubmit, formState, control } = methods;
 
   useEffect(() => {
-    if (receivableIds.length === 0) {
+    if (initialIds.length === 0) {
       notify.warning('No hay cuentas seleccionadas');
       navigate('/accounts-receivable', { replace: true });
     }
-  }, [receivableIds, navigate]);
+  }, [initialIds, navigate]);
 
   const load = useCallback(async () => {
     if (receivableIds.length === 0) return;
@@ -108,6 +115,66 @@ export function AccountsReceivableRegisterCollection() {
     if (insuranceIds.size > 1) return { ok: false, reason: 'Cuentas de seguros distintos' };
     return { ok: true, reason: '' };
   }, [accounts]);
+
+  const sharedInsuranceId = useMemo(() => {
+    const ids = new Set(accounts.map((a) => a.insuranceId));
+    return ids.size === 1 ? [...ids][0] : null;
+  }, [accounts]);
+
+  useEffect(() => {
+    if (!sharedInsuranceId) {
+      setCandidates([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await accountsReceivableGateway.list({
+          insuranceId: sharedInsuranceId,
+          limit: 100,
+          sortBy: 'createdAt',
+          sortDir: 'DESC',
+        });
+        if (cancelled) return;
+        setCandidates(res.data);
+      } catch {
+        if (!cancelled) setCandidates([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sharedInsuranceId]);
+
+  const eligibleCandidates = useMemo(() => {
+    const selectedSet = new Set(receivableIds);
+    const term = candidateSearch.trim().toLowerCase();
+    return candidates
+      .filter((c) => !selectedSet.has(c.id))
+      .filter(
+        (c) => c.status === 'uncollected' || c.status === 'partially_collected',
+      )
+      .filter((c) => {
+        if (!term) return true;
+        const num = String(c.order?.orderNumber ?? '').toLowerCase();
+        const rNum = String(c.receivableNumber ?? '').toLowerCase();
+        return num.includes(term) || rNum.includes(term);
+      });
+  }, [candidates, receivableIds, candidateSearch]);
+
+  const toggleCandidate = (id: string) => {
+    setReceivableIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  };
+
+  const removeSelected = (id: string) => {
+    if (receivableIds.length <= 1) {
+      notify.warning('Debe quedar al menos una cuenta seleccionada');
+      return;
+    }
+    setReceivableIds((prev) => prev.filter((x) => x !== id));
+  };
 
   // Sum priceAmount in order currency (mostly homogenous; mark mixed)
   const totals = useMemo(() => {
@@ -223,6 +290,80 @@ export function AccountsReceivableRegisterCollection() {
             title="Cuentas seleccionadas"
             description="Resumen de las órdenes a cobrar al seguro."
           >
+            <div className="flex justify-end mb-2">
+              <Popover open={candidatesOpen} onOpenChange={setCandidatesOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!sharedInsuranceId}
+                  >
+                    <Plus className="w-3.5 h-3.5 mr-1" />
+                    Agregar cuentas
+                    <span className="ml-1 text-[11px] text-muted-foreground">
+                      ({eligibleCandidates.length})
+                    </span>
+                    <ChevronDown className="w-3.5 h-3.5 ml-1" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  className="w-96 p-0"
+                  align="end"
+                  onOpenAutoFocus={(e) => e.preventDefault()}
+                >
+                  <div className="p-3 border-b">
+                    <div className="relative">
+                      <Search className="absolute left-2 top-2 w-3.5 h-3.5 text-muted-foreground" />
+                      <Input
+                        placeholder="Buscar por N° orden o cuenta…"
+                        value={candidateSearch}
+                        onChange={(e) => setCandidateSearch(e.target.value)}
+                        className="h-8 pl-7 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto py-1">
+                    {eligibleCandidates.length === 0 ? (
+                      <p className="px-3 py-4 text-xs text-muted-foreground text-center">
+                        Sin cuentas disponibles para este seguro.
+                      </p>
+                    ) : (
+                      eligibleCandidates.map((c) => (
+                        <label
+                          key={c.id}
+                          className="flex items-start gap-2 px-3 py-2 hover:bg-muted/40 cursor-pointer"
+                        >
+                          <Checkbox
+                            checked={receivableIds.includes(c.id)}
+                            onCheckedChange={() => toggleCandidate(c.id)}
+                            className="mt-0.5"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="font-mono font-semibold">
+                                {c.receivableNumber}
+                              </span>
+                              <span className="text-muted-foreground">
+                                · N° orden{' '}
+                                <span className="font-mono">
+                                  {c.order.orderNumber}
+                                </span>
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-muted-foreground truncate">
+                              {Number(c.order.priceAmount).toFixed(2)}{' '}
+                              {c.order.priceCurrency}
+                            </div>
+                          </div>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+
             <ul className="text-sm divide-y">
               {accounts.map((a) => (
                 <li
@@ -237,8 +378,21 @@ export function AccountsReceivableRegisterCollection() {
                       {a.insurance?.name ?? '—'}
                     </div>
                   </div>
-                  <div className="text-sm font-mono shrink-0">
-                    {Number(a.order.priceAmount).toFixed(2)} {a.order.priceCurrency}
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="text-sm font-mono">
+                      {Number(a.order.priceAmount).toFixed(2)} {a.order.priceCurrency}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                      onClick={() => removeSelected(a.id)}
+                      title="Quitar"
+                      disabled={accounts.length <= 1}
+                    >
+                      ×
+                    </Button>
                   </div>
                 </li>
               ))}
