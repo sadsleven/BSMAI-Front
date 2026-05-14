@@ -1,48 +1,33 @@
-import { useMemo } from 'react';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Activity,
   CalendarClock,
-  Download,
   FileText,
-  Plus,
   Receipt,
   TrendingDown,
   TrendingUp,
   UserRound,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { useAuthStore } from '@/modules/auth/domain/store/authStore';
+import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
+import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
+import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import { orderGateway } from '@/modules/orders/infrastructure/orderGateway';
+import { dashboardGateway } from '@/modules/dashboard/infrastructure/dashboardGateway';
+import {
+  ORDER_STATUS_LABEL,
+  holderDisplayName,
+  type Order,
+  type OrderStatus,
+} from '@/modules/orders/domain/models/order';
 
 type Trend = 'up' | 'down' | 'neutral';
+type Tone = 'blue' | 'cyan' | 'amber' | 'green';
 
-type KPI = {
-  label: string;
-  value: string;
-  delta: string;
-  trend: Trend;
-  icon: typeof UserRound;
-  /** color tint key for icon container */
-  tone: 'blue' | 'cyan' | 'amber' | 'green';
-};
-
-type Order = {
-  code: string;
-  patient: string;
-  service: string;
-  status: 'paid' | 'pending' | 'cancelled';
-  amount: string;
-};
-
-type Appointment = {
-  hour: string;
-  patient: string;
-  type: string;
-  status: 'confirmed' | 'pending' | 'cancelled';
-};
-
-const TONE_CLASS: Record<KPI['tone'], string> = {
+const TONE_CLASS: Record<Tone, string> = {
   blue: 'bg-brand-blue-soft text-brand-blue-strong',
   cyan: 'bg-brand-cyan-soft text-brand-cyan-strong',
   amber: 'bg-warning-soft text-warning',
@@ -64,130 +49,238 @@ function formatDateEs(date: Date) {
   });
 }
 
-const KPIS: KPI[] = [
-  {
-    label: 'Pacientes activos',
-    value: '1.284',
-    delta: '+12 esta semana',
-    trend: 'up',
-    icon: UserRound,
-    tone: 'blue',
-  },
-  {
-    label: 'Citas hoy',
-    value: '38',
-    delta: '+4 vs ayer',
-    trend: 'up',
-    icon: CalendarClock,
-    tone: 'cyan',
-  },
-  {
-    label: 'Órdenes pendientes',
-    value: '17',
-    delta: '−3 vs ayer',
-    trend: 'down',
-    icon: FileText,
-    tone: 'amber',
-  },
-  {
-    label: 'Facturado mes',
-    value: '$ 4.82M',
-    delta: '+8.2% vs mes ant.',
-    trend: 'up',
-    icon: Receipt,
-    tone: 'green',
-  },
-];
+function todayIso() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
-const ORDERS: Order[] = [
-  {
-    code: 'OR-2841',
-    patient: 'María González',
-    service: 'Resonancia magnética',
-    status: 'paid',
-    amount: '$ 38.500',
-  },
-  {
-    code: 'OR-2840',
-    patient: 'Carlos Pérez',
-    service: 'Laboratorio completo',
-    status: 'pending',
-    amount: '$ 12.200',
-  },
-  {
-    code: 'OR-2839',
-    patient: 'Lucía Ramírez',
-    service: 'Consulta cardiología',
-    status: 'paid',
-    amount: '$ 9.800',
-  },
-  {
-    code: 'OR-2838',
-    patient: 'Diego Romero',
-    service: 'Radiografía tórax',
-    status: 'cancelled',
-    amount: '$ 6.400',
-  },
-  {
-    code: 'OR-2837',
-    patient: 'Sofía Álvarez',
-    service: 'Ecografía abdominal',
-    status: 'paid',
-    amount: '$ 14.900',
-  },
-];
+const STATUS_PILL: Record<OrderStatus, { cls: string; dot: string }> = {
+  draft: { cls: 'bg-muted text-muted-foreground', dot: 'bg-muted-foreground' },
+  in_progress: { cls: 'bg-brand-blue-soft text-brand-blue-strong', dot: 'bg-brand-blue' },
+  attended: { cls: 'bg-warning-soft text-warning', dot: 'bg-warning' },
+  report_issued: { cls: 'bg-warning-soft text-warning', dot: 'bg-warning' },
+  finalized: { cls: 'bg-success-soft text-success', dot: 'bg-success' },
+  cancelled: { cls: 'bg-destructive-soft text-destructive', dot: 'bg-destructive' },
+};
 
-const APPOINTMENTS: Appointment[] = [
-  { hour: '14:30', patient: 'Mariano Vega', type: 'Cardiología · seguimiento', status: 'confirmed' },
-  { hour: '15:00', patient: 'Renata Torres', type: 'Ecografía obstétrica', status: 'confirmed' },
-  { hour: '15:45', patient: 'Pablo Aguilar', type: 'Consulta clínica', status: 'pending' },
-  { hour: '16:30', patient: 'Inés Ferrari', type: 'Laboratorio control', status: 'confirmed' },
-  { hour: '17:00', patient: 'Tomás Maldonado', type: 'Endocrinología', status: 'cancelled' },
-];
-
-function StatusPill({
-  tone,
-  label,
-}: {
-  tone: 'success' | 'warning' | 'destructive' | 'cyan';
-  label: string;
-}) {
-  const cls =
-    tone === 'success'
-      ? 'bg-success-soft text-success'
-      : tone === 'warning'
-        ? 'bg-warning-soft text-warning'
-        : tone === 'destructive'
-          ? 'bg-destructive-soft text-destructive'
-          : 'bg-brand-cyan-soft text-brand-cyan-strong';
-  const dot =
-    tone === 'success'
-      ? 'bg-success'
-      : tone === 'warning'
-        ? 'bg-warning'
-        : tone === 'destructive'
-          ? 'bg-destructive'
-          : 'bg-brand-cyan';
+function OrderStatusPill({ status }: { status: OrderStatus }) {
+  const s = STATUS_PILL[status];
   return (
     <span
       className={cn(
         'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium',
-        cls,
+        s.cls,
       )}
     >
-      <span className={cn('w-1.5 h-1.5 rounded-full', dot)} />
-      {label}
+      <span className={cn('w-1.5 h-1.5 rounded-full', s.dot)} />
+      {ORDER_STATUS_LABEL[status]}
     </span>
   );
 }
 
+type KpiCardProps = {
+  label: string;
+  value: string | null;
+  delta?: string;
+  trend?: Trend;
+  icon: typeof UserRound;
+  tone: Tone;
+  loading: boolean;
+};
+
+function KpiCard({ label, value, delta, trend = 'neutral', icon: Icon, tone, loading }: KpiCardProps) {
+  const Trending = trend === 'up' ? TrendingUp : trend === 'down' ? TrendingDown : Activity;
+  const trendColor =
+    trend === 'up' ? 'text-success' : trend === 'down' ? 'text-destructive' : 'text-muted-foreground';
+  return (
+    <div className="bg-card rounded-xl border shadow-xs p-5 space-y-3">
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+          {label}
+        </span>
+        <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center', TONE_CLASS[tone])}>
+          <Icon className="w-[18px] h-[18px]" />
+        </div>
+      </div>
+      {loading || value === null ? (
+        <Skeleton className="h-7 w-28" />
+      ) : (
+        <div className="text-[26px] font-bold tracking-[-0.02em] leading-none">{value}</div>
+      )}
+      {loading ? (
+        <Skeleton className="h-3 w-24" />
+      ) : delta ? (
+        <div className={cn('flex items-center gap-1 text-xs font-medium', trendColor)}>
+          <Trending className="w-3.5 h-3.5" />
+          {delta}
+        </div>
+      ) : (
+        <div className="h-3" />
+      )}
+    </div>
+  );
+}
+
+function useCount(
+  enabled: boolean,
+  fetcher: () => Promise<{ count: number }>,
+) {
+  const [value, setValue] = useState<number | null>(null);
+  const [loading, setLoading] = useState(enabled);
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    setLoading(true);
+    fetcher()
+      .then((r) => {
+        if (!cancelled) setValue(r.count);
+      })
+      .catch(() => {
+        if (!cancelled) setValue(0);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled]);
+  return { value, loading };
+}
+
+function useBilledMonthUsd(enabled: boolean) {
+  const [value, setValue] = useState<number | null>(null);
+  const [loading, setLoading] = useState(enabled);
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    setLoading(true);
+    dashboardGateway
+      .billedMonthUsd()
+      .then((r) => {
+        if (!cancelled) setValue(r.amount);
+      })
+      .catch(() => {
+        if (!cancelled) setValue(0);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+  }, [enabled]);
+  return { value, loading };
+}
+
+function formatUsd(amount: number): string {
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+function useRecentOrders(enabled: boolean) {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(enabled);
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    setLoading(true);
+    orderGateway
+      .list({ page: 1, limit: 5, sortBy: 'createdAt', sortDir: 'DESC' })
+      .then((r) => {
+        if (!cancelled) setOrders(r.data);
+      })
+      .catch(() => {
+        if (!cancelled) setOrders([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+  }, [enabled]);
+  return { orders, loading };
+}
+
+function useUpcomingAppointments(enabled: boolean) {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(enabled);
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    setLoading(true);
+    orderGateway
+      .list({
+        page: 1,
+        limit: 20,
+        appointmentDateFrom: todayIso(),
+        sortBy: 'appointmentDate',
+        sortDir: 'ASC',
+      })
+      .then((r) => {
+        if (cancelled) return;
+        const nowMs = Date.now();
+        const future = r.data
+          .filter((o) => {
+            const t = new Date(o.appointmentDate).getTime();
+            return Number.isFinite(t) && t >= nowMs;
+          })
+          .sort(
+            (a, b) =>
+              new Date(a.appointmentDate).getTime() - new Date(b.appointmentDate).getTime(),
+          )
+          .slice(0, 5);
+        setOrders(future);
+      })
+      .catch(() => {
+        if (!cancelled) setOrders([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+  }, [enabled]);
+  return { orders, loading };
+}
+
+function formatHour(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function formatShortDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('es-AR', { day: '2-digit', month: 'short' });
+}
+
+function serviceLabel(o: Order): string {
+  const sts = (o.serviceTypes ?? []).map((s) => s.name).join(' · ');
+  if (sts) return sts;
+  return o.specialty?.name ?? '—';
+}
+
 export function DashboardPage() {
   const user = useAuthStore((s) => s.user);
-  const now = useMemo(() => new Date(), []);
+  const { has } = usePermissions();
 
+  const canListPatients = has(PERMISSIONS.PATIENTS.LIST);
+  const canListOrders = has(PERMISSIONS.ORDERS.LIST);
+  const canSeeBilled =
+    has(PERMISSIONS.ACCOUNTS_PAYABLE.LIST) && has(PERMISSIONS.ACCOUNTS_RECEIVABLE.LIST);
+
+  const now = new Date();
   const firstName = user?.firstName ?? '';
   const greeting = greetingFor(now);
   const dateLabel = formatDateEs(now);
+
+  const patients = useCount(canListPatients, dashboardGateway.patientsActiveCount);
+  const todayAppts = useCount(canListOrders, dashboardGateway.ordersTodayCount);
+  const pending = useCount(canListOrders, dashboardGateway.ordersPendingCount);
+  const billed = useBilledMonthUsd(canSeeBilled);
+  const recent = useRecentOrders(canListOrders);
+  const upcoming = useUpcomingAppointments(canListOrders);
 
   return (
     <div className="space-y-6">
@@ -200,155 +293,179 @@ export function DashboardPage() {
           </h1>
           <p className="text-sm text-muted-foreground">Resumen del día · {dateLabel}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm">
-            <Download className="w-4 h-4 mr-1.5" />
-            Exportar
-          </Button>
-          <Button size="sm">
-            <Plus className="w-4 h-4 mr-1.5" />
-            Nueva orden
-          </Button>
-        </div>
       </div>
 
       {/* KPI grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {KPIS.map((kpi) => {
-          const Icon = kpi.icon;
-          const Trending =
-            kpi.trend === 'up'
-              ? TrendingUp
-              : kpi.trend === 'down'
-                ? TrendingDown
-                : Activity;
-          const trendColor =
-            kpi.trend === 'up'
-              ? 'text-success'
-              : kpi.trend === 'down'
-                ? 'text-destructive'
-                : 'text-muted-foreground';
-          return (
-            <div
-              key={kpi.label}
-              className="bg-card rounded-xl border shadow-xs p-5 space-y-3"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                  {kpi.label}
-                </span>
-                <div
-                  className={cn(
-                    'w-9 h-9 rounded-lg flex items-center justify-center',
-                    TONE_CLASS[kpi.tone],
-                  )}
-                >
-                  <Icon className="w-[18px] h-[18px]" />
-                </div>
-              </div>
-              <div className="text-[26px] font-bold tracking-[-0.02em] leading-none">
-                {kpi.value}
-              </div>
-              <div className={cn('flex items-center gap-1 text-xs font-medium', trendColor)}>
-                <Trending className="w-3.5 h-3.5" />
-                {kpi.delta}
-              </div>
-            </div>
-          );
-        })}
+        {canListPatients ? (
+          <KpiCard
+            label="Pacientes activos"
+            value={patients.value === null ? null : patients.value.toLocaleString('es-VE')}
+            icon={UserRound}
+            tone="blue"
+            loading={patients.loading}
+          />
+        ) : null}
+        {canListOrders ? (
+          <KpiCard
+            label="Citas hoy"
+            value={todayAppts.value === null ? null : todayAppts.value.toLocaleString('es-VE')}
+            icon={CalendarClock}
+            tone="cyan"
+            loading={todayAppts.loading}
+          />
+        ) : null}
+        {canListOrders ? (
+          <KpiCard
+            label="Órdenes pendientes"
+            value={pending.value === null ? null : pending.value.toLocaleString('es-VE')}
+            icon={FileText}
+            tone="amber"
+            loading={pending.loading}
+          />
+        ) : null}
+        {canSeeBilled ? (
+          <KpiCard
+            label="Facturado mes"
+            value={billed.value === null ? null : `$ ${formatUsd(billed.value)}`}
+            icon={Receipt}
+            tone="green"
+            loading={billed.loading}
+          />
+        ) : null}
       </div>
 
       {/* Secondary layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4">
-        {/* Recent orders */}
-        <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
-          <div className="px-5 py-4 border-b flex items-center justify-between">
-            <div>
-              <h3 className="text-[15px] font-semibold">Órdenes recientes</h3>
-              <p className="text-xs text-muted-foreground">Últimas 5 órdenes generadas</p>
+      {canListOrders ? (
+        <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4">
+          {/* Recent orders */}
+          <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
+            <div className="px-5 py-4 border-b flex items-center justify-between">
+              <div>
+                <h3 className="text-[15px] font-semibold">Órdenes recientes</h3>
+                <p className="text-xs text-muted-foreground">Últimas 5 órdenes generadas</p>
+              </div>
+              <Link to="/orders">
+                <Button variant="ghost" size="sm" className="text-brand-blue-strong">
+                  Ver todas
+                </Button>
+              </Link>
             </div>
-            <Button variant="ghost" size="sm" className="text-brand-blue-strong">
-              Ver todas
-            </Button>
-          </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-[oklch(0.985_0.003_250)] text-left">
-                <th className="px-5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                  Código
-                </th>
-                <th className="px-5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                  Paciente
-                </th>
-                <th className="px-5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                  Estado
-                </th>
-                <th className="px-5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">
-                  Monto
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {ORDERS.map((o) => (
-                <tr key={o.code} className="border-t hover:bg-[oklch(0.985_0.003_250)]">
-                  <td className="px-5 py-3 font-mono text-xs text-foreground">{o.code}</td>
-                  <td className="px-5 py-3">
-                    <div className="font-medium">{o.patient}</div>
-                    <div className="text-xs text-muted-foreground truncate">{o.service}</div>
-                  </td>
-                  <td className="px-5 py-3">
-                    {o.status === 'paid' ? (
-                      <StatusPill tone="success" label="Pagada" />
-                    ) : o.status === 'pending' ? (
-                      <StatusPill tone="warning" label="Pendiente" />
-                    ) : (
-                      <StatusPill tone="destructive" label="Cancelada" />
-                    )}
-                  </td>
-                  <td className="px-5 py-3 text-right font-semibold">{o.amount}</td>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-[oklch(0.985_0.003_250)] text-left">
+                  <th className="px-5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                    N° orden
+                  </th>
+                  <th className="px-5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                    Paciente
+                  </th>
+                  <th className="px-5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                    Estado
+                  </th>
+                  <th className="px-5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">
+                    Monto
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Upcoming appointments */}
-        <div className="bg-card rounded-xl border shadow-xs overflow-hidden flex flex-col">
-          <div className="px-5 py-4 border-b">
-            <h3 className="text-[15px] font-semibold">Próximas citas</h3>
-            <p className="text-xs text-muted-foreground">Hoy</p>
+              </thead>
+              <tbody>
+                {recent.loading
+                  ? Array.from({ length: 5 }).map((_, i) => (
+                      <tr key={`sk-r-${i}`} className="border-t">
+                        <td className="px-5 py-3">
+                          <Skeleton className="h-4 w-20" />
+                        </td>
+                        <td className="px-5 py-3">
+                          <Skeleton className="h-4 w-40" />
+                          <Skeleton className="h-3 w-28 mt-1.5" />
+                        </td>
+                        <td className="px-5 py-3">
+                          <Skeleton className="h-5 w-20 rounded-full" />
+                        </td>
+                        <td className="px-5 py-3 text-right">
+                          <Skeleton className="h-4 w-16 ml-auto" />
+                        </td>
+                      </tr>
+                    ))
+                  : recent.orders.length === 0
+                    ? (
+                        <tr className="border-t">
+                          <td colSpan={4} className="px-5 py-8 text-center text-sm text-muted-foreground">
+                            Aún no hay órdenes.
+                          </td>
+                        </tr>
+                      )
+                    : recent.orders.map((o) => (
+                        <tr key={o.id} className="border-t hover:bg-[oklch(0.985_0.003_250)]">
+                          <td className="px-5 py-3 font-mono text-xs text-foreground">
+                            {o.orderNumber}
+                          </td>
+                          <td className="px-5 py-3">
+                            <div className="font-medium">{holderDisplayName(o.patient)}</div>
+                            <div className="text-xs text-muted-foreground truncate">
+                              {serviceLabel(o)}
+                            </div>
+                          </td>
+                          <td className="px-5 py-3">
+                            <OrderStatusPill status={o.status} />
+                          </td>
+                          <td className="px-5 py-3 text-right font-semibold font-mono text-xs">
+                            {Number(o.priceAmount).toFixed(2)} {o.priceCurrency}
+                          </td>
+                        </tr>
+                      ))}
+              </tbody>
+            </table>
           </div>
-          <ul className="divide-y flex-1">
-            {APPOINTMENTS.map((a) => (
-              <li
-                key={a.hour + a.patient}
-                className="flex items-center gap-3 px-5 py-3 hover:bg-[oklch(0.985_0.003_250)]"
-              >
-                <div className="w-[42px] h-[42px] rounded-lg bg-brand-blue-soft text-brand-blue-strong flex items-center justify-center text-[13px] font-bold shrink-0">
-                  {a.hour}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm truncate">{a.patient}</div>
-                  <div className="text-xs text-muted-foreground truncate">{a.type}</div>
-                </div>
-                {a.status === 'confirmed' ? (
-                  <Badge variant="secondary" className="text-[10px]">
-                    Confirmada
-                  </Badge>
-                ) : a.status === 'pending' ? (
-                  <Badge variant="outline" className="text-[10px]">
-                    Pendiente
-                  </Badge>
-                ) : (
-                  <Badge variant="destructive" className="text-[10px]">
-                    Cancelada
-                  </Badge>
-                )}
-              </li>
-            ))}
-          </ul>
+
+          {/* Upcoming appointments */}
+          <div className="bg-card rounded-xl border shadow-xs overflow-hidden flex flex-col">
+            <div className="px-5 py-4 border-b">
+              <h3 className="text-[15px] font-semibold">Próximas citas</h3>
+              <p className="text-xs text-muted-foreground">Desde hoy</p>
+            </div>
+            <ul className="divide-y flex-1">
+              {upcoming.loading
+                ? Array.from({ length: 5 }).map((_, i) => (
+                    <li key={`sk-u-${i}`} className="flex items-center gap-3 px-5 py-3">
+                      <Skeleton className="w-[56px] h-[56px] rounded-lg" />
+                      <div className="flex-1 min-w-0 space-y-1.5">
+                        <Skeleton className="h-4 w-40" />
+                        <Skeleton className="h-3 w-32" />
+                      </div>
+                    </li>
+                  ))
+                : upcoming.orders.length === 0
+                  ? (
+                      <li className="px-5 py-8 text-center text-sm text-muted-foreground">
+                        Sin citas próximas.
+                      </li>
+                    )
+                  : upcoming.orders.map((o) => (
+                      <li
+                        key={o.id}
+                        className="flex items-center gap-3 px-5 py-3 hover:bg-[oklch(0.985_0.003_250)]"
+                      >
+                        <div className="w-[56px] h-[56px] rounded-lg bg-brand-blue-soft text-brand-blue-strong flex flex-col items-center justify-center shrink-0 leading-tight">
+                          <span className="text-[13px] font-bold">{formatHour(o.appointmentDate)}</span>
+                          <span className="text-[10px] font-medium uppercase tracking-[0.04em] opacity-80">
+                            {formatShortDate(o.appointmentDate)}
+                          </span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-sm truncate">
+                            {holderDisplayName(o.patient)}
+                          </div>
+                          <div className="text-xs text-muted-foreground truncate">
+                            {serviceLabel(o)}
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+            </ul>
+          </div>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }
