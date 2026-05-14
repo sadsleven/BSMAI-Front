@@ -12,13 +12,15 @@ import { Badge } from '@/components/ui/badge';
 import {
   amountToReceive,
   billingRateBs,
+  effectiveStatus,
+  EFFECTIVE_STATUS_LABEL,
   paidBs,
   paidOriginal,
   pendingBs,
   pendingOriginal,
   recipientName,
-  STATUS_LABEL,
   type AccountsPayable,
+  type EffectiveAccountsPayableStatus,
 } from '../../domain/models/accountsPayable';
 import { useTaxRates } from '@/lib/config/taxRates';
 import { PaymentHistoryList } from './PaymentHistoryList';
@@ -68,8 +70,14 @@ export function AccountsPayableDetail({
   const pOrig = account ? pendingOriginal(account, taxRates) : null;
   const rateBs = account ? billingRateBs(account) : null;
   const origCurrency = account?.order.doctorAmountCurrency ?? null;
-  const statusTone = (s: AccountsPayable['status']) =>
-    s === 'paid' ? 'success' : s === 'partially_paid' ? 'info' : 'warning';
+  const statusTone = (s: EffectiveAccountsPayableStatus) =>
+    s === 'paid'
+      ? 'success'
+      : s === 'partially_paid'
+        ? 'info'
+        : s === 'undefined'
+          ? 'neutral'
+          : 'warning';
 
   return (
     <DetailDialog
@@ -110,8 +118,8 @@ export function AccountsPayableDetail({
             <DetailRow
               label="Estado"
               value={
-                <DetailBadge tone={statusTone(account.status)}>
-                  {STATUS_LABEL[account.status]}
+                <DetailBadge tone={statusTone(effectiveStatus(account))}>
+                  {EFFECTIVE_STATUS_LABEL[effectiveStatus(account)]}
                 </DetailBadge>
               }
             />

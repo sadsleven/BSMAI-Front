@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Eye, Plus, HandCoins } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { AccountsReceivableDetail } from '../components/AccountsReceivableDetail';
 import {
   Table,
@@ -277,11 +278,10 @@ export function AccountsReceivableList() {
                 return (
                   <TableRow key={a.id} className="hover:bg-muted/30">
                     <TableCell className="py-3.5 px-4">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={selected.has(a.id)}
                         disabled={!isUncollected}
-                        onChange={() => isUncollected && toggleSelect(a.id)}
+                        onCheckedChange={() => isUncollected && toggleSelect(a.id)}
                         aria-label="Seleccionar cuenta"
                       />
                     </TableCell>

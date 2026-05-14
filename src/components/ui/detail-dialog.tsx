@@ -151,7 +151,7 @@ export function DetailBadge({
   tone = 'info',
   children,
 }: {
-  tone?: 'success' | 'warning' | 'destructive' | 'info';
+  tone?: 'success' | 'warning' | 'destructive' | 'info' | 'neutral';
   children: ReactNode;
 }) {
   const map = {
@@ -159,6 +159,7 @@ export function DetailBadge({
     warning: 'bg-warning-soft text-warning',
     destructive: 'bg-destructive-soft text-destructive',
     info: 'bg-brand-blue-soft text-brand-blue-strong',
+    neutral: 'bg-muted text-muted-foreground',
   } as const;
   return (
     <span
@@ -174,6 +175,7 @@ export function DetailBadge({
           tone === 'warning' && 'bg-warning',
           tone === 'destructive' && 'bg-destructive',
           tone === 'info' && 'bg-brand-blue',
+          tone === 'neutral' && 'bg-muted-foreground',
         )}
       />
       {children}

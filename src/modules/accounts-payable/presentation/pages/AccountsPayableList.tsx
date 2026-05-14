@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Eye, Plus, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { AccountsPayableDetail } from '../components/AccountsPayableDetail';
 import {
   Table,
@@ -32,11 +33,13 @@ import { getHttpErrorMessage } from '@/lib/api';
 import { accountsPayableGateway } from '../../infrastructure/accountsPayableGateway';
 import {
   amountToReceive,
+  canSelectForPayment,
+  effectiveStatus,
+  EFFECTIVE_STATUS_LABEL,
   paidBs,
   pendingBs,
   pendingOriginal,
   recipientName,
-  STATUS_LABEL,
   type AccountsPayable,
   type AccountsPayableStatus,
 } from '../../domain/models/accountsPayable';
@@ -283,16 +286,15 @@ export function AccountsPayableList() {
                 const pBs = pendingBs(a, taxRates);
                 const pOrig = pendingOriginal(a, taxRates);
                 const paid = paidBs(a);
-                // Permitir selección si la cuenta no está pagada (allow re-paying partially_paid).
-                const isUnpaid = a.status !== 'paid';
+                const eff = effectiveStatus(a);
+                const selectable = canSelectForPayment(a);
                 return (
                   <TableRow key={a.id} className="hover:bg-muted/30">
                     <TableCell className="py-3.5 px-4">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={selected.has(a.id)}
-                        disabled={!isUnpaid}
-                        onChange={() => isUnpaid && toggleSelect(a.id)}
+                        disabled={!selectable}
+                        onCheckedChange={() => selectable && toggleSelect(a.id)}
                         aria-label="Seleccionar cuenta"
                       />
                     </TableCell>
@@ -358,23 +360,27 @@ export function AccountsPayableList() {
                     <TableCell className="py-3.5 px-4">
                       <span
                         className={
-                          a.status === 'paid'
+                          eff === 'paid'
                             ? 'inline-flex items-center gap-1.5 rounded-full bg-success-soft text-success px-2 py-0.5 text-xs font-medium'
-                            : a.status === 'partially_paid'
+                            : eff === 'partially_paid'
                               ? 'inline-flex items-center gap-1.5 rounded-full bg-brand-cyan-soft text-brand-blue-strong px-2 py-0.5 text-xs font-medium'
-                              : 'inline-flex items-center gap-1.5 rounded-full bg-warning-soft text-warning px-2 py-0.5 text-xs font-medium'
+                              : eff === 'undefined'
+                                ? 'inline-flex items-center gap-1.5 rounded-full bg-muted text-muted-foreground px-2 py-0.5 text-xs font-medium'
+                                : 'inline-flex items-center gap-1.5 rounded-full bg-warning-soft text-warning px-2 py-0.5 text-xs font-medium'
                         }
                       >
                         <span
                           className={
-                            a.status === 'paid'
+                            eff === 'paid'
                               ? 'w-1.5 h-1.5 rounded-full bg-success'
-                              : a.status === 'partially_paid'
+                              : eff === 'partially_paid'
                                 ? 'w-1.5 h-1.5 rounded-full bg-brand-cyan'
-                                : 'w-1.5 h-1.5 rounded-full bg-warning'
+                                : eff === 'undefined'
+                                  ? 'w-1.5 h-1.5 rounded-full bg-muted-foreground'
+                                  : 'w-1.5 h-1.5 rounded-full bg-warning'
                           }
                         />
-                        {STATUS_LABEL[a.status]}
+                        {EFFECTIVE_STATUS_LABEL[eff]}
                       </span>
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm text-muted-foreground">

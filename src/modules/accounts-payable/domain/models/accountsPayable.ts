@@ -1,6 +1,8 @@
 import type { Order, PaymentCurrency, OrderPaymentType } from '@/modules/orders/domain/models/order';
 
 export type AccountsPayableStatus = 'paid' | 'unpaid' | 'partially_paid';
+/** Status derivado en FE: incluye `undefined` cuando la orden aún no tiene doctorAmount. */
+export type EffectiveAccountsPayableStatus = AccountsPayableStatus | 'undefined';
 export type RecipientType = 'doctor' | 'care_center';
 
 export interface AccountsPayablePayment {
@@ -73,6 +75,31 @@ export const STATUS_LABEL: Record<AccountsPayableStatus, string> = {
   unpaid: 'No pagada',
   partially_paid: 'Pagada parcialmente',
 };
+
+export const EFFECTIVE_STATUS_LABEL: Record<EffectiveAccountsPayableStatus, string> = {
+  ...STATUS_LABEL,
+  undefined: 'Sin definir',
+};
+
+/**
+ * Status derivado: si la orden aún no tiene `doctorAmount` (null o 0), retorna `'undefined'`.
+ * No se persiste; sólo display + bloqueo de selección.
+ */
+export function effectiveStatus(
+  a: AccountsPayable,
+): EffectiveAccountsPayableStatus {
+  const amt = Number(a.order?.doctorAmount ?? 0);
+  if (!a.order?.doctorAmount || !Number.isFinite(amt) || amt <= 0) {
+    return 'undefined';
+  }
+  return a.status;
+}
+
+/** Selección/pago habilitado: no pagada y con monto definido. */
+export function canSelectForPayment(a: AccountsPayable): boolean {
+  const s = effectiveStatus(a);
+  return s !== 'paid' && s !== 'undefined';
+}
 
 export function recipientName(a: AccountsPayable): string {
   if (a.recipientType === 'doctor') {
