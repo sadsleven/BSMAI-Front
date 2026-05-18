@@ -100,8 +100,8 @@ export function AccountsPayableDetail({
             <DetailRow
               label="Monto al doctor"
               value={
-                account.order.doctorAmount
-                  ? `${Number(account.order.doctorAmount).toFixed(2)} ${account.order.doctorAmountCurrency}`
+                account.order?.doctorAmount
+                  ? `${Number(account.order?.doctorAmount).toFixed(2)} ${account.order.doctorAmountCurrency}`
                   : null
               }
               mono

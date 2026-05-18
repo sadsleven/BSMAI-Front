@@ -57,7 +57,7 @@ export function OrderBillingStep({
   const isFinalized = order.status === 'finalized';
 
   const [doctorAmount, setDoctorAmount] = useState<number | undefined>(
-    order.doctorAmount ? Number(order.doctorAmount) : undefined,
+    order?.doctorAmount ? Number(order?.doctorAmount) : undefined,
   );
   const [doctorAmountCurrency, setDoctorAmountCurrency] =
     useState<DoctorAmountCurrency>(order.doctorAmountCurrency ?? order.priceCurrency);

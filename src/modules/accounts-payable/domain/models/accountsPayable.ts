@@ -119,8 +119,8 @@ export function amountToReceive(
   a: AccountsPayable,
   rates?: { doctorNaturalTaxRate: number; doctorLegalTaxRate: number } | null,
 ): number | null {
-  if (!a.order.doctorAmount) return null;
-  const amount = Number(a.order.doctorAmount);
+  if (!a.order?.doctorAmount) return null;
+  const amount = Number(a.order?.doctorAmount);
   if (a.recipientType === 'doctor') {
     const r = rates ?? { doctorNaturalTaxRate: 0.03, doctorLegalTaxRate: 0.05 };
     const taxRate = a.doctor?.isLegalEntity ? r.doctorLegalTaxRate : r.doctorNaturalTaxRate;

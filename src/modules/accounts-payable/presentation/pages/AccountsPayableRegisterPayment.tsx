@@ -312,8 +312,8 @@ export function AccountsPayableRegisterPayment() {
     let unifiedCurrency: string | null = null;
     let mixedCurrency = false;
     for (const a of accounts) {
-      if (!a.order.doctorAmount || !a.order.doctorAmountCurrency) continue;
-      totalDoctorOriginal += Number(a.order.doctorAmount);
+      if (!a.order?.doctorAmount || !a.order.doctorAmountCurrency) continue;
+      totalDoctorOriginal += Number(a.order?.doctorAmount);
       const ar = amountToReceive(a, taxRates);
       if (ar !== null) totalToReceiveOriginal += ar;
       totalPaidBs += paidBs(a);
