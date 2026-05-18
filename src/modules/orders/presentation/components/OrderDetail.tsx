@@ -67,11 +67,21 @@ export function OrderDetail({ orderId, open, onOpenChange }: OrderDetailProps) {
     };
   }, [orderId, open]);
 
-  const provider = order
-    ? order.providerType === 'doctor'
-      ? holderDisplayName(order.doctor)
-      : (order.careCenter?.businessName ?? '—')
-    : '';
+  /** Lista distinct de proveedores que participan en la orden (puede ser >1). */
+  const providers = (order?.orderServiceTypes ?? []).reduce<
+    Array<{ key: string; label: string; type: 'doctor' | 'care_center' }>
+  >((acc, row) => {
+    const id = row.providerType === 'doctor' ? row.doctorId : row.careCenterId;
+    if (!id) return acc;
+    const key = `${row.providerType}:${id}`;
+    if (acc.some((p) => p.key === key)) return acc;
+    const label =
+      row.providerType === 'doctor'
+        ? holderDisplayName(row.doctor ?? undefined)
+        : (row.careCenter?.businessName ?? '—');
+    acc.push({ key, label, type: row.providerType });
+    return acc;
+  }, []);
 
   return (
     <DetailDialog
@@ -138,30 +148,62 @@ export function OrderDetail({ orderId, open, onOpenChange }: OrderDetailProps) {
               <DetailRow label="Contratista" value={order.contractor.name} />
             )}
             {order.insurance?.name && (
-              <DetailRow label="Seguro" value={order.insurance.name} />
+              <DetailRow
+                label="Seguro"
+                value={
+                  <>
+                    {order.insurance.name}
+                    {order.insuranceSource === 'direct' && (
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        (directo)
+                      </span>
+                    )}
+                    {order.insuranceSource === 'via_contractor' && (
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        (vía contratista)
+                      </span>
+                    )}
+                  </>
+                }
+              />
             )}
           </DetailSection>
 
-          <DetailSection title="Proveedor y servicio">
+          <DetailSection title="Proveedores y servicios">
             <DetailRow
-              label="Proveedor"
+              label={`Proveedor${providers.length === 1 ? '' : 'es'}`}
               value={
-                <>
-                  {provider}
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    ({order.providerType === 'doctor' ? 'Doctor' : 'Centro'})
-                  </span>
-                </>
+                providers.length === 0 ? (
+                  '—'
+                ) : (
+                  <ul className="space-y-0.5">
+                    {providers.map((p) => (
+                      <li key={p.key}>
+                        {p.label}
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          ({p.type === 'doctor' ? 'Doctor' : 'Centro'})
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )
               }
             />
             <DetailRow label="Especialidad" value={order.specialty?.name} />
             <DetailRow
               label="Tipos de servicio"
               value={
-                order.serviceTypes && order.serviceTypes.length > 0 ? (
+                order.orderServiceTypes && order.orderServiceTypes.length > 0 ? (
                   <ul className="space-y-0.5">
-                    {order.serviceTypes.map((s) => (
-                      <li key={s.id}>{s.name}</li>
+                    {order.orderServiceTypes.map((row) => (
+                      <li key={row.serviceTypeId}>
+                        {row.serviceType?.name ?? row.serviceTypeId}
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          {row.providerType === 'doctor'
+                            ? holderDisplayName(row.doctor ?? undefined)
+                            : (row.careCenter?.businessName ?? '—')}
+                        </span>
+                      </li>
                     ))}
                   </ul>
                 ) : null

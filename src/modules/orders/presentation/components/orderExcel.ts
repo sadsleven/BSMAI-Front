@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
-import type { Order } from '../../domain/models/order';
+import type { Order, OrderServiceTypeRow } from '../../domain/models/order';
 import { holderDisplayName } from '../../domain/models/order';
 
 const COMPANY = {
@@ -15,16 +15,6 @@ const COMPANY = {
 function holderId(p?: { cedula?: string | null; rif?: string | null } | null): string {
   if (!p) return '';
   return p.cedula ?? p.rif ?? '';
-}
-
-function providerName(o: Order): string {
-  if (o.providerType === 'doctor' && o.doctor) {
-    return `${o.doctor.firstName ?? ''} ${o.doctor.lastName ?? ''}`.trim();
-  }
-  if (o.providerType === 'care_center' && o.careCenter) {
-    return o.careCenter.businessName ?? '';
-  }
-  return '';
 }
 
 function fmtDate(iso?: string | null): string {
@@ -44,6 +34,46 @@ function applyHeader(ws: ExcelJS.Worksheet, title: string) {
 function thinBorder(): Partial<ExcelJS.Borders> {
   const s: Partial<ExcelJS.Border> = { style: 'thin', color: { argb: 'FF000000' } };
   return { top: s, left: s, right: s, bottom: s };
+}
+
+/** Sanitiza string para nombre de archivo (sin chars problemáticos en Windows/macOS). */
+function safeFilenameSegment(s: string): string {
+  return s.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').trim().slice(0, 80) || 'sin_nombre';
+}
+
+export interface OrderProviderGroup {
+  key: string;
+  providerType: 'doctor' | 'care_center';
+  providerId: string;
+  providerName: string;
+  rows: OrderServiceTypeRow[];
+}
+
+/** Agrupa las filas OST por proveedor distinto. */
+export function groupOrderProviders(order: Order): OrderProviderGroup[] {
+  const groups = new Map<string, OrderProviderGroup>();
+  for (const row of order.orderServiceTypes ?? []) {
+    const id = row.providerType === 'doctor' ? row.doctorId : row.careCenterId;
+    if (!id) continue;
+    const key = `${row.providerType}:${id}`;
+    if (!groups.has(key)) {
+      const name =
+        row.providerType === 'doctor'
+          ? `${row.doctor?.firstName ?? ''} ${row.doctor?.lastName ?? ''}`.trim() ||
+            row.doctorId ||
+            ''
+          : row.careCenter?.businessName ?? row.careCenterId ?? '';
+      groups.set(key, {
+        key,
+        providerType: row.providerType,
+        providerId: id,
+        providerName: name,
+        rows: [],
+      });
+    }
+    groups.get(key)!.rows.push(row);
+  }
+  return Array.from(groups.values());
 }
 
 export async function downloadFacturacionXlsx(order: Order): Promise<void> {
@@ -110,7 +140,10 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
   for (let c = 1; c <= 5; c++) headerRow.getCell(c).border = thinBorder();
 
   const detailRow = ws.getRow(14);
-  const stNames = (order.serviceTypes ?? []).map((s) => s.name).join(', ');
+  const stNames = (order.orderServiceTypes ?? [])
+    .map((row) => row.serviceType?.name)
+    .filter((n): n is string => !!n)
+    .join(', ');
   const pathNames = (order.pathologies ?? []).map((p) => p.name).join(', ');
   const detail = [order.specialty?.name, stNames, pathNames]
     .filter((v) => !!v && v.length > 0)
@@ -155,19 +188,14 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
   );
 }
 
-/** Sanitiza string para nombre de archivo (sin chars problemáticos en Windows/macOS). */
-function safeFilenameSegment(s: string): string {
-  return s.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').trim().slice(0, 80) || 'sin_nombre';
-}
-
 /**
- * Genera 1 XLSX de "Orden interna" para UN tipo de servicio específico.
- * Convención: cada ST de la orden produce su propio archivo. Para descargar
- * todos los ST de la orden, usar `downloadOrdenInternaForAllServiceTypes`.
+ * Genera 1 XLSX de "Orden interna" para UN proveedor de la orden. Agrupa todos
+ * sus Tipos de Servicio en un solo archivo. Para múltiples proveedores, llamar
+ * `downloadOrdenInternaForAllProviders` que descarga uno por cada uno.
  */
-export async function downloadOrdenInternaForServiceType(
+export async function downloadOrdenInternaForProvider(
   order: Order,
-  serviceType: { id: string; name: string },
+  group: OrderProviderGroup,
 ): Promise<void> {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'AFMI';
@@ -193,14 +221,10 @@ export async function downloadOrdenInternaForServiceType(
   ws.getCell('F3').value = 'N°';
   ws.getCell('G3').value = order.orderNumber;
 
-  ws.getCell('A5').value = 'Médico Tratante:';
-  ws.getCell('C5').value = providerName(order);
+  ws.getCell('A5').value = group.providerType === 'doctor' ? 'Médico Tratante:' : 'Centro:';
+  ws.getCell('C5').value = group.providerName;
   ws.getCell('F5').value = 'Especialidad:';
   ws.getCell('G5').value = order.specialty?.name ?? '';
-
-  ws.getCell('A6').value = 'Centro/Dirección:';
-  ws.getCell('C6').value =
-    order.providerType === 'care_center' ? order.careCenter?.businessName ?? '' : '';
 
   ws.getCell('A7').value = 'Paciente';
   ws.getCell('C7').value = holderDisplayName(order.patient);
@@ -223,41 +247,46 @@ export async function downloadOrdenInternaForServiceType(
   ws.getCell('G10').value = order.orderNumber;
 
   const tiposHeader = ws.getRow(11);
-  tiposHeader.getCell(1).value = 'Tipo de Servicio';
+  tiposHeader.getCell(1).value = 'Tipos de Servicio realizados por este proveedor';
   tiposHeader.font = { bold: true };
   tiposHeader.alignment = { horizontal: 'center' };
   ws.mergeCells('A11:G11');
 
-  ws.getCell('A12').value = serviceType.name;
-  ws.mergeCells('A12:G12');
+  // Una fila por ST del proveedor.
+  let r = 12;
+  for (const row of group.rows) {
+    ws.getCell(`A${r}`).value = row.serviceType?.name ?? row.serviceTypeId;
+    ws.mergeCells(`A${r}:G${r}`);
+    r += 1;
+  }
 
   // Footer block
-  ws.getCell('A14').value = `Dirección: ${COMPANY.domicilio}`;
-  ws.mergeCells('A14:G14');
-  ws.getCell('A15').value = `${COMPANY.ciudad} Teléfonos: ${COMPANY.telefono}`;
-  ws.mergeCells('A15:G15');
-  ws.getCell('A16').value = `Correo electrónico: ${COMPANY.email}`;
-  ws.mergeCells('A16:G16');
+  ws.getCell(`A${r + 1}`).value = `Dirección: ${COMPANY.domicilio}`;
+  ws.mergeCells(`A${r + 1}:G${r + 1}`);
+  ws.getCell(`A${r + 2}`).value = `${COMPANY.ciudad} Teléfonos: ${COMPANY.telefono}`;
+  ws.mergeCells(`A${r + 2}:G${r + 2}`);
+  ws.getCell(`A${r + 3}`).value = `Correo electrónico: ${COMPANY.email}`;
+  ws.mergeCells(`A${r + 3}:G${r + 3}`);
 
   // Apply borders to data block
-  for (let r = 5; r <= 12; r++) {
+  for (let rowIdx = 5; rowIdx < r; rowIdx++) {
     for (let c = 1; c <= 7; c++) {
-      ws.getRow(r).getCell(c).border = thinBorder();
+      ws.getRow(rowIdx).getCell(c).border = thinBorder();
     }
   }
 
   const buf = await wb.xlsx.writeBuffer();
-  const stSlug = safeFilenameSegment(serviceType.name);
+  const providerSlug = safeFilenameSegment(group.providerName);
+  const typeSlug = group.providerType === 'doctor' ? 'doctor' : 'centro';
   saveAs(
     new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
-    `OrdenInterna-${order.orderNumber}-${stSlug}.xlsx`,
+    `Orden-${order.orderNumber}-${typeSlug}-${providerSlug}.xlsx`,
   );
 }
 
-/** Descarga 1 XLSX por cada tipo de servicio asignado a la orden. */
-export async function downloadOrdenInternaForAllServiceTypes(order: Order): Promise<void> {
-  const sts = order.serviceTypes ?? [];
-  for (const st of sts) {
-    await downloadOrdenInternaForServiceType(order, st);
+/** Descarga 1 XLSX por cada proveedor distinto de la orden. */
+export async function downloadOrdenInternaForAllProviders(order: Order): Promise<void> {
+  for (const group of groupOrderProviders(order)) {
+    await downloadOrdenInternaForProvider(order, group);
   }
 }

@@ -14,6 +14,14 @@ export type InsuranceMultiSelectProps = {
   existing?: Insurance[];
   error?: string;
   disabled?: boolean;
+  /**
+   * IDs deshabilitados con motivo. Aparecen visibles pero no clickeables;
+   * el tooltip muestra la razón. Si ya están seleccionados, se muestran como
+   * stale (quitables, no re-agregables).
+   */
+  disabledOptions?: Map<string, string>;
+  /** Texto cabecera (default: "Seguros"). */
+  label?: string;
 };
 
 /**
@@ -28,6 +36,8 @@ export function InsuranceMultiSelect({
   existing,
   error,
   disabled,
+  disabledOptions,
+  label,
 }: InsuranceMultiSelectProps) {
   const [assignable, setAssignable] = useState<Insurance[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,7 +83,10 @@ export function InsuranceMultiSelect({
 
   const toggle = (id: string) => {
     if (disabled) return;
-    onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
+    const selected = value.includes(id);
+    // Bloquear agregar si está en disabledOptions; quitar sigue permitido.
+    if (!selected && disabledOptions?.has(id)) return;
+    onChange(selected ? value.filter((v) => v !== id) : [...value, id]);
   };
 
   const filtered = useMemo(() => {
@@ -92,7 +105,7 @@ export function InsuranceMultiSelect({
     <div className="space-y-3">
       <Label className="text-sm font-medium flex items-center gap-2">
         <Shield className="w-4 h-4 text-muted-foreground" />
-        Seguros
+        {label ?? 'Seguros'}
         <span className="text-xs text-muted-foreground font-normal ml-auto">
           {value.length} seleccionado{value.length === 1 ? '' : 's'}
         </span>
@@ -126,15 +139,18 @@ export function InsuranceMultiSelect({
           <>
             {filtered.map((s) => {
               const active = value.includes(s.id);
+              const disabledReason = disabledOptions?.get(s.id);
+              const optionDisabled = disabled || (!active && !!disabledReason);
               return (
                 <button
                   key={s.id}
                   type="button"
                   onClick={() => toggle(s.id)}
-                  disabled={disabled}
+                  disabled={optionDisabled}
+                  title={disabledReason ?? undefined}
                   className={cn(
                     'cursor-pointer transition-opacity',
-                    disabled && 'opacity-60 cursor-not-allowed',
+                    optionDisabled && 'opacity-50 cursor-not-allowed',
                   )}
                 >
                   <Badge variant={active ? 'default' : 'outline'}>{s.name}</Badge>

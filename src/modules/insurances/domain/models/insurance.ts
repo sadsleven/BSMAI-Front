@@ -1,3 +1,5 @@
+import type { ServicePriceRow, ServicePricePayload } from '@/lib/types/servicePrice';
+
 export interface InsurancePhone {
   id?: string;
   number: string;
@@ -12,6 +14,8 @@ export interface Insurance {
   fiscalAddress?: string | null;
   isActive: boolean;
   phones: InsurancePhone[];
+  /** Precios de cobro por Tipo de Servicio que el seguro cubre. */
+  servicePrices?: ServicePriceRow[];
   createdAt?: string;
   updatedAt?: string;
   deletedAt?: string | null;
@@ -23,6 +27,7 @@ export interface CreateInsuranceDto {
   email?: string;
   fiscalAddress?: string;
   phones: { number: string; label?: string }[];
+  servicePrices?: ServicePricePayload[];
   isActive?: boolean;
 }
 

@@ -229,13 +229,19 @@ export function OrderList() {
   };
 
   const providerOf = (o: Order): string => {
-    if (o.providerType === 'doctor' && o.doctor) {
-      return `${o.doctor.firstName ?? ''} ${o.doctor.lastName ?? ''}`.trim();
+    const rows = o.orderServiceTypes ?? [];
+    if (rows.length === 0) return '—';
+    const names = new Set<string>();
+    for (const r of rows) {
+      if (r.providerType === 'doctor' && r.doctor) {
+        names.add(`${r.doctor.firstName ?? ''} ${r.doctor.lastName ?? ''}`.trim());
+      } else if (r.providerType === 'care_center' && r.careCenter) {
+        names.add(r.careCenter.businessName ?? '');
+      }
     }
-    if (o.providerType === 'care_center' && o.careCenter) {
-      return o.careCenter.businessName ?? '';
-    }
-    return '—';
+    if (names.size === 0) return '—';
+    if (names.size === 1) return [...names][0];
+    return `${names.size} proveedores`;
   };
 
   return (

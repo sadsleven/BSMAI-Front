@@ -2,6 +2,7 @@ import type { Specialty } from '@/modules/specialties/domain/models/specialty';
 import type {
   PaymentMethodType,
 } from '@/modules/doctors/domain/models/doctor';
+import type { ServicePriceRow, ServicePricePayload } from '@/lib/types/servicePrice';
 
 export interface CareCenterPhone {
   id?: string;
@@ -30,6 +31,8 @@ export interface CareCenter {
   specialties: Specialty[];
   phones: CareCenterPhone[];
   paymentMethods: CareCenterPaymentMethod[];
+  /** Precios de pago al centro por Tipo de Servicio realizado. */
+  servicePrices?: ServicePriceRow[];
   createdAt?: string;
   updatedAt?: string;
   deletedAt?: string | null;
@@ -42,6 +45,7 @@ export interface CreateCareCenterDto {
   phones: { number: string; label?: string }[];
   specialtyIds: string[];
   paymentMethods?: CareCenterPaymentMethod[];
+  servicePrices?: ServicePricePayload[];
   isActive?: boolean;
 }
 

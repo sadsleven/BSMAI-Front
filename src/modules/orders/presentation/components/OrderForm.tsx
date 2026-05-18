@@ -27,7 +27,6 @@ import {
 import type {
   OrderCurrency,
   OrderType,
-  ProviderType,
 } from '../../domain/models/order';
 import { ORDER_TYPE_LABEL } from '../../domain/models/order';
 import type { OrderValues } from '@/lib/validations/schemas';
@@ -38,13 +37,18 @@ import type { Pathology } from '@/modules/pathologies/domain/models/pathology';
 import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchangeRate';
 import { serviceTypeGateway } from '@/modules/service-types/infrastructure/serviceTypeGateway';
 import { pathologyGateway } from '@/modules/pathologies/infrastructure/pathologyGateway';
+import { specialtyGateway } from '@/modules/specialties/infrastructure/specialtyGateway';
 import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
 import { PatientSearchSelect } from './PatientSearchSelect';
 import { PatientCreateModal } from './PatientCreateModal';
-import {
-  ProviderSearchSelect,
-  type ProviderSelectValue,
-} from './ProviderSearchSelect';
+import { patientGateway } from '@/modules/patients/infrastructure/patientGateway';
+import { insuranceGateway } from '@/modules/insurances/infrastructure/insuranceGateway';
+import type { PatientAvailableInsurance } from '@/modules/patients/domain/models/patient';
+import type { ServicePriceRow } from '@/lib/types/servicePrice';
+import type { ProviderSelectValue } from './ProviderSearchSelect';
+import { ServiceProviderTable } from './ServiceProviderTable';
+import type { Doctor } from '@/modules/doctors/domain/models/doctor';
+import type { CareCenter } from '@/modules/care-centers/domain/models/careCenter';
 import {
   OrderPaymentForm,
   paymentInOrderCurrency,
@@ -163,18 +167,31 @@ export function OrderForm({
   const [sameAsHolder, setSameAsHolder] = useState(
     initialHolder && initialPatient ? initialHolder.id === initialPatient.id : true,
   );
-  const [provider, setProvider] = useState<ProviderSelectValue | null>(initialProvider);
   const [createPatientOpen, setCreatePatientOpen] = useState(false);
   const [createTarget, setCreateTarget] = useState<'holder' | 'patient' | null>(null);
   const [confirmTypeChange, setConfirmTypeChange] = useState<OrderType | null>(null);
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]);
   const [pathologies, setPathologies] = useState<Pathology[]>([]);
+  const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [currentRate, setCurrentRate] = useState<ExchangeRate | null>(null);
+  void initialProvider;
+
+  // Hidrata el ServiceProviderTable: map de proveedores ya elegidos en la orden.
+  const initialProvidersMap = useMemo(() => {
+    const m = new Map<string, Doctor | CareCenter>();
+    for (const ost of savedOrder?.orderServiceTypes ?? []) {
+      if (ost.providerType === 'doctor' && ost.doctor && ost.doctorId) {
+        m.set(`doctor:${ost.doctorId}`, ost.doctor as unknown as Doctor);
+      } else if (ost.providerType === 'care_center' && ost.careCenter && ost.careCenterId) {
+        m.set(`care_center:${ost.careCenterId}`, ost.careCenter as unknown as CareCenter);
+      }
+    }
+    return m;
+  }, [savedOrder]);
 
   const userBranches = useMemo(() => getUserBranches(me), [me]);
   const branchId = useWatch({ control, name: 'branchId' });
   const type = useWatch({ control, name: 'type' });
-  const providerType = useWatch({ control, name: 'providerType' });
   const payments = (useWatch({ control, name: 'payments' }) ?? []) as OrderValues['payments'];
 
   // Branch default: last used or first.
@@ -193,6 +210,7 @@ export function OrderForm({
   useEffect(() => {
     serviceTypeGateway.listAssignable().then(setServiceTypes).catch(() => setServiceTypes([]));
     pathologyGateway.listAssignable().then(setPathologies).catch(() => setPathologies([]));
+    specialtyGateway.listAssignable().then(setSpecialties).catch(() => setSpecialties([]));
   }, []);
 
   const priceCurrency = useWatch({ control, name: 'priceCurrency' }) as
@@ -221,6 +239,7 @@ export function OrderForm({
     setValue('holderId', next?.id ?? '', { shouldValidate: true, shouldDirty: true });
     setValue('contractorId', '', { shouldDirty: true });
     setValue('insuranceId', '', { shouldDirty: true });
+    setValue('insuranceSource', '', { shouldDirty: true });
     if (sameAsHolder) {
       setPatient(next);
       setValue('patientId', next?.id ?? '', { shouldValidate: true, shouldDirty: true });
@@ -236,27 +255,6 @@ export function OrderForm({
       setPatient(holder);
       setValue('patientId', holder?.id ?? '', { shouldValidate: true, shouldDirty: true });
     }
-  };
-
-  // Provider change → clear specialty
-  const onProviderChange = (next: ProviderSelectValue | null) => {
-    setProvider(next);
-    if (next?.providerType === 'doctor') {
-      setValue('doctorId', next.doctor.id, { shouldValidate: true, shouldDirty: true });
-      setValue('careCenterId', '', { shouldDirty: true });
-    } else if (next?.providerType === 'care_center') {
-      setValue('careCenterId', next.careCenter.id, { shouldValidate: true, shouldDirty: true });
-      setValue('doctorId', '', { shouldDirty: true });
-    } else {
-      setValue('doctorId', '', { shouldDirty: true });
-      setValue('careCenterId', '', { shouldDirty: true });
-    }
-    setValue('specialtyId', '', { shouldDirty: true });
-  };
-
-  const onProviderTypeChange = (next: ProviderType) => {
-    setValue('providerType', next, { shouldValidate: true, shouldDirty: true });
-    onProviderChange(null);
   };
 
   // Order type change
@@ -278,20 +276,55 @@ export function OrderForm({
     setValue('patientId', '', { shouldDirty: true });
     setValue('contractorId', '', { shouldDirty: true });
     setValue('insuranceId', '', { shouldDirty: true });
+    setValue('insuranceSource', '', { shouldDirty: true });
     setConfirmTypeChange(null);
   };
 
-  const providerSpecialties: Specialty[] = useMemo(() => {
-    if (!provider) return [];
-    return provider.providerType === 'doctor'
-      ? provider.doctor.specialties
-      : provider.careCenter.specialties;
-  }, [provider]);
+  // Seguros disponibles del titular: directo + vía contratista.
+  // Load desde BE para tener single source of truth (vs. derivar de holder.contractors).
+  const [availableInsurances, setAvailableInsurances] = useState<
+    PatientAvailableInsurance[]
+  >([]);
+  const [loadingAvailable, setLoadingAvailable] = useState(false);
+  useEffect(() => {
+    if (!holder || type !== 'insurance') {
+      setAvailableInsurances([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingAvailable(true);
+    patientGateway
+      .getAvailableInsurances(holder.id)
+      .then((list) => {
+        if (!cancelled) setAvailableInsurances(list);
+      })
+      .catch(() => !cancelled && setAvailableInsurances([]))
+      .finally(() => !cancelled && setLoadingAvailable(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [holder, type]);
 
-  const holderContractors = holder?.contractors ?? [];
-  const selectedContractorId = useWatch({ control, name: 'contractorId' }) as string | '' | undefined;
-  const selectedContractor = holderContractors.find((c) => c.id === selectedContractorId);
-  const insurancesForSelectedContractor = selectedContractor?.insurances ?? [];
+  // Composite key para el Select combinado.
+  const buildOptionKey = (opt: PatientAvailableInsurance): string =>
+    `${opt.source}|${opt.insurance.id}|${opt.contractor?.id ?? ''}`;
+  const currentContractorId = useWatch({ control, name: 'contractorId' }) as
+    | string
+    | ''
+    | undefined;
+  const currentInsuranceId = useWatch({ control, name: 'insuranceId' }) as
+    | string
+    | ''
+    | undefined;
+  const currentInsuranceSource = useWatch({ control, name: 'insuranceSource' }) as
+    | 'direct'
+    | 'via_contractor'
+    | ''
+    | undefined;
+  const currentOptionKey: string =
+    currentInsuranceId && currentInsuranceSource
+      ? `${currentInsuranceSource}|${currentInsuranceId}|${currentContractorId ?? ''}`
+      : '';
 
   const branchSelect = (() => {
     if (userBranches.length === 0) {
@@ -344,9 +377,38 @@ export function OrderForm({
   const casheaNet = isCashea ? +(((priceAmount ?? 0) * 0.9).toFixed(2)) : 0;
 
   // Price breakdown derived from selected service types + insurance/Particular.
-  const serviceTypeIds = (useWatch({ control, name: 'serviceTypeIds' }) ?? []) as string[];
+  const orderServiceTypeRows = (useWatch({ control, name: 'serviceTypes' }) ?? []) as Array<{
+    serviceTypeId: string;
+    providerType: 'doctor' | 'care_center';
+    doctorId?: string;
+    careCenterId?: string;
+  }>;
+  const serviceTypeIds = orderServiceTypeRows.map((r) => r.serviceTypeId).filter(Boolean);
   const insuranceId = useWatch({ control, name: 'insuranceId' }) as string | '' | undefined;
   const isInsuranceOrder = type === 'insurance';
+  const specialtyId = useWatch({ control, name: 'specialtyId' }) as string | '' | undefined;
+
+  // Carga los servicePrices del seguro elegido (kind: 'insurance').
+  // Particular se lee directo de `serviceTypes[].particularPrice*`.
+  const [insuranceServicePrices, setInsuranceServicePrices] = useState<
+    ServicePriceRow[]
+  >([]);
+  useEffect(() => {
+    if (!isInsuranceOrder || !insuranceId) {
+      setInsuranceServicePrices([]);
+      return;
+    }
+    let cancelled = false;
+    insuranceGateway
+      .getById(insuranceId)
+      .then((ins) => {
+        if (!cancelled) setInsuranceServicePrices(ins.servicePrices ?? []);
+      })
+      .catch(() => !cancelled && setInsuranceServicePrices([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [isInsuranceOrder, insuranceId]);
 
   type PriceLine = {
     id: string;
@@ -356,24 +418,34 @@ export function OrderForm({
   };
 
   const priceLines: PriceLine[] = useMemo(() => {
-    const lookupKey: string | null = isInsuranceOrder ? (insuranceId || null) : null;
     const ccy = (priceCurrency as 'USD' | 'EUR' | undefined) ?? 'USD';
+    const ispByST = new Map(
+      insuranceServicePrices.map((r) => [r.serviceTypeId, r]),
+    );
     return serviceTypeIds.map((id) => {
       const st = serviceTypes.find((s) => s.id === id);
       if (!st) return { id, name: '—', amount: null };
-      const row = (st.prices ?? []).find((p) =>
-        lookupKey === null ? !p.insuranceId : p.insuranceId === lookupKey,
-      );
-      if (!row) return { id, name: st.name, amount: null };
-      const raw = ccy === 'USD' ? row.priceUsd : row.priceEur;
+      if (isInsuranceOrder) {
+        const row = ispByST.get(id);
+        if (!row) return { id, name: st.name, amount: null };
+        const raw = ccy === 'USD' ? row.priceUsd : row.priceEur;
+        const num = raw === null || raw === undefined ? null : Number(raw);
+        return {
+          id,
+          name: st.name,
+          amount: num !== null && Number.isFinite(num) && num > 0 ? num : null,
+        };
+      }
+      // Particular: lee `particularPrice*` del ST.
+      const raw = ccy === 'USD' ? st.particularPriceUsd : st.particularPriceEur;
       const num = raw === null || raw === undefined ? null : Number(raw);
       return {
         id,
         name: st.name,
-        amount: num !== null && Number.isFinite(num) ? num : null,
+        amount: num !== null && Number.isFinite(num) && num > 0 ? num : null,
       };
     });
-  }, [serviceTypeIds, serviceTypes, insuranceId, isInsuranceOrder, priceCurrency]);
+  }, [serviceTypeIds, serviceTypes, insuranceServicePrices, isInsuranceOrder, priceCurrency]);
 
   const computedPriceSum = useMemo(
     () => priceLines.reduce((acc, l) => acc + (l.amount ?? 0), 0),
@@ -528,128 +600,76 @@ export function OrderForm({
           ) : null}
 
           {type === 'insurance' ? (
-            <FormGrid>
-              <div className="space-y-1.5">
-                <RequiredLabel required>Contratista</RequiredLabel>
-                <Controller
-                  control={control}
-                  name="contractorId"
-                  render={({ field }) => (
-                    <Select
-                      value={field.value || ''}
-                      onValueChange={(v) => {
-                        field.onChange(v);
-                        setValue('insuranceId', '', { shouldDirty: true });
-                      }}
-                      disabled={!holder || holderContractors.length === 0}
-                    >
-                      <SelectTrigger
-                        className={cn(
-                          'h-9',
-                          errors.contractorId?.message && 'border-destructive',
-                        )}
-                      >
-                        <SelectValue
-                          placeholder={
-                            !holder
-                              ? 'Seleccioná un titular primero'
-                              : holderContractors.length === 0
-                                ? 'Titular sin contratistas'
-                                : 'Seleccioná contratista'
-                          }
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {holderContractors.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>
-                            {c.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+            <div className="space-y-1.5">
+              <RequiredLabel required>Seguro del titular</RequiredLabel>
+              <Select
+                value={currentOptionKey}
+                onValueChange={(key) => {
+                  if (!key) {
+                    setValue('insuranceId', '', { shouldDirty: true, shouldValidate: true });
+                    setValue('insuranceSource', '', { shouldDirty: true, shouldValidate: true });
+                    setValue('contractorId', '', { shouldDirty: true });
+                    return;
+                  }
+                  const [src, insId, ctrId] = key.split('|');
+                  setValue('insuranceId', insId, { shouldDirty: true, shouldValidate: true });
+                  setValue(
+                    'insuranceSource',
+                    (src as 'direct' | 'via_contractor'),
+                    { shouldDirty: true, shouldValidate: true },
+                  );
+                  setValue('contractorId', ctrId || '', {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  });
+                }}
+                disabled={!holder || loadingAvailable || availableInsurances.length === 0}
+              >
+                <SelectTrigger
+                  className={cn(
+                    'h-9',
+                    (errors.insuranceId?.message || errors.insuranceSource?.message) &&
+                      'border-destructive',
                   )}
-                />
-                <FieldError message={errors.contractorId?.message} />
-              </div>
-
-              <div className="space-y-1.5">
-                <RequiredLabel required>Seguro</RequiredLabel>
-                <Controller
-                  control={control}
-                  name="insuranceId"
-                  render={({ field }) => (
-                    <Select
-                      value={field.value || ''}
-                      onValueChange={field.onChange}
-                      disabled={!selectedContractor || insurancesForSelectedContractor.length === 0}
-                    >
-                      <SelectTrigger
-                        className={cn(
-                          'h-9',
-                          errors.insuranceId?.message && 'border-destructive',
-                        )}
-                      >
-                        <SelectValue
-                          placeholder={
-                            !selectedContractor
-                              ? 'Seleccioná un contratista primero'
-                              : insurancesForSelectedContractor.length === 0
-                                ? 'Contratista sin seguros'
-                                : 'Seleccioná seguro'
-                          }
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {insurancesForSelectedContractor.map((i) => (
-                          <SelectItem key={i.id} value={i.id}>
-                            {i.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-                <FieldError message={errors.insuranceId?.message} />
-              </div>
-            </FormGrid>
+                >
+                  <SelectValue
+                    placeholder={
+                      !holder
+                        ? 'Seleccioná un titular primero'
+                        : loadingAvailable
+                          ? 'Cargando seguros…'
+                          : availableInsurances.length === 0
+                            ? 'Titular sin seguros disponibles'
+                            : 'Seleccioná un seguro'
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableInsurances.map((opt) => {
+                    const k = buildOptionKey(opt);
+                    const label =
+                      opt.source === 'direct'
+                        ? `${opt.insurance.name} (directo)`
+                        : `${opt.insurance.name} (vía ${opt.contractor?.name ?? '—'})`;
+                    return (
+                      <SelectItem key={k} value={k}>
+                        {label}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+              <FieldError
+                message={
+                  errors.insuranceSource?.message ?? errors.insuranceId?.message
+                }
+              />
+            </div>
           ) : null}
         </div>
       </FormSection>
 
-      <FormSection
-        title="Proveedor del servicio"
-        description="Doctor o centro que atenderá la orden."
-        allowOverflow
-      >
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-2 max-w-sm">
-            {(['doctor', 'care_center'] as ProviderType[]).map((pt) => (
-              <button
-                key={pt}
-                type="button"
-                onClick={() => onProviderTypeChange(pt)}
-                className={cn(
-                  'rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors',
-                  providerType === pt
-                    ? 'border-brand-blue bg-brand-blue-soft'
-                    : 'border-border hover:bg-accent',
-                )}
-              >
-                {pt === 'doctor' ? 'Doctor' : 'Centro de atención'}
-              </button>
-            ))}
-          </div>
-          <ProviderSearchSelect
-            providerType={(providerType ?? 'doctor') as ProviderType}
-            value={provider}
-            onChange={onProviderChange}
-            required
-            error={errors.doctorId?.message ?? errors.careCenterId?.message}
-          />
-        </div>
-      </FormSection>
-
-      <FormSection title="Servicio" description="Especialidad, tipo de servicio y patología.">
+      <FormSection title="Servicio" description="Especialidad y patologías de la orden.">
         <FormGrid>
           <div className="space-y-1.5">
             <RequiredLabel required>Especialidad</RequiredLabel>
@@ -659,24 +679,24 @@ export function OrderForm({
               render={({ field }) => (
                 <Select
                   value={field.value || ''}
-                  onValueChange={field.onChange}
-                  disabled={!provider || providerSpecialties.length === 0}
+                  onValueChange={(v) => {
+                    field.onChange(v);
+                    // Al cambiar especialidad, limpiar proveedores en cada fila ST.
+                    const rows = (orderServiceTypeRows ?? []).map((r) => ({
+                      ...r,
+                      doctorId: undefined,
+                      careCenterId: undefined,
+                    }));
+                    setValue('serviceTypes', rows, { shouldDirty: true });
+                  }}
                 >
                   <SelectTrigger
                     className={cn('h-9', errors.specialtyId?.message && 'border-destructive')}
                   >
-                    <SelectValue
-                      placeholder={
-                        !provider
-                          ? 'Seleccioná un proveedor primero'
-                          : providerSpecialties.length === 0
-                            ? 'Proveedor sin especialidades'
-                            : 'Seleccioná especialidad'
-                      }
-                    />
+                    <SelectValue placeholder="Seleccioná especialidad" />
                   </SelectTrigger>
                   <SelectContent>
-                    {providerSpecialties.map((s) => (
+                    {specialties.map((s) => (
                       <SelectItem key={s.id} value={s.id}>
                         {s.name}
                       </SelectItem>
@@ -686,63 +706,6 @@ export function OrderForm({
               )}
             />
             <FieldError message={errors.specialtyId?.message} />
-          </div>
-
-          <div className="space-y-1.5 sm:col-span-2">
-            <RequiredLabel required>Tipos de servicio</RequiredLabel>
-            <Controller
-              control={control}
-              name="serviceTypeIds"
-              render={({ field }) => {
-                const selected: string[] = Array.isArray(field.value) ? field.value : [];
-                const toggle = (id: string) =>
-                  field.onChange(
-                    selected.includes(id)
-                      ? selected.filter((v) => v !== id)
-                      : [...selected, id],
-                  );
-                return (
-                  <div
-                    className={cn(
-                      'flex flex-wrap gap-2 p-3 border rounded-lg bg-muted/20 min-h-[44px]',
-                      errors.serviceTypeIds?.message && 'border-destructive',
-                    )}
-                  >
-                    {serviceTypes.length === 0 ? (
-                      <span className="text-xs text-muted-foreground">
-                        No hay tipos de servicio activos.
-                      </span>
-                    ) : (
-                      serviceTypes.map((s) => {
-                        const active = selected.includes(s.id);
-                        return (
-                          <button
-                            key={s.id}
-                            type="button"
-                            onClick={() => toggle(s.id)}
-                            className={cn(
-                              'inline-flex items-center rounded-md border px-2 py-1 text-xs font-medium transition-colors',
-                              active
-                                ? 'bg-primary text-primary-foreground border-primary'
-                                : 'bg-background hover:bg-accent',
-                            )}
-                          >
-                            {s.name}
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-                );
-              }}
-            />
-            <FieldError
-              message={
-                typeof errors.serviceTypeIds?.message === 'string'
-                  ? errors.serviceTypeIds.message
-                  : undefined
-              }
-            />
           </div>
 
           <div className="space-y-1.5 sm:col-span-2">
@@ -802,6 +765,56 @@ export function OrderForm({
             />
           </div>
         </FormGrid>
+      </FormSection>
+
+      <FormSection
+        title="Tipos de Servicio y Proveedores"
+        description="Cada Tipo de Servicio se atiende por su propio proveedor (doctor o centro). Los proveedores se filtran por la especialidad seleccionada."
+        allowOverflow
+      >
+        <Controller
+          control={control}
+          name="serviceTypes"
+          render={({ field }) => {
+            const rowErrors = (
+              errors.serviceTypes as unknown as Array<
+                | {
+                    serviceTypeId?: { message?: string };
+                    providerType?: { message?: string };
+                    doctorId?: { message?: string };
+                    careCenterId?: { message?: string };
+                  }
+                | undefined
+              >
+            )?.map?.((e) => ({
+              serviceTypeId: e?.serviceTypeId?.message,
+              providerType: e?.providerType?.message,
+              doctorId: e?.doctorId?.message,
+              careCenterId: e?.careCenterId?.message,
+            }));
+            return (
+              <ServiceProviderTable
+                value={(field.value ?? []) as Array<{
+                  serviceTypeId: string;
+                  providerType: 'doctor' | 'care_center';
+                  doctorId?: string;
+                  careCenterId?: string;
+                }>}
+                onChange={field.onChange}
+                serviceTypes={serviceTypes}
+                specialtyId={specialtyId || undefined}
+                errors={rowErrors}
+                initialProviders={initialProvidersMap}
+              />
+            );
+          }}
+        />
+        {typeof errors.serviceTypes?.message === 'string' && (
+          <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+            <AlertTriangle className="w-3 h-3" />
+            {errors.serviceTypes.message}
+          </p>
+        )}
       </FormSection>
 
       <FormSection title="Fechas" description="Fecha de emisión y fecha del servicio.">

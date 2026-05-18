@@ -10,6 +10,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { FormSwitch } from '@/components/ui/form-switch';
 import { FormSection, FormGrid } from '@/components/ui/form-section';
 import { PhoneListInput } from '@/components/ui/phone-list-input';
+import {
+  ServicePricesTable,
+  servicePricesToPayload,
+} from '@/components/ui/service-prices-table';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { insuranceSchema, type InsuranceValues } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
@@ -32,6 +36,7 @@ export function InsuranceEdit() {
       email: '',
       fiscalAddress: '',
       phones: [],
+      servicePrices: [],
       isActive: true,
     },
   });
@@ -62,6 +67,14 @@ export function InsuranceEdit() {
             i.phones?.length > 0
               ? i.phones.map((ph) => ({ number: ph.number, label: ph.label ?? '' }))
               : [],
+          servicePrices: (i.servicePrices ?? []).map((sp) => ({
+            serviceTypeId: sp.serviceTypeId,
+            serviceType: sp.serviceType
+              ? { id: sp.serviceType.id, name: sp.serviceType.name }
+              : undefined,
+            priceUsd: Number(sp.priceUsd) || 0,
+            priceEur: Number(sp.priceEur) || 0,
+          })),
           isActive: i.isActive ?? true,
         });
         setDisplayName(i.name);
@@ -86,6 +99,7 @@ export function InsuranceEdit() {
           number: p.number,
           label: p.label || undefined,
         })),
+        servicePrices: servicePricesToPayload(values.servicePrices ?? []),
         isActive: values.isActive,
       });
       notify.success('Seguro actualizado');
@@ -215,6 +229,39 @@ export function InsuranceEdit() {
                   }
                 />
               )}
+            />
+          </FormSection>
+
+          <FormSection
+            title="Precios de Cobro por Tipo de Servicio"
+            description="Estos son los montos que el seguro paga por cada servicio."
+          >
+            <Controller
+              name="servicePrices"
+              control={control}
+              render={({ field }) => {
+                const rowErrors = (
+                  errors.servicePrices as unknown as Array<
+                    | {
+                        serviceTypeId?: { message?: string };
+                        priceUsd?: { message?: string };
+                        priceEur?: { message?: string };
+                      }
+                    | undefined
+                  >
+                )?.map?.((e) => ({
+                  serviceTypeId: e?.serviceTypeId?.message,
+                  priceUsd: e?.priceUsd?.message,
+                  priceEur: e?.priceEur?.message,
+                }));
+                return (
+                  <ServicePricesTable
+                    value={field.value ?? []}
+                    onChange={field.onChange}
+                    errors={rowErrors}
+                  />
+                );
+              }}
             />
           </FormSection>
 

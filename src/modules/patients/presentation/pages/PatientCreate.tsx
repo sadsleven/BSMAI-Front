@@ -29,6 +29,7 @@ export function PatientCreate() {
       address: '',
       phones: [],
       contractorIds: [],
+      directInsuranceIds: [],
       isActive: true,
     },
   });
@@ -47,6 +48,7 @@ export function PatientCreate() {
           label: p.label || undefined,
         })),
         contractorIds: values.contractorIds ?? [],
+        directInsuranceIds: values.directInsuranceIds ?? [],
         isActive: values.isActive,
       };
       if (values.personType === 'natural') {

@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { serviceTypeGateway } from '../../infrastructure/serviceTypeGateway';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { CurrencyAmountInput } from '@/components/ui/currency-amount-input';
 import { FormSwitch } from '@/components/ui/form-switch';
 import { FormSection, FormGrid } from '@/components/ui/form-section';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
@@ -15,18 +16,12 @@ import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { ChevronLeft, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import {
-  ServiceTypePricesInput,
-  pricesToPayload,
-  type ServiceTypePricesValue,
-} from '../components/ServiceTypePricesInput';
 
 export function ServiceTypeEdit() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [fetching, setFetching] = useState(true);
   const [displayName, setDisplayName] = useState('');
-  const [priceRows, setPriceRows] = useState<ServiceTypePricesValue['rows']>([]);
 
   const {
     register,
@@ -34,11 +29,18 @@ export function ServiceTypeEdit() {
     reset,
     setValue,
     watch,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<ServiceTypeValues>({
     resolver: zodResolver(serviceTypeSchema),
     mode: 'onBlur',
-    defaultValues: { name: '', description: '', isActive: true },
+    defaultValues: {
+      name: '',
+      description: '',
+      isActive: true,
+      particularPriceUsd: 0,
+      particularPriceEur: 0,
+    },
   });
 
   const isActive = watch('isActive') ?? true;
@@ -52,17 +54,10 @@ export function ServiceTypeEdit() {
           name: p.name,
           description: p.description ?? '',
           isActive: p.isActive ?? true,
+          particularPriceUsd: Number(p.particularPriceUsd) || 0,
+          particularPriceEur: Number(p.particularPriceEur) || 0,
         });
         setDisplayName(p.name);
-        setPriceRows(
-          (p.prices ?? []).map((pr) => ({
-            insuranceId: pr.insuranceId ?? '',
-            priceUsd:
-              pr.priceUsd === null || pr.priceUsd === undefined ? undefined : Number(pr.priceUsd),
-            priceEur:
-              pr.priceEur === null || pr.priceEur === undefined ? undefined : Number(pr.priceEur),
-          })),
-        );
       } catch (e) {
         notify.fromError(e, 'No se pudo cargar el tipo de servicio.');
       } finally {
@@ -77,9 +72,10 @@ export function ServiceTypeEdit() {
     try {
       await serviceTypeGateway.update(id, {
         name: values.name,
-        description: values.description ?? null,
+        description: values.description ?? undefined,
         isActive: values.isActive,
-        prices: pricesToPayload(priceRows),
+        particularPriceUsd: values.particularPriceUsd,
+        particularPriceEur: values.particularPriceEur,
       });
       notify.success('Tipo de servicio actualizado');
       navigate('/service-types');
@@ -150,10 +146,57 @@ export function ServiceTypeEdit() {
         </FormSection>
 
         <FormSection
-          title="Precios"
-          description="Asigná precio en USD y/o EUR para cada seguro y para órdenes Particular (sin seguro). Dejá un campo vacío si no aplica."
+          title="Precio Particular"
+          description="Monto que se cobra al paciente en órdenes Contado, Crédito o Cashea. Los precios para seguros se cargan en cada Seguro."
         >
-          <ServiceTypePricesInput value={priceRows} onChange={setPriceRows} />
+          <FormGrid>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">
+                Precio Particular USD <span className="text-destructive">*</span>
+              </Label>
+              <Controller
+                control={control}
+                name="particularPriceUsd"
+                render={({ field }) => (
+                  <CurrencyAmountInput
+                    value={field.value}
+                    onChange={(v) => field.onChange(v ?? 0)}
+                    currencyPrefix="$"
+                    invalid={!!errors.particularPriceUsd}
+                  />
+                )}
+              />
+              {errors.particularPriceUsd ? (
+                <p className="text-xs text-destructive flex items-center gap-1 mt-1">
+                  <AlertTriangle className="w-3 h-3" />
+                  {errors.particularPriceUsd.message}
+                </p>
+              ) : null}
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">
+                Precio Particular EUR <span className="text-destructive">*</span>
+              </Label>
+              <Controller
+                control={control}
+                name="particularPriceEur"
+                render={({ field }) => (
+                  <CurrencyAmountInput
+                    value={field.value}
+                    onChange={(v) => field.onChange(v ?? 0)}
+                    currencyPrefix="€"
+                    invalid={!!errors.particularPriceEur}
+                  />
+                )}
+              />
+              {errors.particularPriceEur ? (
+                <p className="text-xs text-destructive flex items-center gap-1 mt-1">
+                  <AlertTriangle className="w-3 h-3" />
+                  {errors.particularPriceEur.message}
+                </p>
+              ) : null}
+            </div>
+          </FormGrid>
         </FormSection>
 
         <FormSection title="Estado">

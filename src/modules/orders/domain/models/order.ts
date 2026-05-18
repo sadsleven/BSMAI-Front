@@ -9,6 +9,7 @@ export type OrderStatus =
 export type OrderType = 'cash' | 'credit' | 'insurance' | 'cashea';
 export type ProviderType = 'doctor' | 'care_center';
 export type OrderCurrency = 'USD' | 'EUR';
+export type InsuranceSource = 'direct' | 'via_contractor';
 export type OrderPaymentType =
   | 'mobile_payment'
   | 'bank_transfer'
@@ -42,6 +43,17 @@ export interface OrderRefSummary {
 
 export type DoctorAmountCurrency = 'USD' | 'EUR' | 'BS';
 
+/** Fila ST + proveedor dentro de una orden (mapea OrderServiceType del BE). */
+export interface OrderServiceTypeRow {
+  serviceTypeId: string;
+  serviceType?: { id: string; name: string };
+  providerType: ProviderType;
+  doctorId?: string | null;
+  doctor?: (OrderRefSummary & { isLegalEntity?: boolean }) | null;
+  careCenterId?: string | null;
+  careCenter?: OrderRefSummary | null;
+}
+
 export interface Order {
   id: string;
   orderNumber: string;
@@ -57,14 +69,12 @@ export interface Order {
   contractor?: { id: string; name: string } | null;
   insuranceId?: string | null;
   insurance?: { id: string; name: string } | null;
-  providerType: ProviderType;
-  doctorId?: string | null;
-  doctor?: (OrderRefSummary & { isLegalEntity?: boolean }) | null;
-  careCenterId?: string | null;
-  careCenter?: OrderRefSummary | null;
+  /** Origen del seguro: directo o vía contratista. Null para órdenes no-insurance. */
+  insuranceSource?: InsuranceSource | null;
   specialtyId: string;
   specialty?: { id: string; name: string };
-  serviceTypes?: Array<{ id: string; name: string }>;
+  /** Filas ST + proveedor. Reemplaza `serviceTypes` y los top-level provider fields. */
+  orderServiceTypes?: OrderServiceTypeRow[];
   pathologies?: Array<{ id: string; name: string }>;
   orderDate: string;
   appointmentDate: string;
@@ -99,10 +109,24 @@ export interface ReportOrderDto {
   otherStudies?: string | null;
 }
 
+export interface BillingProviderInput {
+  providerType: ProviderType;
+  doctorId?: string;
+  careCenterId?: string;
+  amount: number;
+  currency: DoctorAmountCurrency;
+}
+
 export interface BillingOrderDto {
-  doctorAmount: number;
-  doctorAmountCurrency: DoctorAmountCurrency;
+  providers: BillingProviderInput[];
   billingExchangeRateId: string;
+}
+
+export interface OrderServiceTypeRowInput {
+  serviceTypeId: string;
+  providerType: ProviderType;
+  doctorId?: string;
+  careCenterId?: string;
 }
 
 export interface CreateOrderDto {
@@ -112,11 +136,9 @@ export interface CreateOrderDto {
   patientId: string;
   contractorId?: string;
   insuranceId?: string;
-  providerType: ProviderType;
-  doctorId?: string;
-  careCenterId?: string;
+  insuranceSource?: InsuranceSource;
   specialtyId: string;
-  serviceTypeIds: string[];
+  serviceTypes: OrderServiceTypeRowInput[];
   pathologyIds?: string[];
   orderDate: string;
   appointmentDate: string;

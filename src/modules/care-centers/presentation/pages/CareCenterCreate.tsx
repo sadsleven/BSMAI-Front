@@ -13,6 +13,7 @@ import {
 } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
+import { servicePricesToPayload } from '@/components/ui/service-prices-table';
 import { ChevronLeft } from 'lucide-react';
 
 function cleanPaymentMethod(m: PaymentMethodValues): CareCenterPaymentMethod {
@@ -48,6 +49,7 @@ export function CareCenterCreate() {
       phones: [],
       specialtyIds: [],
       paymentMethods: [],
+      servicePrices: [],
       isActive: true,
     },
   });
@@ -66,6 +68,7 @@ export function CareCenterCreate() {
         })),
         specialtyIds: values.specialtyIds,
         paymentMethods: (values.paymentMethods ?? []).map(cleanPaymentMethod),
+        servicePrices: servicePricesToPayload(values.servicePrices ?? []),
         isActive: values.isActive,
       });
       notify.success('Centro creado exitosamente');

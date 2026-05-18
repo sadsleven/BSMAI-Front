@@ -190,6 +190,10 @@ export const patientSchema = z
       .array(z.string().uuid())
       .max(50, 'Máximo 50 contratistas por paciente')
       .optional(),
+    directInsuranceIds: z
+      .array(z.string().uuid())
+      .max(50, 'Máximo 50 seguros directos por paciente')
+      .optional(),
     isActive: z.boolean().optional(),
   })
   .superRefine((val, ctx) => {
@@ -284,8 +288,66 @@ export type PathologyValues = z.infer<typeof pathologySchema>;
 export const branchSchema = simpleNamedSchema(200);
 export type BranchValues = z.infer<typeof branchSchema>;
 
-export const serviceTypeSchema = simpleNamedSchema(200);
+/**
+ * Tipo de Servicio: nombre + precio Particular (USD y EUR, ambos obligatorios).
+ * Los precios por Seguro/Doctor/Centro viven en sus propios formularios.
+ */
+export const serviceTypeSchema = z.object({
+  name: z
+    .string({ error: 'El nombre es obligatorio' })
+    .min(2, 'El nombre debe tener al menos 2 caracteres')
+    .max(200, 'El nombre no puede superar 200 caracteres'),
+  description: z
+    .string()
+    .max(500, 'La descripción no puede superar 500 caracteres')
+    .optional(),
+  isActive: z.boolean().optional(),
+  particularPriceUsd: z
+    .number({ error: 'El precio Particular USD es obligatorio' })
+    .positive('Debe ser > 0')
+    .refine((v) => Math.round(v * 100) === v * 100, { message: 'Máximo 2 decimales' }),
+  particularPriceEur: z
+    .number({ error: 'El precio Particular EUR es obligatorio' })
+    .positive('Debe ser > 0')
+    .refine((v) => Math.round(v * 100) === v * 100, { message: 'Máximo 2 decimales' }),
+});
 export type ServiceTypeValues = z.infer<typeof serviceTypeSchema>;
+
+/**
+ * Lista de precios por Tipo de Servicio (Seguro/Doctor/Centro). Ambos USD y EUR
+ * obligatorios y > 0. Sin duplicados por serviceTypeId.
+ */
+const servicePriceRowSchema = z.object({
+  serviceTypeId: z.string().uuid({ message: 'Seleccioná un servicio' }),
+  priceUsd: z
+    .number({ error: 'Precio USD requerido' })
+    .positive('Debe ser > 0')
+    .refine((v) => Math.round(v * 100) === v * 100, { message: 'Máximo 2 decimales' }),
+  priceEur: z
+    .number({ error: 'Precio EUR requerido' })
+    .positive('Debe ser > 0')
+    .refine((v) => Math.round(v * 100) === v * 100, { message: 'Máximo 2 decimales' }),
+});
+
+export const servicePricesArraySchema = z
+  .array(servicePriceRowSchema)
+  .max(500, 'Máximo 500 precios')
+  .superRefine((rows, ctx) => {
+    const seen = new Set<string>();
+    rows.forEach((r, i) => {
+      if (!r.serviceTypeId) return;
+      if (seen.has(r.serviceTypeId)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [i, 'serviceTypeId'],
+          message: 'Servicio duplicado',
+        });
+      }
+      seen.add(r.serviceTypeId);
+    });
+  })
+  .optional();
+export type ServicePricesArrayValues = z.infer<typeof servicePricesArraySchema>;
 
 /**
  * Contractor name. Reglas relajadas a propósito: cualquier carácter permitido
@@ -346,6 +408,7 @@ export const insuranceSchema = z.object({
     .max(500, 'El domicilio fiscal no puede superar 500 caracteres')
     .optional(),
   phones: phonesArraySchema,
+  servicePrices: servicePricesArraySchema,
   isActive: z.boolean().optional(),
 });
 export type InsuranceValues = z.infer<typeof insuranceSchema>;
@@ -444,6 +507,7 @@ export const doctorSchema = z
       .min(1, 'Asigná al menos una especialidad')
       .max(20, 'Máximo 20 especialidades'),
     paymentMethods: paymentMethodsArraySchema,
+    servicePrices: servicePricesArraySchema,
     isActive: z.boolean().optional(),
   })
   .superRefine((val, ctx) => {
@@ -484,6 +548,7 @@ export const careCenterSchema = z.object({
     .min(1, 'Asigná al menos una especialidad')
     .max(50, 'Máximo 50 especialidades'),
   paymentMethods: paymentMethodsArraySchema,
+  servicePrices: servicePricesArraySchema,
   isActive: z.boolean().optional(),
 });
 export type CareCenterValues = z.infer<typeof careCenterSchema>;
@@ -574,12 +639,20 @@ export const orderSchema = z
     patientId: z.string().uuid({ message: 'Paciente requerido' }),
     contractorId: z.string().uuid().optional().or(z.literal('')),
     insuranceId: z.string().uuid().optional().or(z.literal('')),
-    providerType: z.enum(PROVIDER_TYPES, { error: 'Proveedor requerido' }),
-    doctorId: z.string().uuid().optional().or(z.literal('')),
-    careCenterId: z.string().uuid().optional().or(z.literal('')),
+    insuranceSource: z
+      .enum(['direct', 'via_contractor'])
+      .optional()
+      .or(z.literal('')),
     specialtyId: z.string().uuid({ message: 'Especialidad requerida' }),
-    serviceTypeIds: z
-      .array(z.string().uuid())
+    serviceTypes: z
+      .array(
+        z.object({
+          serviceTypeId: z.string().uuid({ message: 'Tipo de servicio requerido' }),
+          providerType: z.enum(PROVIDER_TYPES, { error: 'Proveedor requerido' }),
+          doctorId: z.string().uuid().optional().or(z.literal('')),
+          careCenterId: z.string().uuid().optional().or(z.literal('')),
+        }),
+      )
       .min(1, 'Asigná al menos un tipo de servicio')
       .max(50, 'Máximo 50 tipos de servicio'),
     pathologyIds: z
@@ -601,29 +674,77 @@ export const orderSchema = z
     payments: z.array(orderPaymentSchema).max(50).optional(),
   })
   .superRefine((val, ctx) => {
-    if (val.providerType === 'doctor') {
-      if (!val.doctorId)
-        ctx.addIssue({ code: 'custom', path: ['doctorId'], message: 'Doctor requerido' });
-    } else {
-      if (!val.careCenterId)
+    // Validación de provider por fila — exactamente uno de doctorId/careCenterId.
+    val.serviceTypes.forEach((row, i) => {
+      if (row.providerType === 'doctor') {
+        if (!row.doctorId) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['serviceTypes', i, 'doctorId'],
+            message: 'Doctor requerido',
+          });
+        }
+        if (row.careCenterId) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['serviceTypes', i, 'careCenterId'],
+            message: 'Fila Doctor no admite Centro',
+          });
+        }
+      } else if (row.providerType === 'care_center') {
+        if (!row.careCenterId) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['serviceTypes', i, 'careCenterId'],
+            message: 'Centro requerido',
+          });
+        }
+        if (row.doctorId) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['serviceTypes', i, 'doctorId'],
+            message: 'Fila Centro no admite Doctor',
+          });
+        }
+      }
+    });
+    // Sin STs duplicados.
+    const stSet = new Set<string>();
+    val.serviceTypes.forEach((row, i) => {
+      if (!row.serviceTypeId) return;
+      if (stSet.has(row.serviceTypeId)) {
         ctx.addIssue({
           code: 'custom',
-          path: ['careCenterId'],
-          message: 'Centro requerido',
+          path: ['serviceTypes', i, 'serviceTypeId'],
+          message: 'Tipo de servicio duplicado',
         });
-    }
+      }
+      stSet.add(row.serviceTypeId);
+    });
     if (val.type === 'insurance') {
-      if (!val.contractorId)
-        ctx.addIssue({
-          code: 'custom',
-          path: ['contractorId'],
-          message: 'Contratista requerido',
-        });
       if (!val.insuranceId)
         ctx.addIssue({
           code: 'custom',
           path: ['insuranceId'],
           message: 'Seguro requerido',
+        });
+      if (!val.insuranceSource)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['insuranceSource'],
+          message: 'Elegí un seguro del titular (directo o vía contratista)',
+        });
+      if (val.insuranceSource === 'via_contractor' && !val.contractorId)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['contractorId'],
+          message: 'Contratista requerido para seguro vía contratista',
+        });
+      if (val.insuranceSource === 'direct' && val.contractorId)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['contractorId'],
+          message: 'Seguro directo no admite contratista',
         });
     }
     if (val.orderDate && val.appointmentDate) {

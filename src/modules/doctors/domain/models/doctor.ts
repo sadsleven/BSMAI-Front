@@ -1,4 +1,5 @@
 import type { Specialty } from '@/modules/specialties/domain/models/specialty';
+import type { ServicePriceRow, ServicePricePayload } from '@/lib/types/servicePrice';
 
 export type PaymentMethodType = 'mobile_payment' | 'bank_transfer' | 'other';
 
@@ -32,6 +33,8 @@ export interface Doctor {
   specialties: Specialty[];
   phones: DoctorPhone[];
   paymentMethods: DoctorPaymentMethod[];
+  /** Precios de pago al doctor por Tipo de Servicio realizado. */
+  servicePrices?: ServicePriceRow[];
   createdAt?: string;
   updatedAt?: string;
   deletedAt?: string | null;
@@ -47,6 +50,7 @@ export interface CreateDoctorDto {
   phones: { number: string; label?: string }[];
   specialtyIds: string[];
   paymentMethods?: DoctorPaymentMethod[];
+  servicePrices?: ServicePricePayload[];
   isActive?: boolean;
 }
 

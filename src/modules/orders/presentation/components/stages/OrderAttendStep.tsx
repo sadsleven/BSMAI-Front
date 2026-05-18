@@ -9,7 +9,12 @@ import { notify } from '@/lib/notifications/toast';
 import { getHttpErrorMessage } from '@/lib/api';
 import { orderGateway } from '../../../infrastructure/orderGateway';
 import type { Order } from '../../../domain/models/order';
-import { downloadOrdenInternaForServiceType } from '../orderExcel';
+import {
+  downloadOrdenInternaForProvider,
+  groupOrderProviders,
+  type OrderProviderGroup,
+} from '../orderExcel';
+import { downloadOrdenInternaPdfForProvider } from '../orderPdf';
 
 /**
  * Paso 2 — Atención del paciente.
@@ -50,10 +55,17 @@ export function OrderAttendStep({
     }
   };
 
-  const handleDownloadST = async (st: { id: string; name: string }) => {
-    setDownloadingId(st.id);
+  const handleDownloadProvider = async (
+    group: OrderProviderGroup,
+    fmt: 'xlsx' | 'pdf',
+  ) => {
+    setDownloadingId(`${group.key}:${fmt}`);
     try {
-      await downloadOrdenInternaForServiceType(order, st);
+      if (fmt === 'xlsx') {
+        await downloadOrdenInternaForProvider(order, group);
+      } else {
+        await downloadOrdenInternaPdfForProvider(order, group);
+      }
     } catch (err) {
       notify.error(getHttpErrorMessage(err, 'No se pudo generar la orden interna'));
     } finally {
@@ -61,44 +73,65 @@ export function OrderAttendStep({
     }
   };
 
-  const serviceTypes = order.serviceTypes ?? [];
+  const providerGroups = groupOrderProviders(order);
 
   return (
     <div className="space-y-5">
       <FormSection
         title="Órdenes internas"
-        description="Un archivo XLSX por cada tipo de servicio registrado en la orden. La factura completa se descarga en el Paso 4."
+        description="Un archivo XLSX por cada proveedor distinto de la orden, agrupando sus Tipos de Servicio. La factura completa se descarga en el Paso 4."
       >
-        {serviceTypes.length === 0 ? (
+        {providerGroups.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            La orden no tiene tipos de servicio asignados.
+            La orden no tiene proveedores asignados.
           </p>
         ) : (
           <ul className="space-y-2">
-            {serviceTypes.map((st) => (
+            {providerGroups.map((g) => (
               <li
-                key={st.id}
+                key={g.key}
                 className="rounded-lg border bg-card p-3 flex items-center gap-3"
               >
                 <div className="w-10 h-10 rounded-md bg-brand-blue-soft text-brand-blue-strong flex items-center justify-center shrink-0">
                   <FileSpreadsheet className="w-5 h-5" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold truncate">{st.name}</div>
-                  <div className="text-xs text-muted-foreground">
-                    Orden interna · {order.orderNumber}
+                  <div className="text-sm font-semibold truncate">
+                    {g.providerName}
+                    <span className="ml-2 text-xs text-muted-foreground font-normal">
+                      ({g.providerType === 'doctor' ? 'Doctor' : 'Centro'})
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    {g.rows.length} servicio{g.rows.length === 1 ? '' : 's'} ·{' '}
+                    {g.rows
+                      .map((r) => r.serviceType?.name)
+                      .filter(Boolean)
+                      .join(', ')}
                   </div>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleDownloadST(st)}
-                  disabled={downloadingId !== null}
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  {downloadingId === st.id ? 'Generando…' : 'Descargar XLSX'}
-                </Button>
+                <div className="flex flex-col gap-1.5 shrink-0">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleDownloadProvider(g, 'xlsx')}
+                    disabled={downloadingId !== null}
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    {downloadingId === `${g.key}:xlsx` ? 'Generando…' : 'XLSX'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleDownloadProvider(g, 'pdf')}
+                    disabled={downloadingId !== null}
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    {downloadingId === `${g.key}:pdf` ? 'Generando…' : 'PDF'}
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>

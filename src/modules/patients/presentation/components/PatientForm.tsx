@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Controller, useFormContext } from 'react-hook-form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,6 +8,8 @@ import { RifInput } from '@/components/ui/rif-input';
 import { DatePicker } from '@/components/ui/date-picker';
 import { PhoneListInput } from '@/components/ui/phone-list-input';
 import { ContractorMultiSelect } from '@/components/ui/contractor-multi-select';
+import { InsuranceMultiSelect } from '@/components/ui/insurance-multi-select';
+import { Badge } from '@/components/ui/badge';
 import { FormSwitch } from '@/components/ui/form-switch';
 import { FormSection, FormGrid } from '@/components/ui/form-section';
 import {
@@ -16,7 +18,10 @@ import {
 import { AlertTriangle, User, Building2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { PatientValues } from '@/lib/validations/schemas';
+import { notify } from '@/lib/notifications/toast';
+import { contractorGateway } from '@/modules/contractors/infrastructure/contractorGateway';
 import type { Contractor } from '@/modules/contractors/domain/models/contractor';
+import type { Insurance } from '@/modules/insurances/domain/models/insurance';
 
 interface FieldErrorProps {
   message?: string;
@@ -34,10 +39,13 @@ function FieldError({ message }: FieldErrorProps) {
 export type PatientFormProps = {
   /** Pre-existing contractors (for showing stale chips on edit). */
   existingContractors?: Contractor[];
+  /** Pre-existing direct insurances (for showing stale chips on edit). */
+  existingDirectInsurances?: Insurance[];
 };
 
 export function PatientForm({
   existingContractors,
+  existingDirectInsurances,
 }: PatientFormProps = {}) {
   const {
     register,
@@ -52,6 +60,106 @@ export function PatientForm({
   const phones = watch('phones') ?? [];
   const personType = watch('personType');
   const isLegal = personType === 'legal_entity';
+  const contractorIds = watch('contractorIds') ?? [];
+  const directInsuranceIds = watch('directInsuranceIds') ?? [];
+
+  // Catálogo de contratistas asignables para mapear ids → insurances.
+  const [assignableContractors, setAssignableContractors] = useState<Contractor[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await contractorGateway.listAssignable();
+        if (!cancelled) setAssignableContractors(list);
+      } catch {
+        if (!cancelled) setAssignableContractors([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Mapa id → contratista (incluye existentes stale, por si están en value).
+  const contractorById = useMemo(() => {
+    const m = new Map<string, Contractor>();
+    for (const c of existingContractors ?? []) m.set(c.id, c);
+    for (const c of assignableContractors) m.set(c.id, c);
+    return m;
+  }, [existingContractors, assignableContractors]);
+
+  // Seguros cubiertos por los contratistas seleccionados, con el contratista que los cubre.
+  const coveredByContractor = useMemo(() => {
+    const map = new Map<string, { insurance: Insurance; contractor: Contractor }>();
+    for (const cid of contractorIds) {
+      const c = contractorById.get(cid);
+      if (!c) continue;
+      for (const ins of c.insurances ?? []) {
+        if (!map.has(ins.id)) map.set(ins.id, { insurance: ins, contractor: c });
+      }
+    }
+    return map;
+  }, [contractorIds, contractorById]);
+
+  // disabledOptions para InsuranceMultiSelect de directos.
+  const disabledDirectOptions = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const [insId, { contractor }] of coveredByContractor.entries()) {
+      m.set(insId, `Ya cubierto por el contratista "${contractor.name}"`);
+    }
+    return m;
+  }, [coveredByContractor]);
+
+  // Aviso al usuario cuando un seguro directo ya seleccionado pasa a estar cubierto por un contratista.
+  const [warnedConflictIds, setWarnedConflictIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    const conflicts = directInsuranceIds.filter((id) => coveredByContractor.has(id));
+    if (!conflicts.length) {
+      if (warnedConflictIds.size) setWarnedConflictIds(new Set());
+      return;
+    }
+    const newOnes = conflicts.filter((id) => !warnedConflictIds.has(id));
+    if (!newOnes.length) return;
+    for (const id of newOnes) {
+      const entry = coveredByContractor.get(id);
+      if (!entry) continue;
+      notify.warning(
+        `El seguro "${entry.insurance.name}" ahora está cubierto por el contratista "${entry.contractor.name}". Quitalo de los seguros directos para evitar el conflicto al guardar.`,
+      );
+    }
+    setWarnedConflictIds((prev) => {
+      const next = new Set(prev);
+      for (const id of newOnes) next.add(id);
+      return next;
+    });
+  }, [directInsuranceIds, coveredByContractor, warnedConflictIds]);
+
+  // Resumen calculado: directos + vía contratista, dedup por seguro (directo gana).
+  const availableSummary = useMemo(() => {
+    type Row = { id: string; name: string; source: 'direct' | 'via_contractor'; contractorName?: string };
+    const map = new Map<string, Row>();
+    // Directos primero (incluye existing stale por si están en value)
+    const directLookup = new Map<string, Insurance>();
+    for (const ins of existingDirectInsurances ?? []) directLookup.set(ins.id, ins);
+    for (const id of directInsuranceIds) {
+      const ins = directLookup.get(id);
+      if (ins) {
+        map.set(id, { id, name: ins.name, source: 'direct' });
+      } else {
+        map.set(id, { id, name: id.slice(0, 6) + '…', source: 'direct' });
+      }
+    }
+    for (const [insId, { insurance, contractor }] of coveredByContractor.entries()) {
+      if (map.has(insId)) continue;
+      map.set(insId, {
+        id: insId,
+        name: insurance.name,
+        source: 'via_contractor',
+        contractorName: contractor.name,
+      });
+    }
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [directInsuranceIds, existingDirectInsurances, coveredByContractor]);
 
   const phoneErrors = (errors.phones as unknown as Array<{ number?: { message?: string } } | undefined>)?.map?.(
     (e) => (e?.number ? { number: e.number.message } : undefined),
@@ -284,7 +392,7 @@ export function PatientForm({
 
       <FormSection
         title="Contratistas"
-        description="Asigná uno o más contratistas al paciente. Los seguros del paciente se derivan de los contratistas asociados."
+        description="Asigná uno o más contratistas al paciente. Cada contratista aporta sus propios seguros."
       >
         <Controller
           name="contractorIds"
@@ -302,6 +410,59 @@ export function PatientForm({
             />
           )}
         />
+      </FormSection>
+
+      <FormSection
+        title="Seguros directos"
+        description="Seguros asignados directamente al paciente (sin contratista). No podés elegir seguros ya cubiertos por algún contratista seleccionado."
+      >
+        <Controller
+          name="directInsuranceIds"
+          control={control}
+          render={({ field }) => (
+            <InsuranceMultiSelect
+              label="Seguros directos"
+              value={field.value ?? []}
+              onChange={field.onChange}
+              existing={existingDirectInsurances}
+              disabledOptions={disabledDirectOptions}
+              error={
+                typeof errors.directInsuranceIds?.message === 'string'
+                  ? errors.directInsuranceIds.message
+                  : undefined
+              }
+            />
+          )}
+        />
+      </FormSection>
+
+      <FormSection
+        title="Seguros disponibles totales"
+        description="Resumen calculado: unión de seguros directos y los aportados por los contratistas seleccionados."
+      >
+        {availableSummary.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Sin seguros disponibles. Asigná un contratista o un seguro directo.
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {availableSummary.map((row) => (
+              <span
+                key={`${row.id}-${row.source}`}
+                className="inline-flex items-center gap-2 rounded-md border px-2 py-1 text-xs bg-card"
+              >
+                <span className="font-medium text-foreground">{row.name}</span>
+                {row.source === 'direct' ? (
+                  <Badge variant="outline" className="text-[10px]">Directo</Badge>
+                ) : (
+                  <Badge variant="outline" className="text-[10px]">
+                    Vía {row.contractorName}
+                  </Badge>
+                )}
+              </span>
+            ))}
+          </div>
+        )}
       </FormSection>
 
       <FormSection title="Estado">

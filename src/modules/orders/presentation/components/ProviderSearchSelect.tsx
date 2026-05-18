@@ -21,6 +21,12 @@ export type ProviderSearchSelectProps = {
   required?: boolean;
   disabled?: boolean;
   error?: string;
+  /** Filtra resultados a proveedores con esta especialidad. */
+  specialtyId?: string;
+  /** Etiqueta y bordes compactos para uso embebido en tabla. */
+  compact?: boolean;
+  /** Oculta el label superior. */
+  hideLabel?: boolean;
 };
 
 export function providerLabel(v: ProviderSelectValue): string {
@@ -39,6 +45,9 @@ export function ProviderSearchSelect({
   required,
   disabled,
   error,
+  specialtyId,
+  compact,
+  hideLabel,
 }: ProviderSearchSelectProps) {
   const [query, setQuery] = useState('');
   const [docResults, setDocResults] = useState<Doctor[]>([]);
@@ -66,6 +75,7 @@ export function ProviderSearchSelect({
             limit: 10,
             search: trimmed || undefined,
             isActive: true,
+            specialtyId: specialtyId || undefined,
           });
           setDocResults(res.data);
         } else {
@@ -73,6 +83,7 @@ export function ProviderSearchSelect({
             limit: 10,
             search: trimmed || undefined,
             isActive: true,
+            specialtyId: specialtyId || undefined,
           });
           setCcResults(res.data);
         }
@@ -84,19 +95,21 @@ export function ProviderSearchSelect({
       }
     }, 300);
     return () => clearTimeout(t);
-  }, [query, open, providerType]);
+  }, [query, open, providerType, specialtyId]);
 
   const selectedLabel = useMemo(() => (value ? providerLabel(value) : ''), [value]);
   const Icon = providerType === 'doctor' ? BriefcaseMedical : Hospital;
   const labelText = providerType === 'doctor' ? 'Doctor' : 'Centro de atención';
 
   return (
-    <div className="space-y-1.5" ref={wrapRef}>
-      <Label className="text-sm font-medium flex items-center gap-2">
-        <Icon className="w-4 h-4 text-muted-foreground" />
-        {labelText}
-        {required ? <span className="text-destructive">*</span> : null}
-      </Label>
+    <div className={cn('space-y-1.5', compact && 'space-y-0')} ref={wrapRef}>
+      {!hideLabel && (
+        <Label className="text-sm font-medium flex items-center gap-2">
+          <Icon className="w-4 h-4 text-muted-foreground" />
+          {labelText}
+          {required ? <span className="text-destructive">*</span> : null}
+        </Label>
+      )}
       {value ? (
         <div className={cn('flex items-center gap-2 p-2 border rounded-lg bg-muted/30', error && 'border-destructive')}>
           <Badge variant="default">{selectedLabel}</Badge>

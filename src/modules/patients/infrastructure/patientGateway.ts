@@ -3,6 +3,7 @@ import type {
   CreatePatientDto,
   PaginatedResponse,
   Patient,
+  PatientAvailableInsurance,
   PatientsQuery,
   UpdatePatientDto,
 } from '../domain/models/patient';
@@ -37,11 +38,11 @@ export const patientGateway = {
     return data;
   },
   /**
-   * Seguros disponibles para un paciente — derivados de los seguros asignados a
-   * sus contratistas activos. Endpoint dedicado del BE: `GET /patients/:id/available-insurances`.
+   * Seguros disponibles para un paciente, con origen (`direct` o `via_contractor`)
+   * y el contratista cuando aplica. Endpoint BE: `GET /patients/:id/available-insurances`.
    */
-  async getAvailableInsurances(id: string): Promise<Array<{ id: string; name: string }>> {
-    const { data } = await api.get<Array<{ id: string; name: string }>>(
+  async getAvailableInsurances(id: string): Promise<PatientAvailableInsurance[]> {
+    const { data } = await api.get<PatientAvailableInsurance[]>(
       `/patients/${id}/available-insurances`,
     );
     return data;
