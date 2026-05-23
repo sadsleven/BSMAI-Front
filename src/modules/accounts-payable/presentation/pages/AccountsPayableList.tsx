@@ -393,8 +393,8 @@ export function AccountsPayableList() {
                       </Badge>
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono">
-                      {a.order.doctorAmount
-                        ? `${Number(a.order.doctorAmount).toFixed(2)} ${a.order.doctorAmountCurrency}`
+                      {a.order?.doctorAmount
+                        ? `${Number(a.order?.doctorAmount).toFixed(2)} ${a.order.doctorAmountCurrency}`
                         : '—'}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono">

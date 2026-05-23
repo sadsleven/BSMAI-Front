@@ -228,10 +228,10 @@ export function OrderDetail({ orderId, open, onOpenChange }: OrderDetailProps) {
               value={`${Number(order.priceAmount).toFixed(2)} ${order.priceCurrency}`}
               mono
             />
-            {order.doctorAmount != null && order.doctorAmountCurrency && (
+            {order?.doctorAmount != null && order.doctorAmountCurrency && (
               <DetailRow
                 label="Monto al proveedor"
-                value={`${Number(order.doctorAmount).toFixed(2)} ${order.doctorAmountCurrency}`}
+                value={`${Number(order?.doctorAmount).toFixed(2)} ${order.doctorAmountCurrency}`}
                 mono
               />
             )}
