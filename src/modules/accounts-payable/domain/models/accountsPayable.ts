@@ -1,4 +1,9 @@
-import type { Order, PaymentCurrency, OrderPaymentType } from '@/modules/orders/domain/models/order';
+import type {
+  DoctorAmountCurrency,
+  Order,
+  OrderPaymentType,
+  PaymentCurrency,
+} from '@/modules/orders/domain/models/order';
 
 export type AccountsPayableStatus = 'paid' | 'unpaid' | 'partially_paid';
 /** Status derivado en FE: incluye `undefined` cuando la orden aún no tiene doctorAmount. */
@@ -29,6 +34,9 @@ export interface AccountsPayable {
   doctor?: { id: string; firstName?: string | null; lastName?: string | null; isLegalEntity?: boolean } | null;
   careCenterId?: string | null;
   careCenter?: { id: string; businessName?: string | null } | null;
+  /** Monto a pagar a este proveedor (en moneda original). Null mientras no se facture. */
+  providerAmount?: string | number | null;
+  providerAmountCurrency?: DoctorAmountCurrency | null;
   status: AccountsPayableStatus;
   paidAt?: string | null;
   payments?: AccountsPayablePayment[];
@@ -88,8 +96,8 @@ export const EFFECTIVE_STATUS_LABEL: Record<EffectiveAccountsPayableStatus, stri
 export function effectiveStatus(
   a: AccountsPayable,
 ): EffectiveAccountsPayableStatus {
-  const amt = Number(a.order?.doctorAmount ?? 0);
-  if (!a.order?.doctorAmount || !Number.isFinite(amt) || amt <= 0) {
+  const amt = Number(a.providerAmount ?? 0);
+  if (!a.providerAmount || !Number.isFinite(amt) || amt <= 0) {
     return 'undefined';
   }
   return a.status;
@@ -119,8 +127,8 @@ export function amountToReceive(
   a: AccountsPayable,
   rates?: { doctorNaturalTaxRate: number; doctorLegalTaxRate: number } | null,
 ): number | null {
-  if (!a.order?.doctorAmount) return null;
-  const amount = Number(a.order?.doctorAmount);
+  if (!a.providerAmount) return null;
+  const amount = Number(a.providerAmount);
   if (a.recipientType === 'doctor') {
     const r = rates ?? { doctorNaturalTaxRate: 0.03, doctorLegalTaxRate: 0.05 };
     const taxRate = a.doctor?.isLegalEntity ? r.doctorLegalTaxRate : r.doctorNaturalTaxRate;
@@ -142,10 +150,10 @@ export function billingRateBs(a: AccountsPayable): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-/** Pagado convertido a moneda original del doctorAmount. */
+/** Pagado convertido a moneda original del providerAmount. */
 export function paidOriginal(a: AccountsPayable): number | null {
   const pBs = paidBs(a);
-  if (a.order.doctorAmountCurrency === 'BS') return pBs;
+  if (a.providerAmountCurrency === 'BS') return pBs;
   const r = billingRateBs(a);
   if (r === null) return null;
   return pBs / r;
@@ -158,7 +166,7 @@ export function targetBs(
 ): number | null {
   const ar = amountToReceive(a, rates);
   if (ar === null) return null;
-  if (a.order.doctorAmountCurrency === 'BS') return ar;
+  if (a.providerAmountCurrency === 'BS') return ar;
   const r = billingRateBs(a);
   if (r === null) return null;
   return ar * r;
@@ -181,7 +189,7 @@ export function pendingOriginal(
 ): number | null {
   const p = pendingBs(a, rates);
   if (p === null) return null;
-  if (a.order.doctorAmountCurrency === 'BS') return p;
+  if (a.providerAmountCurrency === 'BS') return p;
   const r = billingRateBs(a);
   if (r === null) return null;
   return p / r;

@@ -6,7 +6,7 @@ import {
   displayName,
   displayIdentifier,
   patientInitials,
-  patientInsurancesFromContractors,
+  patientAllInsurances,
   type PersonType,
   type Patient,
 } from '../../domain/models/patient';
@@ -465,7 +465,7 @@ export function PatientList() {
                         </div>
                         <div className="text-xs text-muted-foreground truncate">{p.email || '—'}</div>
                         {(() => {
-                          const list = patientInsurancesFromContractors(p);
+                          const list = patientAllInsurances(p);
                           if (!list.length) return null;
                           return (
                             <div className="flex flex-wrap gap-1 mt-1 max-w-[280px]">
@@ -590,6 +590,7 @@ export function PatientList() {
           total={metadata.total}
           lastPage={metadata.lastPage}
           onPageChange={onPage}
+          onPageSizeChange={(limit) => updateParam({ limit: String(limit) })}
           itemLabel="pacientes"
         />
       </div>

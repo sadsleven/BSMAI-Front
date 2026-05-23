@@ -256,7 +256,10 @@ function formatShortDate(iso: string): string {
 }
 
 function serviceLabel(o: Order): string {
-  const sts = (o.serviceTypes ?? []).map((s) => s.name).join(' · ');
+  const sts = (o.orderServiceTypes ?? [])
+    .map((row) => row.serviceType?.name)
+    .filter((n): n is string => !!n)
+    .join(' · ');
   if (sts) return sts;
   return o.specialty?.name ?? '—';
 }

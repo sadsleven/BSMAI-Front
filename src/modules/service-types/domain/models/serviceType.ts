@@ -1,44 +1,28 @@
-import type { Insurance } from '@/modules/insurances/domain/models/insurance';
-
-/** Precio por (ServiceType, Insurance | Particular). insurance null = Particular. */
-export interface ServiceTypePrice {
-  id?: string;
-  insuranceId?: string | null;
-  insurance?: Insurance | null;
-  priceUsd?: string | number | null;
-  priceEur?: string | number | null;
-}
-
+/**
+ * Tipo de Servicio. Sólo guarda el precio "Particular" (USD y EUR) — los precios
+ * por Seguro, Doctor o Centro viven en sus propias sub-tablas.
+ */
 export interface ServiceType {
   id: string;
   name: string;
   description?: string | null;
   isActive: boolean;
-  prices?: ServiceTypePrice[];
+  particularPriceUsd: string | number;
+  particularPriceEur: string | number;
   createdAt?: string;
   updatedAt?: string;
   deletedAt?: string | null;
-}
-
-export interface ServiceTypePricePayload {
-  insuranceId?: string;
-  priceUsd?: number;
-  priceEur?: number;
 }
 
 export interface CreateServiceTypeDto {
   name: string;
   description?: string;
   isActive?: boolean;
-  prices?: ServiceTypePricePayload[];
+  particularPriceUsd: number;
+  particularPriceEur: number;
 }
 
-export interface UpdateServiceTypeDto {
-  name?: string;
-  description?: string | null;
-  isActive?: boolean;
-  prices?: ServiceTypePricePayload[];
-}
+export type UpdateServiceTypeDto = Partial<CreateServiceTypeDto>;
 
 export interface ServiceTypesQuery {
   page?: number;

@@ -15,6 +15,7 @@ import {
 } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
+import { servicePricesToPayload } from '@/components/ui/service-prices-table';
 import { ChevronLeft } from 'lucide-react';
 
 function cleanPaymentMethod(m: PaymentMethodValues): DoctorPaymentMethod {
@@ -58,6 +59,7 @@ export function DoctorEdit() {
       phones: [],
       specialtyIds: [],
       paymentMethods: [],
+      servicePrices: [],
       isActive: true,
     },
   });
@@ -90,6 +92,14 @@ export function DoctorEdit() {
             accountHolderName: m.accountHolderName ?? '',
             description: m.description ?? '',
           })),
+          servicePrices: (d.servicePrices ?? []).map((sp) => ({
+            serviceTypeId: sp.serviceTypeId,
+            serviceType: sp.serviceType
+              ? { id: sp.serviceType.id, name: sp.serviceType.name }
+              : undefined,
+            priceUsd: Number(sp.priceUsd) || 0,
+            priceEur: Number(sp.priceEur) || 0,
+          })),
           isActive: d.isActive,
         });
         setDisplayName(fullName(d));
@@ -119,6 +129,7 @@ export function DoctorEdit() {
         })),
         specialtyIds: values.specialtyIds,
         paymentMethods: (values.paymentMethods ?? []).map(cleanPaymentMethod),
+        servicePrices: servicePricesToPayload(values.servicePrices ?? []),
         isActive: values.isActive,
       });
       notify.success('Doctor actualizado');

@@ -38,6 +38,8 @@ import {
   type AccountsReceivable,
   type AccountsReceivableStatus,
 } from '../../domain/models/accountsReceivable';
+import { insuranceGateway } from '@/modules/insurances/infrastructure/insuranceGateway';
+import type { Insurance } from '@/modules/insurances/domain/models/insurance';
 
 type SortBy = 'orderNumber' | 'createdAt' | 'updatedAt';
 
@@ -47,6 +49,7 @@ function readQuery(sp: URLSearchParams) {
     limit: Number(sp.get('limit') ?? 10) || 10,
     search: sp.get('search') ?? '',
     status: (sp.get('status') ?? '') as '' | AccountsReceivableStatus,
+    insuranceId: sp.get('insuranceId') ?? '',
     sortBy: (sp.get('sortBy') ?? 'createdAt') as SortBy,
     sortDir: (sp.get('sortDir') ?? 'DESC') as SortDir,
   };
@@ -64,6 +67,17 @@ export function AccountsReceivableList() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [insurances, setInsurances] = useState<Insurance[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        setInsurances(await insuranceGateway.listAssignable());
+      } catch {
+        setInsurances([]);
+      }
+    })();
+  }, []);
 
   const updateParam = useCallback(
     (patch: Record<string, string | number | undefined>) => {
@@ -95,6 +109,7 @@ export function AccountsReceivableList() {
         limit: filters.limit,
         search: filters.search || undefined,
         status: filters.status || undefined,
+        insuranceId: filters.insuranceId || undefined,
         sortBy: filters.sortBy,
         sortDir: filters.sortDir,
       });
@@ -119,7 +134,7 @@ export function AccountsReceivableList() {
     setSp(new URLSearchParams(), { replace: true });
   };
 
-  const hasActiveFilters = !!(filters.search || filters.status);
+  const hasActiveFilters = !!(filters.search || filters.status || filters.insuranceId);
 
   const toggleSelect = (id: string) =>
     setSelected((prev) => {
@@ -177,21 +192,42 @@ export function AccountsReceivableList() {
           hasActiveFilters={hasActiveFilters}
           onClear={clearFilters}
           filters={
-            <Select
-              value={filters.status || 'all'}
-              onValueChange={(v) =>
-                updateParam({ status: v === 'all' ? undefined : v })
-              }
-            >
-              <SelectTrigger className="h-9 w-44">
-                <SelectValue placeholder="Estado" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Estado: todos</SelectItem>
-                <SelectItem value="uncollected">No cobrada</SelectItem>
-                <SelectItem value="collected">Cobrada</SelectItem>
-              </SelectContent>
-            </Select>
+            <>
+              <Select
+                value={filters.status || 'all'}
+                onValueChange={(v) =>
+                  updateParam({ status: v === 'all' ? undefined : v })
+                }
+              >
+                <SelectTrigger className="h-9 w-44">
+                  <SelectValue placeholder="Estado" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Estado: todos</SelectItem>
+                  <SelectItem value="uncollected">No cobrada</SelectItem>
+                  <SelectItem value="collected">Cobrada</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={filters.insuranceId || 'all'}
+                onValueChange={(v) =>
+                  updateParam({ insuranceId: v === 'all' ? undefined : v })
+                }
+              >
+                <SelectTrigger className="h-9 w-56">
+                  <SelectValue placeholder="Seguro" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Seguro: todos</SelectItem>
+                  {insurances.map((i) => (
+                    <SelectItem key={i.id} value={i.id}>
+                      {i.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </>
           }
         />
 
@@ -406,6 +442,7 @@ export function AccountsReceivableList() {
           total={metadata.total}
           lastPage={metadata.lastPage}
           onPageChange={(p) => updateParam({ page: p })}
+          onPageSizeChange={(limit) => updateParam({ limit })}
           itemLabel="cuentas"
         />
       </div>

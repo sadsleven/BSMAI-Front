@@ -17,6 +17,7 @@ import {
   ClipboardList,
   Wallet,
   HandCoins,
+  Receipt,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -82,6 +83,12 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
           label: 'Cuentas por cobrar',
           href: '/accounts-receivable',
           show: has(PERMISSIONS.ACCOUNTS_RECEIVABLE.LIST),
+        },
+        {
+          icon: Receipt,
+          label: 'Impuestos por pagar',
+          href: '/taxes-payable',
+          show: has(PERMISSIONS.TAXES_PAYABLE.LIST),
         },
         {
           icon: UserRound,

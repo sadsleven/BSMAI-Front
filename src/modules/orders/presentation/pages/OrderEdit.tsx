@@ -20,8 +20,6 @@ import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import type { Patient } from '@/modules/patients/domain/models/patient';
 import type { ProviderSelectValue } from '../components/ProviderSearchSelect';
 import { patientGateway } from '@/modules/patients/infrastructure/patientGateway';
-import { doctorGateway } from '@/modules/doctors/infrastructure/doctorGateway';
-import { careCenterGateway } from '@/modules/care-centers/infrastructure/careCenterGateway';
 
 function buildDto(values: OrderValues): CreateOrderDto {
   return {
@@ -31,11 +29,22 @@ function buildDto(values: OrderValues): CreateOrderDto {
     patientId: values.patientId,
     contractorId: values.contractorId || undefined,
     insuranceId: values.insuranceId || undefined,
-    providerType: values.providerType,
-    doctorId: values.doctorId || undefined,
-    careCenterId: values.careCenterId || undefined,
+    insuranceSource:
+      values.type === 'insurance' && values.insuranceSource
+        ? (values.insuranceSource as 'direct' | 'via_contractor')
+        : undefined,
+    serviceKey:
+      values.type === 'insurance' && values.serviceKey?.trim()
+        ? values.serviceKey.trim()
+        : undefined,
     specialtyId: values.specialtyId,
-    serviceTypeIds: values.serviceTypeIds ?? [],
+    serviceTypes: (values.serviceTypes ?? []).map((r) => ({
+      serviceTypeId: r.serviceTypeId,
+      providerType: r.providerType,
+      doctorId: r.providerType === 'doctor' ? r.doctorId || undefined : undefined,
+      careCenterId:
+        r.providerType === 'care_center' ? r.careCenterId || undefined : undefined,
+    })),
     pathologyIds: values.pathologyIds ?? [],
     orderDate: values.orderDate,
     appointmentDate: values.appointmentDate,
@@ -75,11 +84,10 @@ export function OrderEdit() {
       patientId: '',
       contractorId: '',
       insuranceId: '',
-      providerType: 'doctor',
-      doctorId: '',
-      careCenterId: '',
+      insuranceSource: '',
+      serviceKey: '',
       specialtyId: '',
-      serviceTypeIds: [],
+      serviceTypes: [],
       pathologyIds: [],
       orderDate: '',
       appointmentDate: '',
@@ -102,24 +110,15 @@ export function OrderEdit() {
       try {
         const order = await fetchOrder();
         if (!order) return;
-        const [h, p, prov] = await Promise.all([
+        const [h, p] = await Promise.all([
           patientGateway.getById(order.holderId),
           order.patientId === order.holderId
             ? Promise.resolve(null)
             : patientGateway.getById(order.patientId),
-          order.providerType === 'doctor' && order.doctorId
-            ? doctorGateway.getById(order.doctorId).then(
-                (d): ProviderSelectValue => ({ providerType: 'doctor', doctor: d }),
-              )
-            : order.careCenterId
-              ? careCenterGateway.getById(order.careCenterId).then(
-                  (cc): ProviderSelectValue => ({ providerType: 'care_center', careCenter: cc }),
-                )
-              : Promise.resolve(null),
         ]);
         setHolder(h);
         setPatient(p ?? h);
-        setProvider(prov);
+        setProvider(null);
 
         methods.reset({
           branchId: order.branchId,
@@ -128,11 +127,15 @@ export function OrderEdit() {
           patientId: order.patientId,
           contractorId: order.contractorId ?? '',
           insuranceId: order.insuranceId ?? '',
-          providerType: order.providerType,
-          doctorId: order.doctorId ?? '',
-          careCenterId: order.careCenterId ?? '',
+          insuranceSource: order.insuranceSource ?? '',
+          serviceKey: order.serviceKey ?? '',
           specialtyId: order.specialtyId,
-          serviceTypeIds: (order.serviceTypes ?? []).map((s) => s.id),
+          serviceTypes: (order.orderServiceTypes ?? []).map((row) => ({
+            serviceTypeId: row.serviceTypeId,
+            providerType: row.providerType,
+            doctorId: row.doctorId ?? '',
+            careCenterId: row.careCenterId ?? '',
+          })),
           pathologyIds: (order.pathologies ?? []).map((p) => p.id),
           orderDate: order.orderDate.slice(0, 10),
           appointmentDate: order.appointmentDate.slice(0, 16),

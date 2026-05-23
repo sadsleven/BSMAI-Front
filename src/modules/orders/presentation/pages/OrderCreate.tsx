@@ -23,11 +23,22 @@ function buildDto(values: OrderValues): CreateOrderDto {
     patientId: values.patientId,
     contractorId: values.contractorId || undefined,
     insuranceId: values.insuranceId || undefined,
-    providerType: values.providerType,
-    doctorId: values.doctorId || undefined,
-    careCenterId: values.careCenterId || undefined,
+    insuranceSource:
+      values.type === 'insurance' && values.insuranceSource
+        ? (values.insuranceSource as 'direct' | 'via_contractor')
+        : undefined,
+    serviceKey:
+      values.type === 'insurance' && values.serviceKey?.trim()
+        ? values.serviceKey.trim()
+        : undefined,
     specialtyId: values.specialtyId,
-    serviceTypeIds: values.serviceTypeIds ?? [],
+    serviceTypes: (values.serviceTypes ?? []).map((r) => ({
+      serviceTypeId: r.serviceTypeId,
+      providerType: r.providerType,
+      doctorId: r.providerType === 'doctor' ? r.doctorId || undefined : undefined,
+      careCenterId:
+        r.providerType === 'care_center' ? r.careCenterId || undefined : undefined,
+    })),
     pathologyIds: values.pathologyIds ?? [],
     orderDate: values.orderDate,
     appointmentDate: values.appointmentDate,
@@ -60,11 +71,10 @@ export function OrderCreate() {
       patientId: '',
       contractorId: '',
       insuranceId: '',
-      providerType: 'doctor',
-      doctorId: '',
-      careCenterId: '',
+      insuranceSource: '',
+      serviceKey: '',
       specialtyId: '',
-      serviceTypeIds: [],
+      serviceTypes: [],
       pathologyIds: [],
       orderDate: todayIso(),
       appointmentDate: '',

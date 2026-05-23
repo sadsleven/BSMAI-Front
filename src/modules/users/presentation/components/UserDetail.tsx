@@ -60,6 +60,8 @@ export function UserDetail({ userId, open, onOpenChange }: UserDetailProps) {
             <DetailRow label="Apellido" value={user.lastName} />
             <DetailRow label="Email" value={user.email} />
             <DetailRow label="Teléfono" value={user.phoneNumber} mono />
+            <DetailRow label="Grado académico" value={user.academicDegree} />
+            <DetailRow label="Cargo" value={user.jobTitle} />
             <DetailRow
               label="Estado"
               value={

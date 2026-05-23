@@ -1,9 +1,38 @@
 import type { Insurance } from '@/modules/insurances/domain/models/insurance';
 import type { Contractor } from '@/modules/contractors/domain/models/contractor';
 
-/** Une los seguros de todos los contratistas asociados al paciente, sin duplicados. */
+/** Une los seguros derivados de contratistas, sin duplicados. */
 export function patientInsurancesFromContractors(p: { contractors?: Contractor[] }): Insurance[] {
   const map = new Map<string, Insurance>();
+  for (const c of p.contractors ?? []) {
+    for (const i of c.insurances ?? []) {
+      if (!map.has(i.id)) map.set(i.id, i);
+    }
+  }
+  return Array.from(map.values());
+}
+
+export type InsuranceSource = 'direct' | 'via_contractor';
+
+export interface PatientAvailableInsurance {
+  insurance: Pick<Insurance, 'id' | 'name'>;
+  source: InsuranceSource;
+  /** Sólo presente cuando `source === 'via_contractor'`. */
+  contractor: { id: string; name: string } | null;
+}
+
+/**
+ * Unión sin duplicar (por id de seguro) de seguros directos + vía contratistas.
+ * Si un seguro aparece por ambos caminos, prevalece el directo.
+ */
+export function patientAllInsurances(p: {
+  contractors?: Contractor[];
+  insurances?: Insurance[];
+}): Insurance[] {
+  const map = new Map<string, Insurance>();
+  for (const i of p.insurances ?? []) {
+    if (!map.has(i.id)) map.set(i.id, i);
+  }
   for (const c of p.contractors ?? []) {
     for (const i of c.insurances ?? []) {
       if (!map.has(i.id)) map.set(i.id, i);
@@ -40,6 +69,8 @@ export interface Patient {
   isActive: boolean;
   phones: PatientPhone[];
   contractors: Contractor[];
+  /** Seguros directos del paciente (pivot `patient_insurances`). */
+  insurances?: Insurance[];
   createdAt?: string;
   updatedAt?: string;
   deletedAt?: string | null;
@@ -57,6 +88,7 @@ export interface CreatePatientDto {
   address: string;
   phones: { number: string; label?: string }[];
   contractorIds?: string[];
+  directInsuranceIds?: string[];
   isActive?: boolean;
 }
 

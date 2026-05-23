@@ -29,6 +29,10 @@ export const doctorGateway = {
     });
     return data;
   },
+  async listAssignable(): Promise<Doctor[]> {
+    const { data } = await api.get<Doctor[]>('/doctors/assignable');
+    return data;
+  },
   async getById(id: string): Promise<Doctor> {
     const { data } = await api.get<Doctor>(`/doctors/${id}`);
     return data;

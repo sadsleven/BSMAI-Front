@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useFormContext, useWatch } from 'react-hook-form';
+import { Controller, useFormContext, useWatch } from 'react-hook-form';
 import type { Role } from '@/modules/roles/domain/models/role';
 import type { BranchSummary, RoleSummary } from '../../domain/models/user';
 import type { Branch } from '@/modules/branches/domain/models/branch';
@@ -11,6 +11,14 @@ import { Badge } from '@/components/ui/badge';
 import { FormSwitch } from '@/components/ui/form-switch';
 import { FormSection, FormGrid } from '@/components/ui/form-section';
 import { BranchMultiSelect } from '@/components/ui/branch-multi-select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { ACADEMIC_DEGREES } from '@/lib/validations/schemas';
 import { X, Lock, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -175,6 +183,58 @@ export function UserForm({ mode, canEditSuperAdmin, existingRoles, existingBranc
             />
             <p className="text-xs text-muted-foreground">Opcional. Exactamente 11 dígitos.</p>
             <FieldError message={e.phoneNumber?.message} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="academicDegree" className="text-sm font-medium">
+              Grado académico{' '}
+              <span className="text-xs text-muted-foreground font-normal">
+                (opcional)
+              </span>
+            </Label>
+            <Controller
+              control={control}
+              name="academicDegree"
+              render={({ field }) => (
+                <Select
+                  value={(field.value as string) || ''}
+                  onValueChange={(v) => field.onChange(v === '__none__' ? '' : v)}
+                >
+                  <SelectTrigger
+                    id="academicDegree"
+                    className={cn('h-9', inputInvalid('academicDegree'))}
+                  >
+                    <SelectValue placeholder="Seleccioná un título" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">
+                      <span className="text-muted-foreground italic">Ninguno</span>
+                    </SelectItem>
+                    {ACADEMIC_DEGREES.map((d) => (
+                      <SelectItem key={d} value={d}>
+                        {d}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            <FieldError message={e.academicDegree?.message} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="jobTitle" className="text-sm font-medium">
+              Cargo{' '}
+              <span className="text-xs text-muted-foreground font-normal">
+                (opcional)
+              </span>
+            </Label>
+            <Input
+              id="jobTitle"
+              maxLength={100}
+              placeholder="Ej: Gerente de Administración"
+              {...register('jobTitle')}
+              className={cn('h-9', inputInvalid('jobTitle'))}
+            />
+            <FieldError message={e.jobTitle?.message} />
           </div>
         </FormGrid>
       </FormSection>

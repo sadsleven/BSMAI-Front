@@ -6,6 +6,7 @@ import { patientGateway } from '../../infrastructure/patientGateway';
 import { displayName } from '../../domain/models/patient';
 import type { UpdatePatientDto } from '../../domain/models/patient';
 import type { Contractor } from '@/modules/contractors/domain/models/contractor';
+import type { Insurance } from '@/modules/insurances/domain/models/insurance';
 import { Button } from '@/components/ui/button';
 import { PatientForm } from '../components/PatientForm';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
@@ -20,6 +21,7 @@ export function PatientEdit() {
   const [fetching, setFetching] = useState(true);
   const [headerLabel, setHeaderLabel] = useState('');
   const [existingContractors, setExistingContractors] = useState<Contractor[]>([]);
+  const [existingDirectInsurances, setExistingDirectInsurances] = useState<Insurance[]>([]);
 
   const methods = useForm<PatientValues>({
     resolver: zodResolver(patientSchema),
@@ -36,6 +38,7 @@ export function PatientEdit() {
       address: '',
       phones: [],
       contractorIds: [],
+      directInsuranceIds: [],
       isActive: true,
     },
   });
@@ -60,10 +63,12 @@ export function PatientEdit() {
               ? p.phones.map((ph) => ({ number: ph.number, label: ph.label ?? '' }))
               : [],
           contractorIds: (p.contractors ?? []).map((c) => c.id),
+          directInsuranceIds: (p.insurances ?? []).map((i) => i.id),
           isActive: p.isActive,
         });
         setHeaderLabel(displayName(p));
         setExistingContractors(p.contractors ?? []);
+        setExistingDirectInsurances(p.insurances ?? []);
       } catch (e) {
         notify.fromError(e, 'No se pudo cargar el paciente.');
       } finally {
@@ -86,10 +91,11 @@ export function PatientEdit() {
           label: p.label || undefined,
         })),
         contractorIds: values.contractorIds ?? [],
+        directInsuranceIds: values.directInsuranceIds ?? [],
         isActive: values.isActive,
       };
       if (values.personType === 'natural') {
-        dto.cedula = values.cedula;
+        dto.cedula = values.cedula?.trim() || '';
         dto.firstName = values.firstName;
         dto.lastName = values.lastName;
       } else {
@@ -129,7 +135,10 @@ export function PatientEdit() {
             </button>
           </div>
 
-          <PatientForm existingContractors={existingContractors} />
+          <PatientForm
+            existingContractors={existingContractors}
+            existingDirectInsurances={existingDirectInsurances}
+          />
 
           <div className="flex items-center justify-between gap-3 pt-2">
             <p className="text-xs text-muted-foreground">

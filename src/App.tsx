@@ -50,6 +50,8 @@ import { AccountsPayableList } from './modules/accounts-payable/presentation/pag
 import { AccountsPayableRegisterPayment } from './modules/accounts-payable/presentation/pages/AccountsPayableRegisterPayment';
 import { AccountsReceivableList } from './modules/accounts-receivable/presentation/pages/AccountsReceivableList';
 import { AccountsReceivableRegisterCollection } from './modules/accounts-receivable/presentation/pages/AccountsReceivableRegisterCollection';
+import { TaxesPayableList } from './modules/taxes-payable/presentation/pages/TaxesPayableList';
+import { TaxesPayableRegisterPayment } from './modules/taxes-payable/presentation/pages/TaxesPayableRegisterPayment';
 
 function App() {
   return (
@@ -154,6 +156,13 @@ function App() {
             <Route
               path="register-collection"
               element={<AccountsReceivableRegisterCollection />}
+            />
+          </Route>
+          <Route path="taxes-payable">
+            <Route index element={<TaxesPayableList />} />
+            <Route
+              path="register-payment"
+              element={<TaxesPayableRegisterPayment />}
             />
           </Route>
         </Route>

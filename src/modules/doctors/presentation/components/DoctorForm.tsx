@@ -9,6 +9,9 @@ import {
   PaymentMethodsInput,
   type PaymentMethodErrors,
 } from '@/components/ui/payment-methods-input';
+import {
+  ServicePricesTable,
+} from '@/components/ui/service-prices-table';
 import { FormSwitch } from '@/components/ui/form-switch';
 import { FormSection, FormGrid } from '@/components/ui/form-section';
 import { AlertTriangle } from 'lucide-react';
@@ -237,6 +240,39 @@ export function DoctorForm({ existingSpecialties }: DoctorFormProps) {
               }}
             />
           )}
+        />
+      </FormSection>
+
+      <FormSection
+        title="Precios de Pago por Tipo de Servicio"
+        description="Estos son los montos que se le pagan al doctor por cada servicio realizado."
+      >
+        <Controller
+          name="servicePrices"
+          control={control}
+          render={({ field }) => {
+            const rowErrors = (
+              errors.servicePrices as unknown as Array<
+                | {
+                    serviceTypeId?: { message?: string };
+                    priceUsd?: { message?: string };
+                    priceEur?: { message?: string };
+                  }
+                | undefined
+              >
+            )?.map?.((e) => ({
+              serviceTypeId: e?.serviceTypeId?.message,
+              priceUsd: e?.priceUsd?.message,
+              priceEur: e?.priceEur?.message,
+            }));
+            return (
+              <ServicePricesTable
+                value={field.value ?? []}
+                onChange={field.onChange}
+                errors={rowErrors}
+              />
+            );
+          }}
         />
       </FormSection>
 

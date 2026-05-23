@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import { notify } from '@/lib/notifications/toast';
 import { getHttpErrorMessage } from '@/lib/api';
 import { orderGateway } from '../../../infrastructure/orderGateway';
@@ -26,7 +27,11 @@ import {
   paymentInOrderCurrency,
 } from '../OrderPaymentForm';
 import { downloadFacturacionXlsx } from '../orderExcel';
+import { downloadFacturacionPdf } from '../orderPdf';
 import { taxRateFor, useTaxRates } from '@/lib/config/taxRates';
+import { doctorGateway } from '@/modules/doctors/infrastructure/doctorGateway';
+import { careCenterGateway } from '@/modules/care-centers/infrastructure/careCenterGateway';
+import type { ServicePriceRow } from '@/lib/types/servicePrice';
 import type {
   DoctorAmountCurrency,
   Order,
@@ -46,6 +51,22 @@ const CURRENCIES: DoctorAmountCurrency[] = ['USD', 'EUR', 'BS'];
  * - "Orden por cobrar": componente de pagos para registrar cobro al seguro
  *   (sólo si `order.type === 'insurance'`).
  */
+type ProviderRow = {
+  key: string;
+  providerType: 'doctor' | 'care_center';
+  providerId: string;
+  providerName: string;
+  isLegalEntity?: boolean;
+  serviceTypeIds: string[];
+  serviceTypeNames: string[];
+  breakdown: Array<{ stName: string; amount: number | null }>;
+  /** Suma sugerida en priceCurrency. */
+  suggested: number;
+  amount: number | undefined;
+  currency: DoctorAmountCurrency;
+  manuallyEdited: boolean;
+};
+
 export function OrderBillingStep({
   order,
   onSaved,
@@ -56,11 +77,6 @@ export function OrderBillingStep({
   const priceAmount = Number(order.priceAmount);
   const isFinalized = order.status === 'finalized';
 
-  const [doctorAmount, setDoctorAmount] = useState<number | undefined>(
-    order?.doctorAmount ? Number(order?.doctorAmount) : undefined,
-  );
-  const [doctorAmountCurrency, setDoctorAmountCurrency] =
-    useState<DoctorAmountCurrency>(order.doctorAmountCurrency ?? order.priceCurrency);
   const [rateBs, setRateBs] = useState<number | null>(
     order.billingExchangeRate ? Number(order.billingExchangeRate.amountBs) : null,
   );
@@ -68,9 +84,145 @@ export function OrderBillingStep({
     order.billingExchangeRateId ?? null,
   );
   const [saving, setSaving] = useState(false);
-  const [downloadingFact, setDownloadingFact] = useState(false);
+  const [downloadingFact, setDownloadingFact] = useState<null | 'xlsx' | 'pdf'>(null);
 
-  // Cargar tasa actual si la orden no tiene billing rate persistida.
+  // Filas por proveedor con sugerido + monto editable.
+  const [providers, setProviders] = useState<ProviderRow[]>([]);
+  const [loadingSuggested, setLoadingSuggested] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingSuggested(true);
+    (async () => {
+      // Agrupa filas OST por proveedor.
+      type Group = {
+        key: string;
+        providerType: 'doctor' | 'care_center';
+        providerId: string;
+        providerName: string;
+        rows: { serviceTypeId: string; serviceTypeName: string }[];
+      };
+      const groups = new Map<string, Group>();
+      for (const ost of order.orderServiceTypes ?? []) {
+        const id =
+          ost.providerType === 'doctor' ? ost.doctorId : ost.careCenterId;
+        if (!id) continue;
+        const k = `${ost.providerType}:${id}`;
+        if (!groups.has(k)) {
+          const name =
+            ost.providerType === 'doctor'
+              ? `${ost.doctor?.firstName ?? ''} ${ost.doctor?.lastName ?? ''}`.trim() ||
+                id
+              : ost.careCenter?.businessName ?? id;
+          groups.set(k, {
+            key: k,
+            providerType: ost.providerType,
+            providerId: id,
+            providerName: name,
+            rows: [],
+          });
+        }
+        groups.get(k)!.rows.push({
+          serviceTypeId: ost.serviceTypeId,
+          serviceTypeName: ost.serviceType?.name ?? ost.serviceTypeId,
+        });
+      }
+
+      // Fetch full provider + persisted account amount per group.
+      const ccy = order.priceCurrency;
+      const built: ProviderRow[] = [];
+      for (const g of groups.values()) {
+        try {
+          const full =
+            g.providerType === 'doctor'
+              ? await doctorGateway.getById(g.providerId)
+              : await careCenterGateway.getById(g.providerId);
+          const prices: ServicePriceRow[] =
+            (full as { servicePrices?: ServicePriceRow[] }).servicePrices ?? [];
+          const byST = new Map(prices.map((sp) => [sp.serviceTypeId, sp]));
+          const breakdown = g.rows.map((r) => {
+            const sp = byST.get(r.serviceTypeId);
+            const v = sp
+              ? ccy === 'USD'
+                ? Number(sp.priceUsd)
+                : Number(sp.priceEur)
+              : NaN;
+            return {
+              stName: r.serviceTypeName,
+              amount: Number.isFinite(v) && v > 0 ? v : null,
+            };
+          });
+          const suggested = +breakdown
+            .reduce((s, l) => s + (l.amount ?? 0), 0)
+            .toFixed(2);
+
+          // Si existe accounts_payable con monto persistido, prefill con eso.
+          let amount: number | undefined = undefined;
+          let currency: DoctorAmountCurrency = ccy;
+          try {
+            const list = await accountsPayableGateway.list({
+              orderId: order.id,
+              doctorId: g.providerType === 'doctor' ? g.providerId : undefined,
+              careCenterId:
+                g.providerType === 'care_center' ? g.providerId : undefined,
+              limit: 1,
+            });
+            const acc = list.data[0];
+            if (acc?.providerAmount && acc.providerAmountCurrency) {
+              amount = Number(acc.providerAmount);
+              currency = acc.providerAmountCurrency;
+            }
+          } catch {
+            // ignorar
+          }
+          if (amount === undefined) {
+            amount = suggested > 0 ? suggested : undefined;
+          }
+
+          const isLegal =
+            g.providerType === 'doctor'
+              ? !!(full as { isLegalEntity?: boolean }).isLegalEntity
+              : undefined;
+
+          built.push({
+            key: g.key,
+            providerType: g.providerType,
+            providerId: g.providerId,
+            providerName: g.providerName,
+            isLegalEntity: isLegal,
+            serviceTypeIds: g.rows.map((r) => r.serviceTypeId),
+            serviceTypeNames: g.rows.map((r) => r.serviceTypeName),
+            breakdown,
+            suggested,
+            amount,
+            currency,
+            manuallyEdited: false,
+          });
+        } catch {
+          built.push({
+            key: g.key,
+            providerType: g.providerType,
+            providerId: g.providerId,
+            providerName: g.providerName,
+            serviceTypeIds: g.rows.map((r) => r.serviceTypeId),
+            serviceTypeNames: g.rows.map((r) => r.serviceTypeName),
+            breakdown: g.rows.map((r) => ({ stName: r.serviceTypeName, amount: null })),
+            suggested: 0,
+            amount: undefined,
+            currency: ccy,
+            manuallyEdited: false,
+          });
+        }
+      }
+      if (!cancelled) setProviders(built);
+      if (!cancelled) setLoadingSuggested(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order.id]);
+
   useEffect(() => {
     if (rateId) return;
     let cancelled = false;
@@ -90,44 +242,38 @@ export function OrderBillingStep({
     };
   }, [order.priceCurrency, rateId]);
 
-  // Convertir doctorAmount a moneda de la orden para validar cap.
-  const doctorAmountInOrderCurrency = useMemo(() => {
-    if (doctorAmount === undefined || doctorAmount === null) return null;
-    if (doctorAmountCurrency === order.priceCurrency) return doctorAmount;
-    if (doctorAmountCurrency === 'BS') {
+  // Conversión a moneda de la orden por fila.
+  const convertToOrder = (amount: number, currency: DoctorAmountCurrency): number | null => {
+    if (currency === order.priceCurrency) return amount;
+    if (currency === 'BS') {
       if (!rateBs || rateBs <= 0) return null;
-      return doctorAmount / rateBs;
+      return amount / rateBs;
     }
-    return null;
-  }, [doctorAmount, doctorAmountCurrency, order.priceCurrency, rateBs]);
+    return null; // sin tasa cruzada USD↔EUR
+  };
 
-  const exceedsCap =
-    doctorAmountInOrderCurrency !== null &&
-    doctorAmountInOrderCurrency > priceAmount + 0.005;
+  const totalInOrderCurrency = providers.reduce((s, p) => {
+    if (p.amount === undefined) return s;
+    const c = convertToOrder(p.amount, p.currency);
+    return s + (c ?? 0);
+  }, 0);
+  const totalSuggested = providers.reduce((s, p) => s + p.suggested, 0);
+  const exceedsCap = totalInOrderCurrency > priceAmount + 0.005;
+  const netProfit = priceAmount - totalInOrderCurrency;
 
-  // Tax (solo doctor) — tasas leídas desde `/config/tax-rates` (env-driven).
   const taxRates = useTaxRates();
-  const isDoctor = order.providerType === 'doctor';
-  const taxRate = isDoctor
-    ? taxRateFor(taxRates, !!order.doctor?.isLegalEntity)
-    : 0;
-  const taxAmount =
-    isDoctor && doctorAmount !== undefined ? doctorAmount * taxRate : 0;
-  const taxAmountBs = useMemo(() => {
-    if (!isDoctor || doctorAmount === undefined) return null;
-    if (doctorAmountCurrency === 'BS') return taxAmount;
-    if (!rateBs) return null;
-    return taxAmount * rateBs;
-  }, [isDoctor, doctorAmount, doctorAmountCurrency, rateBs, taxAmount]);
 
-  const netProfit =
-    doctorAmountInOrderCurrency !== null
-      ? priceAmount - doctorAmountInOrderCurrency
-      : null;
+  const updateProvider = (idx: number, patch: Partial<ProviderRow>) => {
+    setProviders((prev) => prev.map((p, i) => (i === idx ? { ...p, ...patch } : p)));
+  };
 
   const onSubmit = async () => {
-    if (doctorAmount === undefined || doctorAmount <= 0) {
-      notify.error('Ingresá un monto al doctor válido');
+    if (providers.length === 0) {
+      notify.error('La orden no tiene proveedores asignados');
+      return;
+    }
+    if (providers.some((p) => p.amount === undefined || p.amount <= 0)) {
+      notify.error('Cargá un monto > 0 para cada proveedor');
       return;
     }
     if (!rateId) {
@@ -135,14 +281,19 @@ export function OrderBillingStep({
       return;
     }
     if (exceedsCap) {
-      notify.error('El monto al doctor supera el monto declarado de la orden');
+      notify.error('La suma de pagos supera el monto declarado de la orden');
       return;
     }
     setSaving(true);
     try {
       await orderGateway.billing(order.id, {
-        doctorAmount,
-        doctorAmountCurrency,
+        providers: providers.map((p) => ({
+          providerType: p.providerType,
+          doctorId: p.providerType === 'doctor' ? p.providerId : undefined,
+          careCenterId: p.providerType === 'care_center' ? p.providerId : undefined,
+          amount: p.amount!,
+          currency: p.currency,
+        })),
         billingExchangeRateId: rateId,
       });
       notify.success('Orden finalizada');
@@ -154,14 +305,15 @@ export function OrderBillingStep({
     }
   };
 
-  const handleDownloadFactura = async () => {
-    setDownloadingFact(true);
+  const handleDownloadFactura = async (fmt: 'xlsx' | 'pdf') => {
+    setDownloadingFact(fmt);
     try {
-      await downloadFacturacionXlsx(order);
+      if (fmt === 'xlsx') await downloadFacturacionXlsx(order);
+      else await downloadFacturacionPdf(order);
     } catch (err) {
       notify.error(getHttpErrorMessage(err, 'No se pudo generar la factura'));
     } finally {
-      setDownloadingFact(false);
+      setDownloadingFact(null);
     }
   };
 
@@ -169,155 +321,383 @@ export function OrderBillingStep({
     <div className="space-y-5">
       <FormSection
         title="Factura"
-        description="Descargá la factura única con todos los tipos de servicio de la orden."
+        description="Descargá la factura única con todos los tipos de servicio de la orden, en Excel o PDF."
       >
-        <button
-          type="button"
-          onClick={handleDownloadFactura}
-          disabled={downloadingFact}
-          className="rounded-lg border bg-card p-4 text-left hover:bg-accent transition-colors disabled:opacity-60 w-full sm:w-auto"
-        >
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-md bg-success-soft text-success flex items-center justify-center">
-              <FileSpreadsheet className="w-5 h-5" />
-            </div>
-            <div className="flex-1">
-              <div className="text-sm font-semibold">Factura</div>
-              <div className="text-xs text-muted-foreground">
-                Comprobante con todos los servicios + datos del titular y contratante.
-              </div>
+        <div className="rounded-lg border bg-card p-4 flex items-center gap-3 flex-wrap">
+          <div className="w-10 h-10 rounded-md bg-success-soft text-success flex items-center justify-center shrink-0">
+            <FileSpreadsheet className="w-5 h-5" />
+          </div>
+          <div className="flex-1 min-w-[200px]">
+            <div className="text-sm font-semibold">Factura</div>
+            <div className="text-xs text-muted-foreground">
+              Comprobante con todos los servicios + datos del titular y contratante.
             </div>
           </div>
-          <span className="inline-flex items-center gap-1 text-xs text-brand-blue-strong">
-            <Download className="w-3.5 h-3.5" />
-            {downloadingFact ? 'Generando…' : 'Descargar XLSX'}
-          </span>
-        </button>
+          <div className="flex gap-2 shrink-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleDownloadFactura('xlsx')}
+              disabled={downloadingFact !== null}
+            >
+              <Download className="w-3.5 h-3.5" />
+              {downloadingFact === 'xlsx' ? 'Generando…' : 'Excel'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleDownloadFactura('pdf')}
+              disabled={downloadingFact !== null}
+            >
+              <Download className="w-3.5 h-3.5" />
+              {downloadingFact === 'pdf' ? 'Generando…' : 'PDF'}
+            </Button>
+          </div>
+        </div>
       </FormSection>
 
       <FormSection
-        title="Liquidación"
-        description="Asigná el monto al doctor/centro y revisá el cálculo de impuestos y ganancia neta."
+        title="Liquidación por proveedor"
+        description="Asigná el monto a pagar a cada proveedor de la orden. Cada uno se factura por separado."
       >
-        <div className="grid sm:grid-cols-3 gap-x-5 gap-y-[18px]">
-          <div className="flex flex-col gap-1.5 sm:col-span-2">
-            <Label>
-              Monto al {isDoctor ? 'doctor' : 'centro de atención'}{' '}
-              <span className="text-destructive">*</span>
-            </Label>
-            <CurrencyAmountInput
-              value={doctorAmount}
-              onChange={(v) => setDoctorAmount(v)}
-              currencyPrefix={doctorAmountCurrency}
-              disabled={isFinalized}
-            />
-            {exceedsCap && (
-              <p className="text-xs text-destructive">
-                Excede el monto declarado de la orden ({priceAmount.toFixed(2)}{' '}
-                {order.priceCurrency})
+        {loadingSuggested && providers.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Calculando montos sugeridos…</p>
+        ) : providers.length === 0 ? (
+          <p className="text-sm text-destructive">
+            La orden no tiene proveedores asignados.
+          </p>
+        ) : (
+          <div className="space-y-4">
+            {providers.map((p, idx) => {
+              const showModified =
+                p.amount !== undefined &&
+                p.currency === order.priceCurrency &&
+                Math.abs(p.amount - p.suggested) > 0.005;
+              const taxRate =
+                p.providerType === 'doctor'
+                  ? taxRateFor(taxRates, !!p.isLegalEntity)
+                  : 0;
+              const taxAmount =
+                p.providerType === 'doctor' && p.amount !== undefined
+                  ? p.amount * taxRate
+                  : 0;
+              const missing = p.breakdown
+                .filter((b) => b.amount === null)
+                .map((b) => b.stName);
+              return (
+                <div
+                  key={p.key}
+                  className="rounded-lg border bg-card p-4 space-y-3"
+                >
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                      <div className="text-sm font-semibold">
+                        {p.providerName}{' '}
+                        <span className="text-xs text-muted-foreground font-normal">
+                          ({p.providerType === 'doctor' ? 'Doctor' : 'Centro'})
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {p.serviceTypeNames.join(', ')}
+                      </div>
+                    </div>
+                    {showModified && (
+                      <Badge variant="outline" className="text-[10px]">
+                        Monto modificado
+                      </Badge>
+                    )}
+                  </div>
+
+                  <div className="grid sm:grid-cols-3 gap-x-5 gap-y-3">
+                    <div className="sm:col-span-2 flex flex-col gap-1.5">
+                      <Label className="text-xs">
+                        Monto a pagar <span className="text-destructive">*</span>
+                      </Label>
+                      <CurrencyAmountInput
+                        value={p.amount}
+                        onChange={(v) =>
+                          updateProvider(idx, { amount: v, manuallyEdited: true })
+                        }
+                        currencyPrefix={p.currency}
+                        disabled={isFinalized}
+                      />
+                      <p className="text-[11px] text-muted-foreground">
+                        Sugerido: {p.suggested.toFixed(2)} {order.priceCurrency}
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-xs">
+                        Moneda <span className="text-destructive">*</span>
+                      </Label>
+                      <Select
+                        value={p.currency}
+                        onValueChange={(v) =>
+                          updateProvider(idx, {
+                            currency: v as DoctorAmountCurrency,
+                          })
+                        }
+                        disabled={isFinalized}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {CURRENCIES.map((c) => (
+                            <SelectItem key={c} value={c}>
+                              {c}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <details className="rounded border bg-muted/20 p-2 text-xs">
+                    <summary className="cursor-pointer font-medium">
+                      Desglose por servicio
+                    </summary>
+                    <ul className="mt-2 space-y-0.5">
+                      {p.breakdown.map((l) => (
+                        <li key={l.stName} className="flex justify-between">
+                          <span>{l.stName}</span>
+                          {l.amount !== null ? (
+                            <span className="font-mono">
+                              {l.amount.toFixed(2)} {order.priceCurrency}
+                            </span>
+                          ) : (
+                            <span className="text-warning italic">Sin precio</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                    {missing.length > 0 && (
+                      <p className="mt-2 text-warning">
+                        El proveedor no tiene precio definido para{' '}
+                        <strong>{missing.join(', ')}</strong>. Ingresá el monto manualmente.
+                      </p>
+                    )}
+                  </details>
+
+                  {p.providerType === 'doctor' && p.amount !== undefined && (
+                    <div className="rounded border bg-warning-soft/40 p-2 text-xs">
+                      <div className="font-semibold">
+                        Impuesto del doctor ({(taxRate * 100).toFixed(0)}%)
+                      </div>
+                      <div>
+                        {taxAmount.toFixed(2)} {p.currency}
+                        <span className="ml-2 text-muted-foreground">
+                          ({p.isLegalEntity ? 'Persona jurídica' : 'Persona natural'} —
+                          retención, no costo de la empresa)
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {!rateBs && (
+              <p className="text-xs italic text-muted-foreground">
+                Sin tasa de cambio activa para {order.priceCurrency}: cargar una en
+                /exchange-rates antes de finalizar.
               </p>
             )}
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label>
-              Moneda <span className="text-destructive">*</span>
-            </Label>
-            <Select
-              value={doctorAmountCurrency}
-              onValueChange={(v) => setDoctorAmountCurrency(v as DoctorAmountCurrency)}
-              disabled={isFinalized}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CURRENCIES.map((c) => (
-                  <SelectItem key={c} value={c}>
-                    {c}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
 
-        {!rateBs && (
-          <p className="text-xs italic text-muted-foreground mt-3">
-            Sin tasa de cambio activa para {order.priceCurrency}: cargar una en
-            /exchange-rates antes de finalizar.
-          </p>
-        )}
+            <div className="rounded-lg border overflow-hidden">
+              <div className="bg-[oklch(0.985_0.003_250)] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                Desglose por proveedor
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/30 text-muted-foreground">
+                    <tr>
+                      <th className="text-left font-medium px-3 py-2">Proveedor</th>
+                      <th className="text-right font-medium px-3 py-2">Sugerido</th>
+                      <th className="text-right font-medium px-3 py-2">A pagar</th>
+                      <th className="text-right font-medium px-3 py-2">Sugerido</th>
+                      <th className="text-right font-medium px-3 py-2">Impuesto</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {providers.map((p) => {
+                      const inOrder =
+                        p.amount === undefined
+                          ? null
+                          : convertToOrder(p.amount, p.currency);
+                      const delta =
+                        inOrder === null ? null : inOrder - p.suggested;
+                      const taxRate =
+                        p.providerType === 'doctor'
+                          ? taxRateFor(taxRates, !!p.isLegalEntity)
+                          : 0;
+                      const taxAmount =
+                        p.providerType === 'doctor' && p.amount !== undefined
+                          ? p.amount * taxRate
+                          : null;
+                      const conv =
+                        p.amount !== undefined && p.currency !== order.priceCurrency;
+                      return (
+                        <tr key={p.key} className="border-t">
+                          <td className="px-3 py-2">
+                            <div className="font-medium">{p.providerName}</div>
+                            <div className="text-[10px] text-muted-foreground">
+                              {p.providerType === 'doctor' ? 'Doctor' : 'Centro'}
+                              {' · '}
+                              {p.serviceTypeIds.length} servicio
+                              {p.serviceTypeIds.length === 1 ? '' : 's'}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono">
+                            {p.suggested.toFixed(2)} {order.priceCurrency}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono">
+                            {p.amount === undefined ? (
+                              <span className="text-muted-foreground italic">—</span>
+                            ) : (
+                              <>
+                                {p.amount.toFixed(2)} {p.currency}
+                                {conv && (
+                                  <div className="text-[10px] text-muted-foreground">
+                                    ≈{' '}
+                                    {inOrder === null
+                                      ? 'sin tasa'
+                                      : `${inOrder.toFixed(2)} ${order.priceCurrency}`}
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </td>
+                          <td
+                            className={cn(
+                              'px-3 py-2 text-right font-mono',
+                              delta !== null && delta > 0.005 && 'text-warning',
+                              delta !== null && delta < -0.005 && 'text-success',
+                            )}
+                          >
+                            {delta === null
+                              ? '—'
+                              : `${delta > 0 ? '+' : ''}${delta.toFixed(2)} ${order.priceCurrency}`}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono">
+                            {taxAmount === null ? (
+                              <span className="text-muted-foreground">—</span>
+                            ) : (
+                              <>
+                                {taxAmount.toFixed(2)} {p.currency}
+                                <div className="text-[10px] text-muted-foreground">
+                                  {(taxRate * 100).toFixed(0)}%{' '}
+                                  {p.isLegalEntity ? 'jur.' : 'nat.'}
+                                </div>
+                              </>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot className="bg-muted/40 font-semibold">
+                    <tr className="border-t">
+                      <td className="px-3 py-2">Total</td>
+                      <td className="px-3 py-2 text-right font-mono">
+                        {totalSuggested.toFixed(2)} {order.priceCurrency}
+                      </td>
+                      <td
+                        className={cn(
+                          'px-3 py-2 text-right font-mono',
+                          exceedsCap && 'text-destructive',
+                        )}
+                      >
+                        {totalInOrderCurrency.toFixed(2)} {order.priceCurrency}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono">
+                        {(totalInOrderCurrency - totalSuggested >= 0 ? '+' : '') +
+                          (totalInOrderCurrency - totalSuggested).toFixed(2)}{' '}
+                        {order.priceCurrency}
+                      </td>
+                      <td className="px-3 py-2 text-right text-[10px] text-muted-foreground">
+                        retención
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
 
-        {isDoctor && (
-          <div className="rounded-lg border bg-warning-soft/40 p-4 space-y-1.5 mt-4">
-            <div className="text-[13px] font-semibold">
-              Impuesto del doctor ({(taxRate * 100).toFixed(0)}%)
+            <div className="rounded-lg border bg-muted/30 p-3 text-sm grid sm:grid-cols-4 gap-3">
+              <div>
+                <div className="text-xs text-muted-foreground">Monto declarado</div>
+                <div className="font-mono">
+                  {priceAmount.toFixed(2)} {order.priceCurrency}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Sugerido total</div>
+                <div className="font-mono">
+                  {totalSuggested.toFixed(2)} {order.priceCurrency}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Total a pagar</div>
+                <div className={cn('font-mono', exceedsCap && 'text-destructive')}>
+                  {totalInOrderCurrency.toFixed(2)} {order.priceCurrency}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">
+                  Ganancia neta
+                </div>
+                <div className="font-mono">
+                  {netProfit.toFixed(2)} {order.priceCurrency}
+                </div>
+              </div>
             </div>
-            <div className="text-sm">
-              {doctorAmount !== undefined ? (
-                <>
-                  {taxAmount.toFixed(2)} {doctorAmountCurrency}
-                  {taxAmountBs !== null && doctorAmountCurrency !== 'BS' && (
-                    <span className="text-muted-foreground">
-                      {' '}
-                      (Bs. {taxAmountBs.toFixed(2)})
-                    </span>
-                  )}
-                </>
-              ) : (
-                <span className="text-muted-foreground">—</span>
-              )}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {order.doctor?.isLegalEntity ? 'Persona jurídica' : 'Persona natural'} —
-              retención al doctor, no costo de la empresa.
-            </div>
-          </div>
-        )}
 
-        <div className="rounded-lg border bg-success-soft/40 p-4 space-y-1.5 mt-4">
-          <div className="text-[13px] font-semibold">Ganancia neta empresa</div>
-          <div className="text-sm">
-            {netProfit !== null ? (
-              <>
-                {netProfit.toFixed(2)} {order.priceCurrency}
-              </>
-            ) : (
-              <span className="text-muted-foreground">—</span>
+            {exceedsCap && (
+              <p className="text-xs text-destructive">
+                La suma supera el monto declarado de la orden ({priceAmount.toFixed(2)}{' '}
+                {order.priceCurrency}).
+              </p>
             )}
-          </div>
-          <div className="text-xs text-muted-foreground">
-            Monto total de la orden − Monto al doctor/centro (sin restar impuestos).
-          </div>
-        </div>
 
-        <div className="flex justify-end mt-4">
-          <Button
-            type="button"
-            onClick={onSubmit}
-            disabled={saving || isFinalized || !rateId || exceedsCap}
-          >
-            {saving
-              ? 'Guardando...'
-              : isFinalized
-                ? 'Orden finalizada'
-                : 'Finalizar orden'}
-          </Button>
-        </div>
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                onClick={onSubmit}
+                disabled={saving || isFinalized || !rateId || exceedsCap}
+              >
+                {saving
+                  ? 'Guardando...'
+                  : isFinalized
+                    ? 'Orden finalizada'
+                    : 'Finalizar orden'}
+              </Button>
+            </div>
+          </div>
+        )}
       </FormSection>
 
       {/* Inline pagos: orden por pagar + orden por cobrar (si seguro) */}
       {isFinalized ? (
         <>
-          <OrdenPorPagarSection order={order} onSaved={onSaved} />
+          {providers.map((p) => (
+            <OrdenPorPagarSection
+              key={p.key}
+              order={order}
+              providerType={p.providerType}
+              providerId={p.providerId}
+              providerName={p.providerName}
+              onSaved={onSaved}
+            />
+          ))}
           {order.type === 'insurance' ? (
             <OrdenPorCobrarSection order={order} onSaved={onSaved} />
           ) : null}
         </>
       ) : (
         <p className="text-xs italic text-muted-foreground">
-          Finalizá la orden para registrar el pago al{' '}
-          {isDoctor ? 'doctor' : 'centro'}
+          Finalizá la orden para registrar los pagos a los proveedores
           {order.type === 'insurance' ? ' y el cobro al seguro' : ''}.
         </p>
       )}
@@ -325,12 +705,18 @@ export function OrderBillingStep({
   );
 }
 
-/** Sub-sección "Orden por pagar" — pago al doctor o centro. */
+/** Sub-sección "Orden por pagar" — pago a UN proveedor específico. */
 function OrdenPorPagarSection({
   order,
+  providerType,
+  providerId,
+  providerName,
   onSaved,
 }: {
   order: Order;
+  providerType: 'doctor' | 'care_center';
+  providerId: string;
+  providerName: string;
   onSaved: () => void;
 }) {
   const orderCurrency: OrderCurrency = order.priceCurrency;
@@ -345,6 +731,8 @@ function OrdenPorPagarSection({
     try {
       const res = await accountsPayableGateway.list({
         orderId: order.id,
+        doctorId: providerType === 'doctor' ? providerId : undefined,
+        careCenterId: providerType === 'care_center' ? providerId : undefined,
         limit: 1,
       });
       setAccount(res.data[0] ?? null);
@@ -353,7 +741,7 @@ function OrdenPorPagarSection({
     } finally {
       setLoading(false);
     }
-  }, [order.id]);
+  }, [order.id, providerType, providerId]);
   useEffect(() => {
     load();
   }, [load]);
@@ -417,8 +805,8 @@ function OrdenPorPagarSection({
 
   return (
     <FormSection
-      title="Orden por pagar"
-      description="Registrá el pago al doctor o centro de atención. Mismo componente de pagos usado en órdenes."
+      title={`Orden por pagar — ${providerName}`}
+      description={`Pago al ${providerType === 'doctor' ? 'doctor' : 'centro'}.`}
       headerAction={
         account?.status === 'paid' ? (
           <Badge className="bg-success-soft text-success border-success/30">

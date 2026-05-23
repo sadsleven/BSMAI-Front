@@ -28,6 +28,10 @@ export const careCenterGateway = {
     });
     return data;
   },
+  async listAssignable(): Promise<CareCenter[]> {
+    const { data } = await api.get<CareCenter[]>('/care-centers/assignable');
+    return data;
+  },
   async getById(id: string): Promise<CareCenter> {
     const { data } = await api.get<CareCenter>(`/care-centers/${id}`);
     return data;

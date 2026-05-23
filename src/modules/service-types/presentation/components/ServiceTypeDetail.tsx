@@ -69,6 +69,16 @@ export function ServiceTypeDetail({ serviceTypeId, open, onOpenChange }: Service
               }
             />
           </DetailSection>
+          <DetailSection title="Precio Particular">
+            <DetailRow
+              label="USD"
+              value={`$ ${Number(serviceType.particularPriceUsd).toFixed(2)}`}
+            />
+            <DetailRow
+              label="EUR"
+              value={`€ ${Number(serviceType.particularPriceEur).toFixed(2)}`}
+            />
+          </DetailSection>
           {(serviceType.createdAt || serviceType.updatedAt) && (
             <DetailSection title="Auditoría">
               {serviceType.createdAt && (

@@ -9,6 +9,7 @@ export type OrderStatus =
 export type OrderType = 'cash' | 'credit' | 'insurance' | 'cashea';
 export type ProviderType = 'doctor' | 'care_center';
 export type OrderCurrency = 'USD' | 'EUR';
+export type InsuranceSource = 'direct' | 'via_contractor';
 export type OrderPaymentType =
   | 'mobile_payment'
   | 'bank_transfer'
@@ -38,9 +39,23 @@ export interface OrderRefSummary {
   businessName?: string | null;
   cedula?: string | null;
   rif?: string | null;
+  birthDate?: string | null;
+  address?: string | null;
+  phones?: Array<{ id?: string; number: string; label?: string | null }>;
 }
 
 export type DoctorAmountCurrency = 'USD' | 'EUR' | 'BS';
+
+/** Fila ST + proveedor dentro de una orden (mapea OrderServiceType del BE). */
+export interface OrderServiceTypeRow {
+  serviceTypeId: string;
+  serviceType?: { id: string; name: string };
+  providerType: ProviderType;
+  doctorId?: string | null;
+  doctor?: (OrderRefSummary & { isLegalEntity?: boolean }) | null;
+  careCenterId?: string | null;
+  careCenter?: OrderRefSummary | null;
+}
 
 export interface Order {
   id: string;
@@ -56,21 +71,40 @@ export interface Order {
   contractorId?: string | null;
   contractor?: { id: string; name: string } | null;
   insuranceId?: string | null;
-  insurance?: { id: string; name: string } | null;
-  providerType: ProviderType;
-  doctorId?: string | null;
-  doctor?: (OrderRefSummary & { isLegalEntity?: boolean }) | null;
-  careCenterId?: string | null;
-  careCenter?: OrderRefSummary | null;
+  insurance?: {
+    id: string;
+    name: string;
+    rif?: string | null;
+    fiscalAddress?: string | null;
+    phones?: Array<{ id?: string; number: string; label?: string | null }>;
+  } | null;
+  /** Origen del seguro: directo o vía contratista. Null para órdenes no-insurance. */
+  insuranceSource?: InsuranceSource | null;
+  /** Clave/referencia externa del seguro. Sólo type='insurance'. ≤30 chars. */
+  serviceKey?: string | null;
   specialtyId: string;
   specialty?: { id: string; name: string };
-  serviceTypes?: Array<{ id: string; name: string }>;
+  /** Filas ST + proveedor. Reemplaza `serviceTypes` y los top-level provider fields. */
+  orderServiceTypes?: OrderServiceTypeRow[];
   pathologies?: Array<{ id: string; name: string }>;
   orderDate: string;
   appointmentDate: string;
   priceCurrency: OrderCurrency;
   priceAmount: string | number;
+  servicePricing?: Array<{
+    serviceTypeId: string;
+    kind: 'particular' | 'insurance' | 'doctor' | 'care_center';
+    priceUsd: string | number;
+    priceEur: string | number;
+  }>;
   createdById: string;
+  createdBy?: {
+    id: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    academicDegree?: string | null;
+    jobTitle?: string | null;
+  };
   payments?: OrderPayment[];
   // Pasos 2-4
   attended?: boolean;
@@ -99,10 +133,24 @@ export interface ReportOrderDto {
   otherStudies?: string | null;
 }
 
+export interface BillingProviderInput {
+  providerType: ProviderType;
+  doctorId?: string;
+  careCenterId?: string;
+  amount: number;
+  currency: DoctorAmountCurrency;
+}
+
 export interface BillingOrderDto {
-  doctorAmount: number;
-  doctorAmountCurrency: DoctorAmountCurrency;
+  providers: BillingProviderInput[];
   billingExchangeRateId: string;
+}
+
+export interface OrderServiceTypeRowInput {
+  serviceTypeId: string;
+  providerType: ProviderType;
+  doctorId?: string;
+  careCenterId?: string;
 }
 
 export interface CreateOrderDto {
@@ -112,11 +160,10 @@ export interface CreateOrderDto {
   patientId: string;
   contractorId?: string;
   insuranceId?: string;
-  providerType: ProviderType;
-  doctorId?: string;
-  careCenterId?: string;
+  insuranceSource?: InsuranceSource;
+  serviceKey?: string;
   specialtyId: string;
-  serviceTypeIds: string[];
+  serviceTypes: OrderServiceTypeRowInput[];
   pathologyIds?: string[];
   orderDate: string;
   appointmentDate: string;

@@ -20,6 +20,8 @@ export interface User {
   lastName: string;
   email: string;
   phoneNumber?: string | null;
+  academicDegree?: string | null;
+  jobTitle?: string | null;
   isActive: boolean;
   isSuperAdmin: boolean;
   roles: RoleSummary[];
@@ -34,6 +36,8 @@ export interface CreateUserDto {
   lastName: string;
   email: string;
   phoneNumber?: string;
+  academicDegree?: string;
+  jobTitle?: string;
   password: string;
   confirmPassword: string;
   isActive?: boolean;
@@ -47,6 +51,8 @@ export interface UpdateUserDto {
   lastName?: string;
   email?: string;
   phoneNumber?: string | null;
+  academicDegree?: string | null;
+  jobTitle?: string | null;
   isActive?: boolean;
   isSuperAdmin?: boolean;
   roleIds?: string[];

@@ -507,6 +507,7 @@ export function RoleList() {
           total={metadata.total}
           lastPage={metadata.lastPage}
           onPageChange={onPage}
+          onPageSizeChange={(limit) => updateParam({ limit: String(limit) })}
           itemLabel="roles"
         />
       </div>

@@ -441,6 +441,7 @@ export function ServiceTypeList() {
           total={metadata.total}
           lastPage={metadata.lastPage}
           onPageChange={onPage}
+          onPageSizeChange={(limit) => updateParam({ limit: String(limit) })}
           itemLabel="tipos de servicio"
         />
       </div>

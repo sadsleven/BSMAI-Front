@@ -29,6 +29,7 @@ export function PatientCreate() {
       address: '',
       phones: [],
       contractorIds: [],
+      directInsuranceIds: [],
       isActive: true,
     },
   });
@@ -47,10 +48,11 @@ export function PatientCreate() {
           label: p.label || undefined,
         })),
         contractorIds: values.contractorIds ?? [],
+        directInsuranceIds: values.directInsuranceIds ?? [],
         isActive: values.isActive,
       };
       if (values.personType === 'natural') {
-        dto.cedula = values.cedula;
+        if (values.cedula?.trim()) dto.cedula = values.cedula.trim();
         dto.firstName = values.firstName;
         dto.lastName = values.lastName;
       } else {
