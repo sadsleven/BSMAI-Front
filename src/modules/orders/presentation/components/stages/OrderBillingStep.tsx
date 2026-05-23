@@ -505,7 +505,133 @@ export function OrderBillingStep({
               </p>
             )}
 
-            <div className="rounded-lg border bg-muted/30 p-3 text-sm grid sm:grid-cols-3 gap-3">
+            <div className="rounded-lg border overflow-hidden">
+              <div className="bg-[oklch(0.985_0.003_250)] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                Desglose por proveedor
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/30 text-muted-foreground">
+                    <tr>
+                      <th className="text-left font-medium px-3 py-2">Proveedor</th>
+                      <th className="text-right font-medium px-3 py-2">Sugerido</th>
+                      <th className="text-right font-medium px-3 py-2">A pagar</th>
+                      <th className="text-right font-medium px-3 py-2">Sugerido</th>
+                      <th className="text-right font-medium px-3 py-2">Impuesto</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {providers.map((p) => {
+                      const inOrder =
+                        p.amount === undefined
+                          ? null
+                          : convertToOrder(p.amount, p.currency);
+                      const delta =
+                        inOrder === null ? null : inOrder - p.suggested;
+                      const taxRate =
+                        p.providerType === 'doctor'
+                          ? taxRateFor(taxRates, !!p.isLegalEntity)
+                          : 0;
+                      const taxAmount =
+                        p.providerType === 'doctor' && p.amount !== undefined
+                          ? p.amount * taxRate
+                          : null;
+                      const conv =
+                        p.amount !== undefined && p.currency !== order.priceCurrency;
+                      return (
+                        <tr key={p.key} className="border-t">
+                          <td className="px-3 py-2">
+                            <div className="font-medium">{p.providerName}</div>
+                            <div className="text-[10px] text-muted-foreground">
+                              {p.providerType === 'doctor' ? 'Doctor' : 'Centro'}
+                              {' · '}
+                              {p.serviceTypeIds.length} servicio
+                              {p.serviceTypeIds.length === 1 ? '' : 's'}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono">
+                            {p.suggested.toFixed(2)} {order.priceCurrency}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono">
+                            {p.amount === undefined ? (
+                              <span className="text-muted-foreground italic">—</span>
+                            ) : (
+                              <>
+                                {p.amount.toFixed(2)} {p.currency}
+                                {conv && (
+                                  <div className="text-[10px] text-muted-foreground">
+                                    ≈{' '}
+                                    {inOrder === null
+                                      ? 'sin tasa'
+                                      : `${inOrder.toFixed(2)} ${order.priceCurrency}`}
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </td>
+                          <td
+                            className={cn(
+                              'px-3 py-2 text-right font-mono',
+                              delta !== null && delta > 0.005 && 'text-warning',
+                              delta !== null && delta < -0.005 && 'text-success',
+                            )}
+                          >
+                            {delta === null
+                              ? '—'
+                              : `${delta > 0 ? '+' : ''}${delta.toFixed(2)} ${order.priceCurrency}`}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono">
+                            {taxAmount === null ? (
+                              <span className="text-muted-foreground">—</span>
+                            ) : (
+                              <>
+                                {taxAmount.toFixed(2)} {p.currency}
+                                <div className="text-[10px] text-muted-foreground">
+                                  {(taxRate * 100).toFixed(0)}%{' '}
+                                  {p.isLegalEntity ? 'jur.' : 'nat.'}
+                                </div>
+                              </>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot className="bg-muted/40 font-semibold">
+                    <tr className="border-t">
+                      <td className="px-3 py-2">Total</td>
+                      <td className="px-3 py-2 text-right font-mono">
+                        {totalSuggested.toFixed(2)} {order.priceCurrency}
+                      </td>
+                      <td
+                        className={cn(
+                          'px-3 py-2 text-right font-mono',
+                          exceedsCap && 'text-destructive',
+                        )}
+                      >
+                        {totalInOrderCurrency.toFixed(2)} {order.priceCurrency}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono">
+                        {(totalInOrderCurrency - totalSuggested >= 0 ? '+' : '') +
+                          (totalInOrderCurrency - totalSuggested).toFixed(2)}{' '}
+                        {order.priceCurrency}
+                      </td>
+                      <td className="px-3 py-2 text-right text-[10px] text-muted-foreground">
+                        retención
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+
+            <div className="rounded-lg border bg-muted/30 p-3 text-sm grid sm:grid-cols-4 gap-3">
+              <div>
+                <div className="text-xs text-muted-foreground">Monto declarado</div>
+                <div className="font-mono">
+                  {priceAmount.toFixed(2)} {order.priceCurrency}
+                </div>
+              </div>
               <div>
                 <div className="text-xs text-muted-foreground">Sugerido total</div>
                 <div className="font-mono">
@@ -519,7 +645,9 @@ export function OrderBillingStep({
                 </div>
               </div>
               <div>
-                <div className="text-xs text-muted-foreground">Ganancia neta</div>
+                <div className="text-xs text-muted-foreground">
+                  Ganancia neta
+                </div>
                 <div className="font-mono">
                   {netProfit.toFixed(2)} {order.priceCurrency}
                 </div>
