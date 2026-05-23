@@ -14,6 +14,8 @@ export interface AuthUser {
   firstName: string;
   lastName: string;
   phoneNumber?: string | null;
+  academicDegree?: string | null;
+  jobTitle?: string | null;
   isActive: boolean;
   isSuperAdmin: boolean;
   roles: AuthRole[];

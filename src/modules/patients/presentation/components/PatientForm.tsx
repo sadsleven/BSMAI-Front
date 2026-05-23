@@ -279,7 +279,7 @@ export function PatientForm({
             <>
               <div className="space-y-1.5">
                 <Label htmlFor="cedula" className="text-sm font-medium">
-                  Cédula <span className="text-destructive">*</span>
+                  Cédula <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
                 </Label>
                 <Controller
                   name="cedula"

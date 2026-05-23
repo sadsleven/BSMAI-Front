@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Eye, Plus, HandCoins } from 'lucide-react';
+import { Eye, Plus, Receipt } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { AccountsReceivableDetail } from '../components/AccountsReceivableDetail';
+import { TaxesPayableDetail } from '../components/TaxesPayableDetail';
 import {
   Table,
   TableBody,
@@ -29,17 +30,26 @@ import { Can } from '@/modules/auth/presentation/components/Can';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { notify } from '@/lib/notifications/toast';
 import { getHttpErrorMessage } from '@/lib/api';
-import { accountsReceivableGateway } from '../../infrastructure/accountsReceivableGateway';
+import { taxesPayableGateway } from '../../infrastructure/taxesPayableGateway';
 import {
-  collectedBs,
+  canSelectForPayment,
+  effectiveStatus,
+  EFFECTIVE_STATUS_LABEL,
+  paidBs,
   pendingBs,
   pendingOriginal,
-  STATUS_LABEL,
-  type AccountsReceivable,
-  type AccountsReceivableStatus,
-} from '../../domain/models/accountsReceivable';
-import { insuranceGateway } from '@/modules/insurances/infrastructure/insuranceGateway';
-import type { Insurance } from '@/modules/insurances/domain/models/insurance';
+  recipientName,
+  taxAmount,
+  type TaxPayable,
+  type TaxPayableStatus,
+} from '../../domain/models/taxesPayable';
+import { doctorGateway } from '@/modules/doctors/infrastructure/doctorGateway';
+import { careCenterGateway } from '@/modules/care-centers/infrastructure/careCenterGateway';
+import {
+  fullName as doctorFullName,
+  type Doctor,
+} from '@/modules/doctors/domain/models/doctor';
+import type { CareCenter } from '@/modules/care-centers/domain/models/careCenter';
 
 type SortBy = 'orderNumber' | 'createdAt' | 'updatedAt';
 
@@ -48,33 +58,42 @@ function readQuery(sp: URLSearchParams) {
     page: Number(sp.get('page') ?? 1) || 1,
     limit: Number(sp.get('limit') ?? 10) || 10,
     search: sp.get('search') ?? '',
-    status: (sp.get('status') ?? '') as '' | AccountsReceivableStatus,
-    insuranceId: sp.get('insuranceId') ?? '',
+    status: (sp.get('status') ?? '') as '' | TaxPayableStatus,
+    doctorId: sp.get('doctorId') ?? '',
+    careCenterId: sp.get('careCenterId') ?? '',
     sortBy: (sp.get('sortBy') ?? 'createdAt') as SortBy,
     sortDir: (sp.get('sortDir') ?? 'DESC') as SortDir,
   };
 }
 
-export function AccountsReceivableList() {
+export function TaxesPayableList() {
   const [sp, setSp] = useSearchParams();
   const navigate = useNavigate();
   const filters = useMemo(() => readQuery(sp), [sp]);
   const [searchInput, setSearchInput] = useState(filters.search);
 
-  const [data, setData] = useState<AccountsReceivable[]>([]);
+  const [data, setData] = useState<TaxPayable[]>([]);
   const [metadata, setMetadata] = useState({ total: 0, page: 1, lastPage: 1 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [detailId, setDetailId] = useState<string | null>(null);
-  const [insurances, setInsurances] = useState<Insurance[]>([]);
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [careCenters, setCareCenters] = useState<CareCenter[]>([]);
 
   useEffect(() => {
     (async () => {
       try {
-        setInsurances(await insuranceGateway.listAssignable());
+        setDoctors(await doctorGateway.listAssignable());
       } catch {
-        setInsurances([]);
+        setDoctors([]);
+      }
+    })();
+    (async () => {
+      try {
+        setCareCenters(await careCenterGateway.listAssignable());
+      } catch {
+        setCareCenters([]);
       }
     })();
   }, []);
@@ -104,12 +123,13 @@ export function AccountsReceivableList() {
     setLoading(true);
     setError(null);
     try {
-      const res = await accountsReceivableGateway.list({
+      const res = await taxesPayableGateway.list({
         page: filters.page,
         limit: filters.limit,
         search: filters.search || undefined,
         status: filters.status || undefined,
-        insuranceId: filters.insuranceId || undefined,
+        doctorId: filters.doctorId || undefined,
+        careCenterId: filters.careCenterId || undefined,
         sortBy: filters.sortBy,
         sortDir: filters.sortDir,
       });
@@ -134,7 +154,12 @@ export function AccountsReceivableList() {
     setSp(new URLSearchParams(), { replace: true });
   };
 
-  const hasActiveFilters = !!(filters.search || filters.status || filters.insuranceId);
+  const hasActiveFilters = !!(
+    filters.search ||
+    filters.status ||
+    filters.doctorId ||
+    filters.careCenterId
+  );
 
   const toggleSelect = (id: string) =>
     setSelected((prev) => {
@@ -154,8 +179,8 @@ export function AccountsReceivableList() {
       notify.warning('Seleccioná al menos una cuenta');
       return;
     }
-    navigate('/accounts-receivable/register-collection', {
-      state: { receivableIds: selectedAccounts.map((a) => a.id) },
+    navigate('/taxes-payable/register-payment', {
+      state: { taxPayableIds: selectedAccounts.map((a) => a.id) },
     });
   };
 
@@ -165,16 +190,16 @@ export function AccountsReceivableList() {
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div className="space-y-1">
           <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">
-            Cuentas por cobrar
+            Impuestos por pagar
           </h1>
           <p className="text-sm text-muted-foreground">
             {metadata.total.toLocaleString()} cuenta{metadata.total === 1 ? '' : 's'} en total
           </p>
         </div>
-        <Can permission={PERMISSIONS.ACCOUNTS_RECEIVABLE.UPDATE}>
+        <Can permission={PERMISSIONS.TAXES_PAYABLE.UPDATE}>
           <Button onClick={goRegister} disabled={selectedAccounts.length === 0}>
             <Plus className="w-4 h-4 mr-1.5" />
-            Registrar cobro
+            Registrar pago
             {selectedAccounts.length > 0 && (
               <span className="ml-1 text-[11px] opacity-80">
                 ({selectedAccounts.length})
@@ -188,7 +213,7 @@ export function AccountsReceivableList() {
         <DataTableToolbar
           searchValue={searchInput}
           onSearchChange={setSearchInput}
-          searchPlaceholder="Buscar por número de orden…"
+          searchPlaceholder="Buscar por N° orden o cuenta…"
           hasActiveFilters={hasActiveFilters}
           onClear={clearFilters}
           filters={
@@ -204,25 +229,45 @@ export function AccountsReceivableList() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Estado: todos</SelectItem>
-                  <SelectItem value="uncollected">No cobrada</SelectItem>
-                  <SelectItem value="collected">Cobrada</SelectItem>
+                  <SelectItem value="unpaid">No pagada</SelectItem>
+                  <SelectItem value="partially_paid">Pagada parcialmente</SelectItem>
+                  <SelectItem value="paid">Pagada</SelectItem>
                 </SelectContent>
               </Select>
 
               <Select
-                value={filters.insuranceId || 'all'}
+                value={filters.doctorId || 'all'}
                 onValueChange={(v) =>
-                  updateParam({ insuranceId: v === 'all' ? undefined : v })
+                  updateParam({ doctorId: v === 'all' ? undefined : v })
                 }
               >
                 <SelectTrigger className="h-9 w-56">
-                  <SelectValue placeholder="Seguro" />
+                  <SelectValue placeholder="Doctor" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Seguro: todos</SelectItem>
-                  {insurances.map((i) => (
-                    <SelectItem key={i.id} value={i.id}>
-                      {i.name}
+                  <SelectItem value="all">Doctor: todos</SelectItem>
+                  {doctors.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>
+                      {doctorFullName(d)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={filters.careCenterId || 'all'}
+                onValueChange={(v) =>
+                  updateParam({ careCenterId: v === 'all' ? undefined : v })
+                }
+              >
+                <SelectTrigger className="h-9 w-56">
+                  <SelectValue placeholder="Centro" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Centro: todos</SelectItem>
+                  {careCenters.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.businessName}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -255,13 +300,19 @@ export function AccountsReceivableList() {
                 </SortableHeader>
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                Seguro
+                Destinatario
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                Monto orden
+                Tipo
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                Falta por cobrar
+                Tasa
+              </TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                Monto al fisco
+              </TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                Falta por pagar
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Estado
@@ -283,46 +334,46 @@ export function AccountsReceivableList() {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <SkeletonTableRows rows={5} columns={9} />
+              <SkeletonTableRows rows={5} columns={11} />
             ) : data.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="p-0">
+                <TableCell colSpan={11} className="p-0">
                   <EmptyState
-                    icon={HandCoins}
+                    icon={Receipt}
                     title={
                       hasActiveFilters
                         ? 'Sin resultados con esos filtros'
-                        : 'Sin cuentas por cobrar'
+                        : 'Sin impuestos por pagar'
                     }
                     description={
                       hasActiveFilters
                         ? 'Limpiá los filtros para ver todas las cuentas.'
-                        : 'Las cuentas se generan al crear órdenes tipo seguro.'
+                        : 'Las cuentas se generan al facturar órdenes (Paso 4).'
                     }
                   />
                 </TableCell>
               </TableRow>
             ) : (
               data.map((a) => {
+                const amt = taxAmount(a);
                 const pBs = pendingBs(a);
                 const pOrig = pendingOriginal(a);
-                const collected = collectedBs(a);
-                // Permite seleccionar mientras no esté completamente cobrada.
-                // Receivable sin cap: 'overcollected' / 'collected' bloquean para evitar más cobros.
-                const isUncollected =
-                  a.status === 'uncollected' || a.status === 'partially_collected';
+                const paid = paidBs(a);
+                const eff = effectiveStatus(a);
+                const selectable = canSelectForPayment(a);
+                const ratePct = a.taxRate ? (Number(a.taxRate) * 100).toFixed(2) : null;
                 return (
                   <TableRow key={a.id} className="hover:bg-muted/30">
                     <TableCell className="py-3.5 px-4">
                       <Checkbox
                         checked={selected.has(a.id)}
-                        disabled={!isUncollected}
-                        onCheckedChange={() => isUncollected && toggleSelect(a.id)}
+                        disabled={!selectable}
+                        onCheckedChange={() => selectable && toggleSelect(a.id)}
                         aria-label="Seleccionar cuenta"
                       />
                     </TableCell>
                     <TableCell className="py-3.5 px-4 font-mono text-sm font-semibold">
-                      {a.receivableNumber}
+                      {a.taxPayableNumber}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 font-mono text-sm">
                       <Link
@@ -333,40 +384,45 @@ export function AccountsReceivableList() {
                       </Link>
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm">
-                      {a.insurance?.name ?? '—'}
+                      {recipientName(a)}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm">
+                      <Badge variant="outline" className="font-normal">
+                        {a.recipientType === 'doctor' ? 'Doctor' : 'Centro'}
+                      </Badge>
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono">
-                      {Number(a.order.priceAmount).toFixed(2)}{' '}
-                      {a.order.priceCurrency}
+                      {ratePct ? `${ratePct}%` : '—'}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono">
+                      {amt !== null
+                        ? `${amt.toFixed(2)} ${a.taxAmountCurrency ?? ''}`
+                        : '—'}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono">
                       {pBs !== null ? (
                         <div
                           className={
-                            Math.abs(pBs) <= 0.01
+                            pBs <= 0.01
                               ? 'text-success'
-                              : pBs < 0
-                                ? 'text-brand-blue-strong'
-                                : collected > 0
-                                  ? 'text-warning'
-                                  : 'text-foreground'
+                              : paid > 0
+                                ? 'text-warning'
+                                : 'text-foreground'
                           }
                         >
-                          {pOrig !== null ? (
+                          {pOrig !== null &&
+                          a.taxAmountCurrency &&
+                          a.taxAmountCurrency !== 'BS' ? (
                             <>
                               <div>
-                                {pBs < 0 ? '+' : ''}
-                                {Math.abs(pOrig).toFixed(2)} {a.order.priceCurrency}
+                                {pOrig.toFixed(2)} {a.taxAmountCurrency}
                               </div>
                               <div className="text-xs text-muted-foreground">
-                                Bs. {Math.abs(pBs).toFixed(2)}
+                                Bs. {pBs.toFixed(2)}
                               </div>
                             </>
                           ) : (
-                            <div>
-                              {pBs < 0 ? '+' : ''}
-                              {Math.abs(pBs).toFixed(2)} Bs.
-                            </div>
+                            <div>{pBs.toFixed(2)} Bs.</div>
                           )}
                         </div>
                       ) : (
@@ -374,38 +430,30 @@ export function AccountsReceivableList() {
                       )}
                     </TableCell>
                     <TableCell className="py-3.5 px-4">
-                      {(() => {
-                        const colorMap: Record<
-                          typeof a.status,
-                          { bg: string; dot: string }
-                        > = {
-                          collected: {
-                            bg: 'bg-success-soft text-success',
-                            dot: 'bg-success',
-                          },
-                          partially_collected: {
-                            bg: 'bg-brand-cyan-soft text-brand-blue-strong',
-                            dot: 'bg-brand-cyan',
-                          },
-                          overcollected: {
-                            bg: 'bg-brand-blue-soft text-brand-blue-strong',
-                            dot: 'bg-brand-blue',
-                          },
-                          uncollected: {
-                            bg: 'bg-warning-soft text-warning',
-                            dot: 'bg-warning',
-                          },
-                        };
-                        const c = colorMap[a.status];
-                        return (
-                          <span
-                            className={`inline-flex items-center gap-1.5 rounded-full ${c.bg} px-2 py-0.5 text-xs font-medium`}
-                          >
-                            <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
-                            {STATUS_LABEL[a.status]}
-                          </span>
-                        );
-                      })()}
+                      <span
+                        className={
+                          eff === 'paid'
+                            ? 'inline-flex items-center gap-1.5 rounded-full bg-success-soft text-success px-2 py-0.5 text-xs font-medium'
+                            : eff === 'partially_paid'
+                              ? 'inline-flex items-center gap-1.5 rounded-full bg-brand-cyan-soft text-brand-blue-strong px-2 py-0.5 text-xs font-medium'
+                              : eff === 'undefined'
+                                ? 'inline-flex items-center gap-1.5 rounded-full bg-muted text-muted-foreground px-2 py-0.5 text-xs font-medium'
+                                : 'inline-flex items-center gap-1.5 rounded-full bg-warning-soft text-warning px-2 py-0.5 text-xs font-medium'
+                        }
+                      >
+                        <span
+                          className={
+                            eff === 'paid'
+                              ? 'w-1.5 h-1.5 rounded-full bg-success'
+                              : eff === 'partially_paid'
+                                ? 'w-1.5 h-1.5 rounded-full bg-brand-cyan'
+                                : eff === 'undefined'
+                                  ? 'w-1.5 h-1.5 rounded-full bg-muted-foreground'
+                                  : 'w-1.5 h-1.5 rounded-full bg-warning'
+                          }
+                        />
+                        {EFFECTIVE_STATUS_LABEL[eff]}
+                      </span>
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm text-muted-foreground">
                       {a.createdAt
@@ -430,8 +478,8 @@ export function AccountsReceivableList() {
           </TableBody>
         </Table>
 
-        <AccountsReceivableDetail
-          accountId={detailId}
+        <TaxesPayableDetail
+          taxPayableId={detailId}
           open={!!detailId}
           onOpenChange={(o) => !o && setDetailId(null)}
         />

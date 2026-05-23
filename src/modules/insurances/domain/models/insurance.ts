@@ -12,6 +12,7 @@ export interface Insurance {
   description?: string | null;
   email?: string | null;
   fiscalAddress?: string | null;
+  rif?: string | null;
   isActive: boolean;
   phones: InsurancePhone[];
   /** Precios de cobro por Tipo de Servicio que el seguro cubre. */
@@ -26,6 +27,7 @@ export interface CreateInsuranceDto {
   description?: string;
   email?: string;
   fiscalAddress?: string;
+  rif?: string;
   phones: { number: string; label?: string }[];
   servicePrices?: ServicePricePayload[];
   isActive?: boolean;

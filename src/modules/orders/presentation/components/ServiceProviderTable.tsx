@@ -166,7 +166,7 @@ export function ServiceProviderTable({
           Aún no hay Tipos de Servicio. Agregá al menos uno.
         </div>
       ) : (
-        <div className="rounded-lg border overflow-x-auto">
+        <div className="rounded-lg border ">
           <table className="w-full text-sm min-w-[760px]">
             <thead className="bg-[oklch(0.985_0.003_250)]">
               <tr className="text-left">

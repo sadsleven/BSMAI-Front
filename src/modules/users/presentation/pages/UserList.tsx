@@ -663,6 +663,7 @@ export function UserList() {
           total={metadata.total}
           lastPage={metadata.lastPage}
           onPageChange={onPage}
+          onPageSizeChange={(limit) => updateParam({ limit: String(limit) })}
           itemLabel="usuarios"
         />
       </div>

@@ -66,4 +66,9 @@ export const PERMISSIONS = {
     VIEW: 'accounts-receivable.view',
     UPDATE: 'accounts-receivable.update',
   },
+  TAXES_PAYABLE: {
+    LIST: 'taxes-payable.list',
+    VIEW: 'taxes-payable.view',
+    UPDATE: 'taxes-payable.update',
+  },
 } as const;

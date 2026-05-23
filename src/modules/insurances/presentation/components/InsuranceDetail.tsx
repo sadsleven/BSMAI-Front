@@ -56,7 +56,8 @@ export function InsuranceDetail({ insuranceId, open, onOpenChange }: InsuranceDe
           <DetailSection title="Información">
             <DetailRow label="Nombre" value={insurance.name} />
             <DetailRow label="Email" value={insurance.email} />
-            <DetailRow label="Domicilio fiscal" value={insurance.fiscalAddress} />
+            <DetailRow label="Dirección fiscal" value={insurance.fiscalAddress} />
+            <DetailRow label="RIF" value={insurance.rif} />
             <DetailRow label="Descripción" value={insurance.description} />
             <DetailRow
               label="Estado"

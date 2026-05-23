@@ -28,6 +28,8 @@ function mapUser(data: unknown): AuthUser {
     firstName: String(o.firstName ?? ''),
     lastName: String(o.lastName ?? ''),
     phoneNumber: typeof o.phoneNumber === 'string' ? o.phoneNumber : null,
+    academicDegree: typeof o.academicDegree === 'string' ? o.academicDegree : null,
+    jobTitle: typeof o.jobTitle === 'string' ? o.jobTitle : null,
     isActive: Boolean(o.isActive),
     isSuperAdmin: Boolean(o.isSuperAdmin),
     roles,
@@ -79,6 +81,8 @@ export const authApi = {
     lastName?: string;
     email?: string;
     phoneNumber?: string | null;
+    academicDegree?: string | null;
+    jobTitle?: string | null;
   }): Promise<AuthUser> {
     const { data } = await api.patch<unknown>('/auth/me', payload);
     return mapUser(data);

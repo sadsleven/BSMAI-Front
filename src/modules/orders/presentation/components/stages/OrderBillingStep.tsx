@@ -321,7 +321,7 @@ export function OrderBillingStep({
     <div className="space-y-5">
       <FormSection
         title="Factura"
-        description="Descargá la factura única con todos los tipos de servicio de la orden, en XLSX o PDF."
+        description="Descargá la factura única con todos los tipos de servicio de la orden, en Excel o PDF."
       >
         <div className="rounded-lg border bg-card p-4 flex items-center gap-3 flex-wrap">
           <div className="w-10 h-10 rounded-md bg-success-soft text-success flex items-center justify-center shrink-0">
@@ -342,7 +342,7 @@ export function OrderBillingStep({
               disabled={downloadingFact !== null}
             >
               <Download className="w-3.5 h-3.5" />
-              {downloadingFact === 'xlsx' ? 'Generando…' : 'XLSX'}
+              {downloadingFact === 'xlsx' ? 'Generando…' : 'Excel'}
             </Button>
             <Button
               type="button"

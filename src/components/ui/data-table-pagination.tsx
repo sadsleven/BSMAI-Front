@@ -1,6 +1,15 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+
+export const DEFAULT_PAGE_SIZE_OPTIONS = [5, 10, 20, 50, 100] as const;
 
 export type DataTablePaginationProps = {
   /** 1-based current page */
@@ -10,6 +19,9 @@ export type DataTablePaginationProps = {
   /** Optional; computed as ceil(total/pageSize) when omitted */
   lastPage?: number;
   onPageChange: (page: number) => void;
+  /** When provided, renders a page-size selector. */
+  onPageSizeChange?: (size: number) => void;
+  pageSizeOptions?: readonly number[];
   /** Label noun, e.g. "usuarios", "roles" */
   itemLabel?: string;
   className?: string;
@@ -36,6 +48,8 @@ export function DataTablePagination({
   total,
   lastPage,
   onPageChange,
+  onPageSizeChange,
+  pageSizeOptions = DEFAULT_PAGE_SIZE_OPTIONS,
   itemLabel = 'registros',
   className,
 }: DataTablePaginationProps) {
@@ -53,10 +67,32 @@ export function DataTablePagination({
         className,
       )}
     >
-      <div className="text-sm text-muted-foreground">
-        Mostrando <span className="font-medium text-foreground">{from.toLocaleString()}</span>–
-        <span className="font-medium text-foreground">{to.toLocaleString()}</span> de{' '}
-        <span className="font-medium text-foreground">{total.toLocaleString()}</span> {itemLabel}
+      <div className="flex items-center gap-4 flex-wrap">
+        <div className="text-sm text-muted-foreground">
+          Mostrando <span className="font-medium text-foreground">{from.toLocaleString()}</span>–
+          <span className="font-medium text-foreground">{to.toLocaleString()}</span> de{' '}
+          <span className="font-medium text-foreground">{total.toLocaleString()}</span> {itemLabel}
+        </div>
+        {onPageSizeChange ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span>Por página</span>
+            <Select
+              value={String(pageSize)}
+              onValueChange={(v) => onPageSizeChange(Number(v))}
+            >
+              <SelectTrigger className="h-8 w-[72px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {pageSizeOptions.map((opt) => (
+                  <SelectItem key={opt} value={String(opt)}>
+                    {opt}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
       </div>
 
       <div className="flex items-center gap-1">

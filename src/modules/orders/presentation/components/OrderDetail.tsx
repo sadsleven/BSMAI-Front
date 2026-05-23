@@ -167,6 +167,9 @@ export function OrderDetail({ orderId, open, onOpenChange }: OrderDetailProps) {
                 }
               />
             )}
+            {order.serviceKey ? (
+              <DetailRow label="Clave de servicio" value={order.serviceKey} />
+            ) : null}
           </DetailSection>
 
           <DetailSection title="Proveedores y servicios">

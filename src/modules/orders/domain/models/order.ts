@@ -39,6 +39,9 @@ export interface OrderRefSummary {
   businessName?: string | null;
   cedula?: string | null;
   rif?: string | null;
+  birthDate?: string | null;
+  address?: string | null;
+  phones?: Array<{ id?: string; number: string; label?: string | null }>;
 }
 
 export type DoctorAmountCurrency = 'USD' | 'EUR' | 'BS';
@@ -68,9 +71,17 @@ export interface Order {
   contractorId?: string | null;
   contractor?: { id: string; name: string } | null;
   insuranceId?: string | null;
-  insurance?: { id: string; name: string } | null;
+  insurance?: {
+    id: string;
+    name: string;
+    rif?: string | null;
+    fiscalAddress?: string | null;
+    phones?: Array<{ id?: string; number: string; label?: string | null }>;
+  } | null;
   /** Origen del seguro: directo o vía contratista. Null para órdenes no-insurance. */
   insuranceSource?: InsuranceSource | null;
+  /** Clave/referencia externa del seguro. Sólo type='insurance'. ≤30 chars. */
+  serviceKey?: string | null;
   specialtyId: string;
   specialty?: { id: string; name: string };
   /** Filas ST + proveedor. Reemplaza `serviceTypes` y los top-level provider fields. */
@@ -80,7 +91,20 @@ export interface Order {
   appointmentDate: string;
   priceCurrency: OrderCurrency;
   priceAmount: string | number;
+  servicePricing?: Array<{
+    serviceTypeId: string;
+    kind: 'particular' | 'insurance' | 'doctor' | 'care_center';
+    priceUsd: string | number;
+    priceEur: string | number;
+  }>;
   createdById: string;
+  createdBy?: {
+    id: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    academicDegree?: string | null;
+    jobTitle?: string | null;
+  };
   payments?: OrderPayment[];
   // Pasos 2-4
   attended?: boolean;
@@ -137,6 +161,7 @@ export interface CreateOrderDto {
   contractorId?: string;
   insuranceId?: string;
   insuranceSource?: InsuranceSource;
+  serviceKey?: string;
   specialtyId: string;
   serviceTypes: OrderServiceTypeRowInput[];
   pathologyIds?: string[];

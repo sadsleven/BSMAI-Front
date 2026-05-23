@@ -466,6 +466,7 @@ export function ExchangeRateList() {
           total={metadata.total}
           lastPage={metadata.lastPage}
           onPageChange={onPage}
+          onPageSizeChange={(limit) => updateParam({ limit: String(limit) })}
           itemLabel="tasas"
         />
       </div>

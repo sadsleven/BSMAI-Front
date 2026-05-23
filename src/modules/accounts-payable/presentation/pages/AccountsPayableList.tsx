@@ -44,6 +44,13 @@ import {
   type AccountsPayableStatus,
 } from '../../domain/models/accountsPayable';
 import { useTaxRates } from '@/lib/config/taxRates';
+import { doctorGateway } from '@/modules/doctors/infrastructure/doctorGateway';
+import { careCenterGateway } from '@/modules/care-centers/infrastructure/careCenterGateway';
+import {
+  fullName as doctorFullName,
+  type Doctor,
+} from '@/modules/doctors/domain/models/doctor';
+import type { CareCenter } from '@/modules/care-centers/domain/models/careCenter';
 
 type SortBy = 'orderNumber' | 'createdAt' | 'updatedAt';
 
@@ -53,6 +60,8 @@ function readQuery(sp: URLSearchParams) {
     limit: Number(sp.get('limit') ?? 10) || 10,
     search: sp.get('search') ?? '',
     status: (sp.get('status') ?? '') as '' | AccountsPayableStatus,
+    doctorId: sp.get('doctorId') ?? '',
+    careCenterId: sp.get('careCenterId') ?? '',
     sortBy: (sp.get('sortBy') ?? 'createdAt') as SortBy,
     sortDir: (sp.get('sortDir') ?? 'DESC') as SortDir,
   };
@@ -71,6 +80,25 @@ export function AccountsPayableList() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [detailId, setDetailId] = useState<string | null>(null);
   const taxRates = useTaxRates();
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [careCenters, setCareCenters] = useState<CareCenter[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        setDoctors(await doctorGateway.listAssignable());
+      } catch {
+        setDoctors([]);
+      }
+    })();
+    (async () => {
+      try {
+        setCareCenters(await careCenterGateway.listAssignable());
+      } catch {
+        setCareCenters([]);
+      }
+    })();
+  }, []);
 
   const updateParam = useCallback(
     (patch: Record<string, string | number | undefined>) => {
@@ -103,6 +131,8 @@ export function AccountsPayableList() {
         limit: filters.limit,
         search: filters.search || undefined,
         status: filters.status || undefined,
+        doctorId: filters.doctorId || undefined,
+        careCenterId: filters.careCenterId || undefined,
         sortBy: filters.sortBy,
         sortDir: filters.sortDir,
       });
@@ -127,7 +157,12 @@ export function AccountsPayableList() {
     setSp(new URLSearchParams(), { replace: true });
   };
 
-  const hasActiveFilters = !!(filters.search || filters.status);
+  const hasActiveFilters = !!(
+    filters.search ||
+    filters.status ||
+    filters.doctorId ||
+    filters.careCenterId
+  );
 
   const toggleSelect = (id: string) =>
     setSelected((prev) => {
@@ -185,21 +220,61 @@ export function AccountsPayableList() {
           hasActiveFilters={hasActiveFilters}
           onClear={clearFilters}
           filters={
-            <Select
-              value={filters.status || 'all'}
-              onValueChange={(v) =>
-                updateParam({ status: v === 'all' ? undefined : v })
-              }
-            >
-              <SelectTrigger className="h-9 w-44">
-                <SelectValue placeholder="Estado" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Estado: todos</SelectItem>
-                <SelectItem value="unpaid">No pagada</SelectItem>
-                <SelectItem value="paid">Pagada</SelectItem>
-              </SelectContent>
-            </Select>
+            <>
+              <Select
+                value={filters.status || 'all'}
+                onValueChange={(v) =>
+                  updateParam({ status: v === 'all' ? undefined : v })
+                }
+              >
+                <SelectTrigger className="h-9 w-44">
+                  <SelectValue placeholder="Estado" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Estado: todos</SelectItem>
+                  <SelectItem value="unpaid">No pagada</SelectItem>
+                  <SelectItem value="paid">Pagada</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={filters.doctorId || 'all'}
+                onValueChange={(v) =>
+                  updateParam({ doctorId: v === 'all' ? undefined : v })
+                }
+              >
+                <SelectTrigger className="h-9 w-56">
+                  <SelectValue placeholder="Doctor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Doctor: todos</SelectItem>
+                  {doctors.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>
+                      {doctorFullName(d)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={filters.careCenterId || 'all'}
+                onValueChange={(v) =>
+                  updateParam({ careCenterId: v === 'all' ? undefined : v })
+                }
+              >
+                <SelectTrigger className="h-9 w-56">
+                  <SelectValue placeholder="Centro" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Centro: todos</SelectItem>
+                  {careCenters.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.businessName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </>
           }
         />
 
@@ -418,6 +493,7 @@ export function AccountsPayableList() {
           total={metadata.total}
           lastPage={metadata.lastPage}
           onPageChange={(p) => updateParam({ page: p })}
+          onPageSizeChange={(limit) => updateParam({ limit })}
           itemLabel="cuentas"
         />
       </div>

@@ -27,6 +27,10 @@ function buildDto(values: OrderValues): CreateOrderDto {
       values.type === 'insurance' && values.insuranceSource
         ? (values.insuranceSource as 'direct' | 'via_contractor')
         : undefined,
+    serviceKey:
+      values.type === 'insurance' && values.serviceKey?.trim()
+        ? values.serviceKey.trim()
+        : undefined,
     specialtyId: values.specialtyId,
     serviceTypes: (values.serviceTypes ?? []).map((r) => ({
       serviceTypeId: r.serviceTypeId,
@@ -68,6 +72,7 @@ export function OrderCreate() {
       contractorId: '',
       insuranceId: '',
       insuranceSource: '',
+      serviceKey: '',
       specialtyId: '',
       serviceTypes: [],
       pathologyIds: [],

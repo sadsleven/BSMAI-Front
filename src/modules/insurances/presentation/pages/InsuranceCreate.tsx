@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { FormSwitch } from '@/components/ui/form-switch';
 import { FormSection, FormGrid } from '@/components/ui/form-section';
 import { PhoneListInput } from '@/components/ui/phone-list-input';
+import { RifInput } from '@/components/ui/rif-input';
 import {
   ServicePricesTable,
   servicePricesToPayload,
@@ -31,6 +32,7 @@ export function InsuranceCreate() {
       description: '',
       email: '',
       fiscalAddress: '',
+      rif: '',
       phones: [],
       servicePrices: [],
       isActive: true,
@@ -48,7 +50,7 @@ export function InsuranceCreate() {
 
   const isActive = watch('isActive') ?? true;
   const invalid = (
-    k: 'name' | 'description' | 'email' | 'fiscalAddress',
+    k: 'name' | 'description' | 'email' | 'fiscalAddress' | 'rif',
   ) => (errors[k] ? 'border-destructive focus-visible:ring-destructive/30' : '');
 
   const phoneErrors = (
@@ -62,6 +64,7 @@ export function InsuranceCreate() {
         description: values.description || undefined,
         email: values.email?.trim() || undefined,
         fiscalAddress: values.fiscalAddress?.trim() || undefined,
+        rif: values.rif?.trim() || undefined,
         phones: values.phones.map((p) => ({
           number: p.number,
           label: p.label || undefined,
@@ -129,7 +132,7 @@ export function InsuranceCreate() {
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="fiscalAddress" className="text-sm font-medium">
-                  Domicilio fiscal <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
+                  Dirección fiscal <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
                 </Label>
                 <Textarea
                   id="fiscalAddress"
@@ -141,6 +144,28 @@ export function InsuranceCreate() {
                   <p className="text-xs text-destructive flex items-center gap-1 mt-1">
                     <AlertTriangle className="w-3 h-3" />
                     {errors.fiscalAddress.message}
+                  </p>
+                ) : null}
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="rif" className="text-sm font-medium">
+                  RIF <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
+                </Label>
+                <Controller
+                  name="rif"
+                  control={control}
+                  render={({ field }) => (
+                    <RifInput
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      invalid={!!errors.rif}
+                    />
+                  )}
+                />
+                {errors.rif ? (
+                  <p className="text-xs text-destructive flex items-center gap-1 mt-1">
+                    <AlertTriangle className="w-3 h-3" />
+                    {errors.rif.message}
                   </p>
                 ) : null}
               </div>

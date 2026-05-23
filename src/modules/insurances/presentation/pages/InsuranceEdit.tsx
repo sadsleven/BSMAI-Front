@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { FormSwitch } from '@/components/ui/form-switch';
 import { FormSection, FormGrid } from '@/components/ui/form-section';
 import { PhoneListInput } from '@/components/ui/phone-list-input';
+import { RifInput } from '@/components/ui/rif-input';
 import {
   ServicePricesTable,
   servicePricesToPayload,
@@ -35,6 +36,7 @@ export function InsuranceEdit() {
       description: '',
       email: '',
       fiscalAddress: '',
+      rif: '',
       phones: [],
       servicePrices: [],
       isActive: true,
@@ -63,6 +65,7 @@ export function InsuranceEdit() {
           description: i.description ?? '',
           email: i.email ?? '',
           fiscalAddress: i.fiscalAddress ?? '',
+          rif: i.rif ?? '',
           phones:
             i.phones?.length > 0
               ? i.phones.map((ph) => ({ number: ph.number, label: ph.label ?? '' }))
@@ -95,6 +98,7 @@ export function InsuranceEdit() {
         description: values.description ?? undefined,
         email: values.email?.trim() || '',
         fiscalAddress: values.fiscalAddress?.trim() ?? '',
+        rif: values.rif?.trim() ?? '',
         phones: values.phones.map((p) => ({
           number: p.number,
           label: p.label || undefined,
@@ -114,7 +118,7 @@ export function InsuranceEdit() {
   }
 
   const invalid = (
-    k: 'name' | 'description' | 'email' | 'fiscalAddress',
+    k: 'name' | 'description' | 'email' | 'fiscalAddress' | 'rif',
   ) => (errors[k] ? 'border-destructive focus-visible:ring-destructive/30' : '');
 
   const phoneErrors = (
@@ -175,7 +179,7 @@ export function InsuranceEdit() {
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="fiscalAddress" className="text-sm font-medium">
-                  Domicilio fiscal <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
+                  Dirección fiscal <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
                 </Label>
                 <Textarea
                   id="fiscalAddress"
@@ -187,6 +191,28 @@ export function InsuranceEdit() {
                   <p className="text-xs text-destructive flex items-center gap-1 mt-1">
                     <AlertTriangle className="w-3 h-3" />
                     {errors.fiscalAddress.message}
+                  </p>
+                ) : null}
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="rif" className="text-sm font-medium">
+                  RIF <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
+                </Label>
+                <Controller
+                  name="rif"
+                  control={control}
+                  render={({ field }) => (
+                    <RifInput
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      invalid={!!errors.rif}
+                    />
+                  )}
+                />
+                {errors.rif ? (
+                  <p className="text-xs text-destructive flex items-center gap-1 mt-1">
+                    <AlertTriangle className="w-3 h-3" />
+                    {errors.rif.message}
                   </p>
                 ) : null}
               </div>

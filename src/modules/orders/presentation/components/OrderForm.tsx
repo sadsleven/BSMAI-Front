@@ -556,7 +556,7 @@ export function OrderForm({
           {type === 'insurance' ? (
             <div className="rounded-md border border-dashed bg-brand-blue-soft/40 px-3 py-2 text-xs text-brand-blue-strong flex items-start gap-2">
               <ShieldCheck className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-              Solo se listan pacientes con al menos un seguro y un contratista asignados.
+              Solo se listan pacientes con al menos un seguro asignado (directo o vía contratista).
             </div>
           ) : null}
           <PatientSearchSelect
@@ -664,6 +664,40 @@ export function OrderForm({
                   errors.insuranceSource?.message ?? errors.insuranceId?.message
                 }
               />
+              {currentInsuranceSource === 'direct' ? (
+                <div className="rounded-md border border-dashed bg-success-soft/40 px-3 py-2 text-xs text-success flex items-start gap-2">
+                  <ShieldCheck className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                  El paciente asume rol de contratista propio para este seguro
+                  directo. La selección de contratista queda bloqueada.
+                </div>
+              ) : null}
+              <div className="space-y-1.5 pt-2">
+                <Label htmlFor="serviceKey" className="text-sm font-medium">
+                  Clave de servicio{' '}
+                  <span className="text-xs text-muted-foreground font-normal">
+                    (opcional)
+                  </span>
+                </Label>
+                <Controller
+                  control={control}
+                  name="serviceKey"
+                  render={({ field }) => (
+                    <Input
+                      id="serviceKey"
+                      value={field.value ?? ''}
+                      onChange={(e) => field.onChange(e.target.value)}
+                      onBlur={field.onBlur}
+                      maxLength={30}
+                      placeholder="Referencia o autorización del seguro"
+                      className={cn(
+                        'h-9',
+                        errors.serviceKey?.message && 'border-destructive',
+                      )}
+                    />
+                  )}
+                />
+                <FieldError message={errors.serviceKey?.message} />
+              </div>
             </div>
           ) : null}
         </div>

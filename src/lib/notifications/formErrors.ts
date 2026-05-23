@@ -30,7 +30,7 @@ export const COMMON_LABELS: FieldLabelMap = {
   businessName: 'Razón social',
   birthDate: 'Fecha de nacimiento',
   address: 'Dirección',
-  fiscalAddress: 'Domicilio fiscal',
+  fiscalAddress: 'Dirección fiscal',
   personType: 'Tipo de persona',
   // Catálogo
   name: 'Nombre',

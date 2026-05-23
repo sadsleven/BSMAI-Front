@@ -81,11 +81,45 @@ export const loginSchema = z.object({
 });
 export type LoginValues = z.infer<typeof loginSchema>;
 
+/**
+ * Lista FE-only de grados académicos venezolanos. La columna BE acepta texto
+ * libre ≤40 chars; este whitelist sólo controla el selector.
+ */
+export const ACADEMIC_DEGREES = [
+  'Bachiller',
+  'TSU',
+  'Licenciado',
+  'Ingeniero',
+  'Médico',
+  'Abogado',
+  'Arquitecto',
+  'Contador Público',
+  'Economista',
+  'Administrador',
+  'Profesor',
+  'Especialista',
+  'Magíster',
+  'Doctor (PhD)',
+] as const;
+export type AcademicDegree = (typeof ACADEMIC_DEGREES)[number];
+
+export const academicDegreeSchema = z
+  .string()
+  .max(40, 'El grado académico no puede superar 40 caracteres')
+  .optional();
+
+export const jobTitleSchema = z
+  .string()
+  .max(100, 'El cargo no puede superar 100 caracteres')
+  .optional();
+
 export const profileSchema = z.object({
   firstName: nameSchema('El nombre'),
   lastName: nameSchema('El apellido'),
   email: emailSchema,
   phoneNumber: phoneSchema,
+  academicDegree: academicDegreeSchema,
+  jobTitle: jobTitleSchema,
 });
 export type ProfileValues = z.infer<typeof profileSchema>;
 
@@ -95,6 +129,8 @@ export const createUserSchema = z
     lastName: nameSchema('El apellido'),
     email: emailSchema,
     phoneNumber: phoneSchema,
+    academicDegree: academicDegreeSchema,
+    jobTitle: jobTitleSchema,
     password: passwordSchema,
     confirmPassword: z.string({ error: 'Confirmá la contraseña' }),
     isActive: z.boolean().optional(),
@@ -113,6 +149,8 @@ export const updateUserSchema = z.object({
   lastName: nameSchema('El apellido'),
   email: emailSchema,
   phoneNumber: phoneSchema,
+  academicDegree: academicDegreeSchema,
+  jobTitle: jobTitleSchema,
   isActive: z.boolean().optional(),
   isSuperAdmin: z.boolean().optional(),
   roleIds: z.array(z.string().uuid()).optional(),
@@ -198,9 +236,7 @@ export const patientSchema = z
   })
   .superRefine((val, ctx) => {
     if (val.personType === 'natural') {
-      if (!val.cedula) {
-        ctx.addIssue({ code: 'custom', path: ['cedula'], message: 'La cédula es obligatoria' });
-      } else if (!/^[VE]-\d{1,2}\.\d{3}\.\d{3}$/.test(val.cedula)) {
+      if (val.cedula && !/^[VE]-\d{1,2}\.\d{3}\.\d{3}$/.test(val.cedula)) {
         ctx.addIssue({
           code: 'custom',
           path: ['cedula'],
@@ -405,8 +441,9 @@ export const insuranceSchema = z.object({
   email: optionalEmailSchema,
   fiscalAddress: z
     .string()
-    .max(500, 'El domicilio fiscal no puede superar 500 caracteres')
+    .max(500, 'El dirección fiscal no puede superar 500 caracteres')
     .optional(),
+  rif: optionalRifSchema,
   phones: phonesArraySchema,
   servicePrices: servicePricesArraySchema,
   isActive: z.boolean().optional(),
@@ -643,6 +680,11 @@ export const orderSchema = z
       .enum(['direct', 'via_contractor'])
       .optional()
       .or(z.literal('')),
+    serviceKey: z
+      .string()
+      .max(30, 'La clave de servicio no puede superar 30 caracteres')
+      .optional()
+      .or(z.literal('')),
     specialtyId: z.string().uuid({ message: 'Especialidad requerida' }),
     serviceTypes: z
       .array(
@@ -746,6 +788,12 @@ export const orderSchema = z
           path: ['contractorId'],
           message: 'Seguro directo no admite contratista',
         });
+    } else if (val.serviceKey && val.serviceKey.trim() !== '') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['serviceKey'],
+        message: 'La clave de servicio solo aplica a órdenes tipo seguro',
+      });
     }
     if (val.orderDate && val.appointmentDate) {
       if (new Date(val.appointmentDate) < new Date(val.orderDate))

@@ -13,7 +13,16 @@ import {
   type ProfileValues,
   changeOwnPasswordSchema,
   type ChangeOwnPasswordValues,
+  ACADEMIC_DEGREES,
 } from '@/lib/validations/schemas';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Controller } from 'react-hook-form';
 import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
 
@@ -29,6 +38,8 @@ export function ProfilePage() {
       lastName: user?.lastName ?? '',
       email: user?.email ?? '',
       phoneNumber: user?.phoneNumber ?? '',
+      academicDegree: user?.academicDegree ?? '',
+      jobTitle: user?.jobTitle ?? '',
     },
   });
 
@@ -38,6 +49,8 @@ export function ProfilePage() {
       lastName: user?.lastName ?? '',
       email: user?.email ?? '',
       phoneNumber: user?.phoneNumber ?? '',
+      academicDegree: user?.academicDegree ?? '',
+      jobTitle: user?.jobTitle ?? '',
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
@@ -49,6 +62,8 @@ export function ProfilePage() {
         lastName: values.lastName,
         email: values.email,
         phoneNumber: values.phoneNumber ?? null,
+        academicDegree: values.academicDegree?.trim() || null,
+        jobTitle: values.jobTitle?.trim() || null,
       });
       setUser(updated);
       notify.success('Perfil actualizado correctamente');
@@ -57,6 +72,8 @@ export function ProfilePage() {
         lastName: updated.lastName,
         email: updated.email,
         phoneNumber: updated.phoneNumber ?? '',
+        academicDegree: updated.academicDegree ?? '',
+        jobTitle: updated.jobTitle ?? '',
       });
     } catch (err) {
       notify.fromError(err, 'No se pudo actualizar el perfil.');
@@ -126,6 +143,56 @@ export function ProfilePage() {
                   {profileForm.formState.errors.phoneNumber.message}
                 </p>
               ) : null}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="academicDegree">Grado académico (opcional)</Label>
+                <Controller
+                  control={profileForm.control}
+                  name="academicDegree"
+                  render={({ field }) => (
+                    <Select
+                      value={(field.value as string) || ''}
+                      onValueChange={(v) =>
+                        field.onChange(v === '__none__' ? '' : v)
+                      }
+                    >
+                      <SelectTrigger id="academicDegree">
+                        <SelectValue placeholder="Seleccioná un título" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">
+                          <span className="text-muted-foreground italic">Ninguno</span>
+                        </SelectItem>
+                        {ACADEMIC_DEGREES.map((d) => (
+                          <SelectItem key={d} value={d}>
+                            {d}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+                {profileForm.formState.errors.academicDegree ? (
+                  <p className="text-xs text-destructive">
+                    {profileForm.formState.errors.academicDegree.message}
+                  </p>
+                ) : null}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="jobTitle">Cargo (opcional)</Label>
+                <Input
+                  id="jobTitle"
+                  maxLength={100}
+                  placeholder="Ej: Gerente de Administración"
+                  {...profileForm.register('jobTitle')}
+                />
+                {profileForm.formState.errors.jobTitle ? (
+                  <p className="text-xs text-destructive">
+                    {profileForm.formState.errors.jobTitle.message}
+                  </p>
+                ) : null}
+              </div>
             </div>
             <div className="flex justify-end">
               <Button

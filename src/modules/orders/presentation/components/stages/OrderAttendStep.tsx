@@ -79,7 +79,7 @@ export function OrderAttendStep({
     <div className="space-y-5">
       <FormSection
         title="Órdenes internas"
-        description="Un archivo XLSX por cada proveedor distinto de la orden, agrupando sus Tipos de Servicio. La factura completa se descarga en el Paso 4."
+        description="Un archivo Excel por cada proveedor distinto de la orden, agrupando sus Tipos de Servicio. La factura completa se descarga en el Paso 4."
       >
         {providerGroups.length === 0 ? (
           <p className="text-sm text-muted-foreground">
@@ -119,7 +119,7 @@ export function OrderAttendStep({
                     disabled={downloadingId !== null}
                   >
                     <Download className="w-3.5 h-3.5" />
-                    {downloadingId === `${g.key}:xlsx` ? 'Generando…' : 'XLSX'}
+                    {downloadingId === `${g.key}:xlsx` ? 'Generando…' : 'Excel'}
                   </Button>
                   <Button
                     type="button"

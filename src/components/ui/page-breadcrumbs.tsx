@@ -27,6 +27,7 @@ const PATH_LABELS: Record<string, string> = {
   branches: 'Sucursales',
   'accounts-payable': 'Cuentas por pagar',
   'accounts-receivable': 'Cuentas por cobrar',
+  'taxes-payable': 'Impuestos por pagar',
   'register-payment': 'Registrar pago',
   'register-collection': 'Registrar cobro',
   stages: 'Flujo',
