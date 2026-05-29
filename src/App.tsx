@@ -50,8 +50,26 @@ import { AccountsPayableList } from './modules/accounts-payable/presentation/pag
 import { AccountsPayableRegisterPayment } from './modules/accounts-payable/presentation/pages/AccountsPayableRegisterPayment';
 import { AccountsReceivableList } from './modules/accounts-receivable/presentation/pages/AccountsReceivableList';
 import { AccountsReceivableRegisterCollection } from './modules/accounts-receivable/presentation/pages/AccountsReceivableRegisterCollection';
+import { CreditsReceivableList } from './modules/credits-receivable/presentation/pages/CreditsReceivableList';
+import { CreditsReceivableRegisterCollection } from './modules/credits-receivable/presentation/pages/CreditsReceivableRegisterCollection';
 import { TaxesPayableList } from './modules/taxes-payable/presentation/pages/TaxesPayableList';
 import { TaxesPayableRegisterPayment } from './modules/taxes-payable/presentation/pages/TaxesPayableRegisterPayment';
+import { ReportReceivablesList } from './modules/reports/presentation/pages/ReportReceivablesList';
+import { ReportPayablesList } from './modules/reports/presentation/pages/ReportPayablesList';
+import { ReportFinancialSummary } from './modules/reports/presentation/pages/ReportFinancialSummary';
+import { ReportDoctorProduction } from './modules/reports/presentation/pages/ReportDoctorProduction';
+import { ReportInsuranceProduction } from './modules/reports/presentation/pages/ReportInsuranceProduction';
+import { ReportAging } from './modules/reports/presentation/pages/ReportAging';
+import { ReportCollections } from './modules/reports/presentation/pages/ReportCollections';
+import { ReportDisbursements } from './modules/reports/presentation/pages/ReportDisbursements';
+import { ReportOrdersPipeline } from './modules/reports/presentation/pages/ReportOrdersPipeline';
+import { ReportServicesBilled } from './modules/reports/presentation/pages/ReportServicesBilled';
+import { ReportTaxesRetained } from './modules/reports/presentation/pages/ReportTaxesRetained';
+import { ReportExecutivePanel } from './modules/reports/presentation/pages/ReportExecutivePanel';
+import { ReportOrdersAnalytics } from './modules/reports/presentation/pages/ReportOrdersAnalytics';
+import { ReportInsurerCollections } from './modules/reports/presentation/pages/ReportInsurerCollections';
+import { RequirePermission } from './modules/auth/presentation/components/RequirePermission';
+import { PERMISSIONS } from './modules/auth/domain/models/permissions';
 
 function App() {
   return (
@@ -158,11 +176,132 @@ function App() {
               element={<AccountsReceivableRegisterCollection />}
             />
           </Route>
+          <Route path="credits-receivable">
+            <Route index element={<CreditsReceivableList />} />
+            <Route
+              path="register-collection"
+              element={<CreditsReceivableRegisterCollection />}
+            />
+          </Route>
           <Route path="taxes-payable">
             <Route index element={<TaxesPayableList />} />
             <Route
               path="register-payment"
               element={<TaxesPayableRegisterPayment />}
+            />
+          </Route>
+          <Route path="reports">
+            <Route
+              path="executive-panel"
+              element={
+                <RequirePermission permission={PERMISSIONS.REPORTS.EXECUTIVE_PANEL_LIST}>
+                  <ReportExecutivePanel />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="orders-analytics"
+              element={
+                <RequirePermission permission={PERMISSIONS.REPORTS.ORDERS_ANALYTICS_LIST}>
+                  <ReportOrdersAnalytics />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="insurer-collections"
+              element={
+                <RequirePermission permission={PERMISSIONS.REPORTS.INSURER_COLLECTIONS_LIST}>
+                  <ReportInsurerCollections />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="receivables"
+              element={
+                <RequirePermission permission={PERMISSIONS.REPORTS.RECEIVABLES_LIST}>
+                  <ReportReceivablesList />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="payables"
+              element={
+                <RequirePermission permission={PERMISSIONS.REPORTS.PAYABLES_LIST}>
+                  <ReportPayablesList />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="taxes-retained"
+              element={
+                <RequirePermission permission={PERMISSIONS.REPORTS.TAXES_RETAINED_LIST}>
+                  <ReportTaxesRetained />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="financial-summary"
+              element={
+                <RequirePermission permission={PERMISSIONS.REPORTS.FINANCIAL_SUMMARY_LIST}>
+                  <ReportFinancialSummary />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="doctor-production"
+              element={
+                <RequirePermission permission={PERMISSIONS.REPORTS.DOCTOR_PRODUCTION_LIST}>
+                  <ReportDoctorProduction />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="insurance-production"
+              element={
+                <RequirePermission permission={PERMISSIONS.REPORTS.INSURANCE_PRODUCTION_LIST}>
+                  <ReportInsuranceProduction />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="aging"
+              element={
+                <RequirePermission permission={PERMISSIONS.REPORTS.AGING_LIST}>
+                  <ReportAging />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="collections"
+              element={
+                <RequirePermission permission={PERMISSIONS.REPORTS.COLLECTIONS_LIST}>
+                  <ReportCollections />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="disbursements"
+              element={
+                <RequirePermission permission={PERMISSIONS.REPORTS.DISBURSEMENTS_LIST}>
+                  <ReportDisbursements />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="orders-pipeline"
+              element={
+                <RequirePermission permission={PERMISSIONS.REPORTS.ORDERS_TRACKING_LIST}>
+                  <ReportOrdersPipeline />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="services-billed"
+              element={
+                <RequirePermission permission={PERMISSIONS.REPORTS.SERVICES_BILLED_LIST}>
+                  <ReportServicesBilled />
+                </RequirePermission>
+              }
             />
           </Route>
         </Route>

@@ -1,6 +1,7 @@
 import { api } from '@/lib/api';
 import type {
   AttendOrderDto,
+  AuthorizeOrderAmountDto,
   BillingOrderDto,
   CreateOrderDto,
   Order,
@@ -80,6 +81,11 @@ export const orderGateway = {
   },
   async removePayment(orderId: string, paymentId: string): Promise<void> {
     await api.delete(`/orders/${orderId}/payments/${paymentId}`);
+  },
+  // ----- Paso 1: autorización de monto por validador -----
+  async authorizeAmount(id: string, dto: AuthorizeOrderAmountDto): Promise<Order> {
+    const { data } = await api.patch<Order>(`/orders/${id}/authorize-amount`, dto);
+    return data;
   },
   // ----- Pasos 2-4 -----
   async attend(id: string, dto: AttendOrderDto): Promise<Order> {

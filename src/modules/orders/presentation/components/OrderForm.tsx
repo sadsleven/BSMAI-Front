@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
 import { FormSection, FormGrid } from '@/components/ui/form-section';
 import { CurrencyAmountInput } from '@/components/ui/currency-amount-input';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -19,6 +20,8 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { AlertTriangle, Building, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/modules/auth/domain/store/authStore';
+import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
+import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import {
   getLastBranchId,
   getUserBranches,
@@ -41,6 +44,7 @@ import { specialtyGateway } from '@/modules/specialties/infrastructure/specialty
 import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
 import { PatientSearchSelect } from './PatientSearchSelect';
 import { PatientCreateModal } from './PatientCreateModal';
+import { AuthorizeAmountModal } from './AuthorizeAmountModal';
 import { patientGateway } from '@/modules/patients/infrastructure/patientGateway';
 import { insuranceGateway } from '@/modules/insurances/infrastructure/insuranceGateway';
 import type { PatientAvailableInsurance } from '@/modules/patients/domain/models/patient';
@@ -59,8 +63,11 @@ import { OrderAttendStep } from './stages/OrderAttendStep';
 import { OrderReportStep } from './stages/OrderReportStep';
 import { OrderBillingStep } from './stages/OrderBillingStep';
 
+const NO_STAGE_PERM = 'No tenés permiso para este paso';
+
 function buildOrderSteps(
   savedOrderId: boolean,
+  perms: { attention: boolean; report: boolean; billing: boolean },
   status?: import('../../domain/models/order').OrderStatus,
 ): StepDef[] {
   const isAttendedOrLater =
@@ -77,22 +84,22 @@ function buildOrderSteps(
       id: 'attention',
       label: '2. Atención del paciente',
       description: 'Marcar atendido + órdenes internas',
-      available: savedOrderId,
-      lockedReason: 'Guardá la orden primero',
+      available: savedOrderId && perms.attention,
+      lockedReason: !perms.attention ? NO_STAGE_PERM : 'Guardá la orden primero',
     },
     {
       id: 'report',
       label: '3. Informe médico y estudios',
       description: 'Estudios y observaciones',
-      available: savedOrderId && isAttendedOrLater,
-      lockedReason: 'Marcá atendido primero',
+      available: savedOrderId && isAttendedOrLater && perms.report,
+      lockedReason: !perms.report ? NO_STAGE_PERM : 'Marcá atendido primero',
     },
     {
       id: 'billing',
       label: '4. Facturación y liquidación',
       description: 'Cierre, factura y liquidación',
-      available: savedOrderId && isReportedOrLater,
-      lockedReason: 'Emití el informe primero',
+      available: savedOrderId && isReportedOrLater && perms.billing,
+      lockedReason: !perms.billing ? NO_STAGE_PERM : 'Emití el informe primero',
     },
   ];
 }
@@ -153,6 +160,11 @@ export function OrderForm({
   onOrderRefresh,
 }: OrderFormProps) {
   const me = useAuthStore((s) => s.user);
+  const { has } = usePermissions();
+  const canEditAmount = has(PERMISSIONS.ORDERS.EDIT_AMOUNT);
+  const canAttention = has(PERMISSIONS.ORDERS.STAGE_ATTENTION);
+  const canReport = has(PERMISSIONS.ORDERS.STAGE_REPORT);
+  const canBilling = has(PERMISSIONS.ORDERS.STAGE_BILLING);
   const { control, setValue, formState } = useFormContext<OrderValues>();
   const errors = formState.errors as Record<string, { message?: string } | undefined>;
 
@@ -169,6 +181,7 @@ export function OrderForm({
   );
   const [createPatientOpen, setCreatePatientOpen] = useState(false);
   const [createTarget, setCreateTarget] = useState<'holder' | 'patient' | null>(null);
+  const [authorizeOpen, setAuthorizeOpen] = useState(false);
   const [confirmTypeChange, setConfirmTypeChange] = useState<OrderType | null>(null);
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]);
   const [pathologies, setPathologies] = useState<Pathology[]>([]);
@@ -457,11 +470,20 @@ export function OrderForm({
   // Insurance: locked → siempre sincroniza con la suma calculada (ignora input manual).
   // Cash/credit/cashea: overwrite cuando cambian inputs — el usuario puede editar luego.
   const lastAppliedSumRef = useRef<number | null>(null);
+  // Monto bloqueado: seguro (siempre) o sin permiso orders.edit-amount.
+  const amountLocked = isInsuranceOrder || !canEditAmount;
+  // Monto ya autorizado por un validador — no auto-sincronizar (preserva el
+  // monto autorizado en vez de pisarlo con la suma Particular).
+  const hasAuthorization = !!savedOrder?.amountAuthorizedById;
   useEffect(() => {
     if (priceLines.length === 0) return;
+    if (hasAuthorization) {
+      lastAppliedSumRef.current = priceAmount ?? null;
+      return;
+    }
     const rounded = +computedPriceSum.toFixed(2);
     const current = priceAmount ?? 0;
-    if (isInsuranceOrder) {
+    if (amountLocked) {
       if (rounded !== current) {
         setValue('priceAmount', rounded, { shouldDirty: true, shouldValidate: true });
       }
@@ -481,9 +503,13 @@ export function OrderForm({
     }
     lastAppliedSumRef.current = rounded;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [computedPriceSum, isInsuranceOrder, insuranceId, priceCurrency, serviceTypeIds.join(',')]);
+  }, [computedPriceSum, amountLocked, hasAuthorization, insuranceId, priceCurrency, serviceTypeIds.join(',')]);
 
-  const orderSteps = buildOrderSteps(!!savedOrder, savedOrder?.status);
+  const orderSteps = buildOrderSteps(
+    !!savedOrder,
+    { attention: canAttention, report: canReport, billing: canBilling },
+    savedOrder?.status,
+  );
   const renderStep1 = currentStep === 'register';
 
   return (
@@ -494,7 +520,7 @@ export function OrderForm({
         <OrderAttendStep
           order={savedOrder}
           onSaved={() => onOrderRefresh?.()}
-          onAdvance={() => setCurrentStep('report')}
+          onAdvance={canReport ? () => setCurrentStep('report') : undefined}
         />
       ) : null}
 
@@ -502,7 +528,7 @@ export function OrderForm({
         <OrderReportStep
           order={savedOrder}
           onSaved={() => onOrderRefresh?.()}
-          onAdvance={() => setCurrentStep('billing')}
+          onAdvance={canBilling ? () => setCurrentStep('billing') : undefined}
         />
       ) : null}
 
@@ -894,7 +920,9 @@ export function OrderForm({
         description={
           isInsuranceOrder
             ? 'Precio fijo según los precios definidos del seguro para cada tipo de servicio.'
-            : 'Suma de los precios "Particular" de cada tipo de servicio. Editable.'
+            : canEditAmount
+              ? 'Suma de los precios "Particular" de cada tipo de servicio. Editable.'
+              : 'Suma de los precios "Particular" de cada tipo de servicio. No tenés permiso para editar el monto.'
         }
       >
         <FormGrid>
@@ -928,7 +956,7 @@ export function OrderForm({
                   value={typeof field.value === 'number' ? field.value : undefined}
                   onChange={(v) => field.onChange(v ?? 0)}
                   currencyPrefix={priceCurrency || 'USD'}
-                  disabled={isInsuranceOrder}
+                  disabled={isInsuranceOrder || !canEditAmount}
                   className={cn(errors.priceAmount?.message && 'border-destructive')}
                 />
               )}
@@ -936,6 +964,50 @@ export function OrderForm({
             <FieldError message={errors.priceAmount?.message} />
           </div>
         </FormGrid>
+
+        {!isInsuranceOrder && !canEditAmount && savedOrder?.status === 'draft' ? (
+          <div className="mt-3">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setAuthorizeOpen(true)}
+              className="gap-1.5"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              Solicitar autorización de monto
+            </Button>
+            <p className="text-xs text-muted-foreground mt-1.5">
+              No tenés permiso para editar el monto. Un validador con permiso puede
+              autorizar e ingresar un nuevo monto.
+            </p>
+          </div>
+        ) : null}
+
+        {savedOrder?.amountAuthorizedById ? (
+          <div className="mt-3 rounded-md border border-dashed bg-success-soft/40 px-3 py-2 text-xs text-success flex items-start gap-2">
+            <ShieldCheck className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+            <div className="space-y-0.5">
+              <div>
+                Monto autorizado por{' '}
+                <span className="font-semibold">
+                  {`${savedOrder.amountAuthorizedBy?.firstName ?? ''} ${
+                    savedOrder.amountAuthorizedBy?.lastName ?? ''
+                  }`.trim() || 'un validador'}
+                </span>
+                {savedOrder.amountAuthorizedAt
+                  ? ` el ${new Date(savedOrder.amountAuthorizedAt).toLocaleString('es-VE')}`
+                  : ''}
+                .
+              </div>
+              {savedOrder.amountAuthorizationNote ? (
+                <div className="text-muted-foreground">
+                  Observación: {savedOrder.amountAuthorizationNote}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
 
         {priceLines.length > 0 ? (
           <div className="mt-4 rounded-lg border bg-muted/20">
@@ -1118,6 +1190,23 @@ export function OrderForm({
           else if (createTarget === 'patient') onPatientChange(p);
         }}
       />
+
+      {savedOrder ? (
+        <AuthorizeAmountModal
+          open={authorizeOpen}
+          onOpenChange={setAuthorizeOpen}
+          orderId={savedOrder.id}
+          currency={(priceCurrency as OrderCurrency) ?? 'USD'}
+          currentAmount={priceAmount ?? 0}
+          onAuthorized={(updated) => {
+            setValue('priceAmount', Number(updated.priceAmount), {
+              shouldDirty: false,
+              shouldValidate: true,
+            });
+            onOrderRefresh?.();
+          }}
+        />
+      ) : null}
 
       <ConfirmDialog
         open={!!confirmTypeChange}
