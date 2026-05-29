@@ -20,6 +20,8 @@ import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import type { Patient } from '@/modules/patients/domain/models/patient';
 import type { ProviderSelectValue } from '../components/ProviderSearchSelect';
 import { patientGateway } from '@/modules/patients/infrastructure/patientGateway';
+import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
+import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 
 function buildDto(values: OrderValues): CreateOrderDto {
   return {
@@ -66,6 +68,8 @@ function buildDto(values: OrderValues): CreateOrderDto {
 export function OrderEdit() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { has } = usePermissions();
+  const canAttention = has(PERMISSIONS.ORDERS.STAGE_ATTENTION);
   const [fetching, setFetching] = useState(true);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [initialOrder, setInitialOrder] = useState<Order | null>(null);
@@ -232,7 +236,7 @@ export function OrderEdit() {
                   {methods.formState.isSubmitting ? 'Guardando…' : 'Guardar cambios'}
                 </Button>
               ) : null}
-              {currentStep === 'register' && initialOrder ? (
+              {currentStep === 'register' && initialOrder && canAttention ? (
                 <Button
                   type="button"
                   variant={initialOrder.status === 'draft' ? 'outline' : 'default'}

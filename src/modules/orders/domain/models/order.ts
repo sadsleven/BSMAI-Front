@@ -106,6 +106,15 @@ export interface Order {
     jobTitle?: string | null;
   };
   payments?: OrderPayment[];
+  // Paso 1 — autorización de monto por validador
+  amountAuthorizedById?: string | null;
+  amountAuthorizedAt?: string | null;
+  amountAuthorizationNote?: string | null;
+  amountAuthorizedBy?: {
+    id: string;
+    firstName?: string | null;
+    lastName?: string | null;
+  } | null;
   // Pasos 2-4
   attended?: boolean;
   attendedAt?: string | null;
@@ -127,6 +136,13 @@ export interface Order {
 export interface AttendOrderDto {
   attended: boolean;
   attendedAt?: string;
+}
+
+export interface AuthorizeOrderAmountDto {
+  validatorEmail: string;
+  validatorPassword: string;
+  priceAmount: number;
+  observation: string;
 }
 
 export interface ReportOrderDto {

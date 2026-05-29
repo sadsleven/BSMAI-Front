@@ -20,8 +20,10 @@ import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exc
 import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchangeRate';
 import { accountsPayableGateway } from '@/modules/accounts-payable/infrastructure/accountsPayableGateway';
 import { accountsReceivableGateway } from '@/modules/accounts-receivable/infrastructure/accountsReceivableGateway';
+import { creditsReceivableGateway } from '@/modules/credits-receivable/infrastructure/creditsReceivableGateway';
 import type { AccountsPayable } from '@/modules/accounts-payable/domain/models/accountsPayable';
 import type { AccountsReceivable } from '@/modules/accounts-receivable/domain/models/accountsReceivable';
+import type { CreditsReceivable } from '@/modules/credits-receivable/domain/models/creditsReceivable';
 import {
   OrderPaymentForm,
   paymentInOrderCurrency,
@@ -29,6 +31,8 @@ import {
 import { downloadFacturacionXlsx } from '../orderExcel';
 import { downloadFacturacionPdf } from '../orderPdf';
 import { taxRateFor, useTaxRates } from '@/lib/config/taxRates';
+import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
+import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { doctorGateway } from '@/modules/doctors/infrastructure/doctorGateway';
 import { careCenterGateway } from '@/modules/care-centers/infrastructure/careCenterGateway';
 import type { ServicePriceRow } from '@/lib/types/servicePrice';
@@ -74,6 +78,8 @@ export function OrderBillingStep({
   order: Order;
   onSaved: () => void;
 }) {
+  const { has } = usePermissions();
+  const canSetProviderAmount = has(PERMISSIONS.ORDERS.SET_PROVIDER_AMOUNT);
   const priceAmount = Number(order.priceAmount);
   const isFinalized = order.status === 'finalized';
 
@@ -358,6 +364,7 @@ export function OrderBillingStep({
         </div>
       </FormSection>
 
+      {canSetProviderAmount ? (
       <FormSection
         title="Liquidación por proveedor"
         description="Asigná el monto a pagar a cada proveedor de la orden. Cada uno se factura por separado."
@@ -677,6 +684,17 @@ export function OrderBillingStep({
           </div>
         )}
       </FormSection>
+      ) : (
+        <FormSection
+          title="Liquidación por proveedor"
+          description="Asignación de montos a proveedores."
+        >
+          <p className="text-sm text-muted-foreground">
+            No tenés permiso para asignar la liquidación a los proveedores
+            {isFinalized ? '' : ' ni finalizar la orden'}.
+          </p>
+        </FormSection>
+      )}
 
       {/* Inline pagos: orden por pagar + orden por cobrar (si seguro) */}
       {isFinalized ? (
@@ -694,11 +712,15 @@ export function OrderBillingStep({
           {order.type === 'insurance' ? (
             <OrdenPorCobrarSection order={order} onSaved={onSaved} />
           ) : null}
+          {order.type === 'credit' ? (
+            <CreditoPorCobrarSection order={order} onSaved={onSaved} />
+          ) : null}
         </>
       ) : (
         <p className="text-xs italic text-muted-foreground">
           Finalizá la orden para registrar los pagos a los proveedores
-          {order.type === 'insurance' ? ' y el cobro al seguro' : ''}.
+          {order.type === 'insurance' ? ' y el cobro al seguro' : ''}
+          {order.type === 'credit' ? ' y el cobro del crédito al titular' : ''}.
         </p>
       )}
     </div>
@@ -994,6 +1016,172 @@ function OrdenPorCobrarSection({
             ? ` el ${new Date(account.collectedAt).toLocaleDateString('es-VE')}`
             : ''}
           . Para ver detalles, ingresá a Cuentas por cobrar.
+        </p>
+      ) : (
+        <>
+          <OrderPaymentForm
+            payments={payments}
+            onChange={setPayments}
+            orderCurrency={orderCurrency}
+            currentRate={currentRate}
+          />
+          {currentRate && (
+            <div className="grid grid-cols-2 gap-3 text-sm mt-4">
+              <div className="rounded-md border p-2 bg-muted/30">
+                <div className="text-xs text-muted-foreground">Total cobros</div>
+                <div className="font-mono">
+                  {totalPayments.toFixed(2)} {orderCurrency}
+                </div>
+              </div>
+              <div className="rounded-md border p-2 bg-muted/30">
+                <div className="text-xs text-muted-foreground">
+                  Tasa actual {currentRate.currency}
+                </div>
+                <div className="font-mono">
+                  1 {currentRate.currency} ={' '}
+                  {Number(currentRate.amountBs).toFixed(2)} Bs.
+                </div>
+              </div>
+            </div>
+          )}
+          <div className="flex justify-end mt-4">
+            <Button
+              type="button"
+              onClick={onRegister}
+              disabled={saving || payments.length === 0 || !currentRate}
+            >
+              {saving ? 'Guardando…' : 'Registrar cobro'}
+            </Button>
+          </div>
+        </>
+      )}
+    </FormSection>
+  );
+}
+
+/** Sub-sección "Crédito por cobrar" — cobro al titular (sólo orden tipo credit). */
+function CreditoPorCobrarSection({
+  order,
+  onSaved,
+}: {
+  order: Order;
+  onSaved: () => void;
+}) {
+  const orderCurrency: OrderCurrency = order.priceCurrency;
+  const [account, setAccount] = useState<CreditsReceivable | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [payments, setPayments] = useState<OrderPaymentValues[]>([]);
+  const [currentRate, setCurrentRate] = useState<ExchangeRate | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await creditsReceivableGateway.list({
+        orderId: order.id,
+        limit: 1,
+      });
+      setAccount(res.data[0] ?? null);
+    } catch (err) {
+      notify.error(getHttpErrorMessage(err, 'No se pudo cargar el crédito por cobrar'));
+    } finally {
+      setLoading(false);
+    }
+  }, [order.id]);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const rate = await exchangeRateGateway.getCurrent(orderCurrency);
+        if (!cancelled) setCurrentRate(rate);
+      } catch {
+        if (!cancelled) setCurrentRate(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [orderCurrency]);
+
+  const totalPayments = useMemo(() => {
+    if (!currentRate) return 0;
+    const lookup = (id: string): ExchangeRate | null =>
+      id === currentRate.id ? currentRate : null;
+    return payments.reduce(
+      (sum, p) => sum + paymentInOrderCurrency(p, orderCurrency, lookup),
+      0,
+    );
+  }, [payments, currentRate, orderCurrency]);
+
+  const onRegister = async () => {
+    if (!account) return;
+    if (payments.length === 0) {
+      notify.error('Registrá al menos un cobro');
+      return;
+    }
+    setSaving(true);
+    try {
+      await creditsReceivableGateway.registerCollection({
+        creditIds: [account.id],
+        payments: payments.map((p) => ({
+          type: p.type,
+          paymentDate: p.paymentDate,
+          referenceNumber: p.referenceNumber || undefined,
+          bankCode: p.bankCode || undefined,
+          accountNumber: p.accountNumber || undefined,
+          exchangeRateId: p.exchangeRateId || undefined,
+          amountCurrency: p.amountCurrency,
+          amountValue: p.amountValue,
+        })),
+      });
+      notify.success('Cobro registrado');
+      setPayments([]);
+      await load();
+      onSaved();
+    } catch (err) {
+      notify.fromError(err, 'No se pudo registrar el cobro');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <FormSection
+      title="Crédito por cobrar"
+      description="Registrá los pagos del titular hasta completar el crédito."
+      headerAction={
+        account?.status === 'collected' || account?.status === 'overcollected' ? (
+          <Badge className="bg-success-soft text-success border-success/30">
+            {account.status === 'overcollected' ? 'Sobre-cobrado' : 'Cobrado'}
+          </Badge>
+        ) : account?.status === 'partially_collected' ? (
+          <Badge className="bg-brand-cyan-soft text-brand-blue-strong border-brand-cyan/30">
+            Parcial
+          </Badge>
+        ) : (
+          <Badge className="bg-warning-soft text-warning border-warning/30">
+            No cobrado
+          </Badge>
+        )
+      }
+    >
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Cargando crédito…</p>
+      ) : !account ? (
+        <p className="text-sm text-destructive">
+          No se encontró el crédito por cobrar para esta orden.
+        </p>
+      ) : account.status === 'collected' || account.status === 'overcollected' ? (
+        <p className="text-sm text-muted-foreground">
+          Este crédito ya fue saldado
+          {account.collectedAt
+            ? ` el ${new Date(account.collectedAt).toLocaleDateString('es-VE')}`
+            : ''}
+          . Para ver detalles, ingresá a Créditos por cobrar.
         </p>
       ) : (
         <>

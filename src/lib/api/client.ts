@@ -39,8 +39,14 @@ api.interceptors.response.use(
     }
 
     // Surface unhandled network errors (no response from server) globally.
-    if (!error.response && error.code !== 'ERR_CANCELED') {
-      notify.error('No se pudo conectar con el servidor. Verificá tu conexión.');
+    // Skip the toast for /auth/me — AuthGuard renders a dedicated "server unreachable"
+    // screen for that case, and showing it here causes a redirect loop with login.
+    // Use a stable toast id so repeated failures replace the toast instead of stacking.
+    const isAuthMeProbe = requestUrl.includes('/auth/me');
+    if (!error.response && error.code !== 'ERR_CANCELED' && !isAuthMeProbe) {
+      notify.error('No se pudo conectar con el servidor. Verificá tu conexión.', {
+        id: 'network-error',
+      });
     }
 
     return Promise.reject(error);
