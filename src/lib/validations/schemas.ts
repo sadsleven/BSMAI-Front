@@ -28,6 +28,15 @@ function isoDateTimeNotFuture(v: string | undefined): boolean {
   return t <= Date.now();
 }
 
+/**
+ * True when `v` tiene a lo sumo 2 decimales. Tolerante a error de coma flotante
+ * (`19.99 * 100 !== 1999` en IEEE 754): compara contra el valor reconstruido en
+ * vez de `Math.round(v*100) === v*100`, que rechaza montos válidos como 19,99.
+ */
+function hasAtMostTwoDecimals(v: number): boolean {
+  return Math.abs(v - Math.round(v * 100) / 100) < 1e-9;
+}
+
 export const emailSchema = z
   .string({ error: 'El email es obligatorio' })
   .min(1, 'El email es obligatorio')
@@ -341,11 +350,11 @@ export const serviceTypeSchema = z.object({
   particularPriceUsd: z
     .number({ error: 'El precio Particular USD es obligatorio' })
     .positive('Debe ser > 0')
-    .refine((v) => Math.round(v * 100) === v * 100, { message: 'Máximo 2 decimales' }),
+    .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' }),
   particularPriceEur: z
     .number({ error: 'El precio Particular EUR es obligatorio' })
     .positive('Debe ser > 0')
-    .refine((v) => Math.round(v * 100) === v * 100, { message: 'Máximo 2 decimales' }),
+    .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' }),
 });
 export type ServiceTypeValues = z.infer<typeof serviceTypeSchema>;
 
@@ -358,11 +367,11 @@ const servicePriceRowSchema = z.object({
   priceUsd: z
     .number({ error: 'Precio USD requerido' })
     .positive('Debe ser > 0')
-    .refine((v) => Math.round(v * 100) === v * 100, { message: 'Máximo 2 decimales' }),
+    .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' }),
   priceEur: z
     .number({ error: 'Precio EUR requerido' })
     .positive('Debe ser > 0')
-    .refine((v) => Math.round(v * 100) === v * 100, { message: 'Máximo 2 decimales' }),
+    .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' }),
 });
 
 export const servicePricesArraySchema = z
@@ -416,7 +425,7 @@ export const exchangeRateSchema = z.object({
     .number({ error: 'El monto es obligatorio' })
     .positive('El monto debe ser mayor a 0')
     .max(999_999_999.99, 'Monto excede el máximo permitido')
-    .refine((v) => Math.round(v * 100) === v * 100, {
+    .refine((v) => hasAtMostTwoDecimals(v), {
       message: 'Máximo 2 decimales',
     }),
   effectiveDate: z
@@ -619,7 +628,7 @@ export const orderPaymentSchema = z
     amountValue: z
       .number({ error: 'Monto requerido' })
       .positive('Monto debe ser > 0')
-      .refine((v) => Math.round(v * 100) === v * 100, { message: 'Máximo 2 decimales' }),
+      .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' }),
   })
   .superRefine((val, ctx) => {
     const trim = (v?: string) => (v ?? '').trim();
@@ -712,7 +721,7 @@ export const orderSchema = z
     priceAmount: z
       .number({ error: 'Monto requerido' })
       .positive('Debe ser > 0')
-      .refine((v) => Math.round(v * 100) === v * 100, { message: 'Máximo 2 decimales' }),
+      .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' }),
     payments: z.array(orderPaymentSchema).max(50).optional(),
   })
   .superRefine((val, ctx) => {
