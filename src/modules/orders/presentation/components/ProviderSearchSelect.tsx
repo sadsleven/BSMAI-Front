@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, BriefcaseMedical, Hospital, X, AlertTriangle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -55,14 +56,37 @@ export function ProviderSearchSelect({
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null);
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (wrapRef.current?.contains(target) || dropdownRef.current?.contains(target)) return;
+      setOpen(false);
     }
     document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
+
+  // Posiciona el dropdown (portal fixed) anclado al input. Recalcula en scroll/resize.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const update = () => {
+      const el = anchorRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setRect({ top: r.bottom + 4, left: r.left, width: r.width });
+    };
+    update();
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('resize', update);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -124,7 +148,7 @@ export function ProviderSearchSelect({
           </button>
         </div>
       ) : (
-        <div className="relative">
+        <div className="relative" ref={anchorRef}>
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
           <Input
             type="search"
@@ -138,8 +162,18 @@ export function ProviderSearchSelect({
             disabled={disabled}
             className={cn('h-9 pl-9', error && 'border-destructive')}
           />
-          {open ? (
-            <div className="absolute z-30 mt-1 w-full max-h-[280px] overflow-y-auto rounded-lg border bg-card shadow-md">
+          {open && rect ? (
+            createPortal(
+            <div
+              ref={dropdownRef}
+              style={{
+                position: 'fixed',
+                top: rect.top,
+                left: rect.left,
+                width: rect.width,
+              }}
+              className="z-50 max-h-[280px] overflow-y-auto rounded-lg border bg-card shadow-md"
+            >
               {loading ? (
                 <div className="p-3 text-sm text-muted-foreground">Buscando…</div>
               ) : providerType === 'doctor' ? (
@@ -193,7 +227,9 @@ export function ProviderSearchSelect({
                   ))}
                 </ul>
               )}
-            </div>
+            </div>,
+            document.body,
+            )
           ) : null}
         </div>
       )}
