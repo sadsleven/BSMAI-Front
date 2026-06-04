@@ -1,7 +1,6 @@
 import { useNavigate } from 'react-router-dom';
-import { Bell, LogOut, Menu, Plus, Search, User as UserIcon } from 'lucide-react';
+import { Bell, LogOut, Menu, Plus, User as UserIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { useAuthStore } from '@/modules/auth/domain/store/authStore';
 import { getFullName } from '@/modules/auth/domain/models/authUser';
 import { authApi } from '@/modules/auth/infrastructure/authApi';
@@ -15,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ExchangeRatesBadge } from './ExchangeRatesBadge';
+import { NavbarSearch } from './NavbarSearch';
 
 export type NavbarProps = {
   onMenuClick?: () => void;
@@ -61,14 +61,7 @@ export function Navbar({ onMenuClick }: NavbarProps) {
       </div>
 
       {/* Left cluster: search + create order (desktop) */}
-      <div className="relative w-[320px] hidden md:block">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-        <Input
-          type="search"
-          placeholder="Buscar pacientes, órdenes, doctores…"
-          className="h-10 pl-9 bg-muted/40"
-        />
-      </div>
+      <NavbarSearch />
       <Button
         size="sm"
         className="hidden md:inline-flex h-10 px-4 shrink-0"

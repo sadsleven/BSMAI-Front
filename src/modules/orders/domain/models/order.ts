@@ -8,12 +8,12 @@ export type OrderStatus =
 
 export type OrderType = 'cash' | 'credit' | 'insurance' | 'cashea';
 export type ProviderType = 'doctor' | 'care_center';
-export type OrderCurrency = 'USD' | 'EUR';
 export type InsuranceSource = 'direct' | 'via_contractor';
 export type OrderPaymentType =
   | 'mobile_payment'
   | 'bank_transfer'
-  | 'cash_foreign'
+  | 'cash_usd'
+  | 'cash_eur'
   | 'cash_bs'
   | 'other';
 export type PaymentCurrency = 'USD' | 'EUR' | 'BS';
@@ -28,7 +28,7 @@ export interface OrderPayment {
   accountNumber?: string | null;
   amountCurrency: PaymentCurrency;
   amountValue: number | string;
-  amountInBs?: number | string;
+  amountInUsd?: number | string;
 }
 
 export interface OrderRefSummary {
@@ -43,8 +43,6 @@ export interface OrderRefSummary {
   address?: string | null;
   phones?: Array<{ id?: string; number: string; label?: string | null }>;
 }
-
-export type DoctorAmountCurrency = 'USD' | 'EUR' | 'BS';
 
 /** Fila ST + proveedor dentro de una orden (mapea OrderServiceType del BE). */
 export interface OrderServiceTypeRow {
@@ -89,13 +87,29 @@ export interface Order {
   pathologies?: Array<{ id: string; name: string }>;
   orderDate: string;
   appointmentDate: string;
-  priceCurrency: OrderCurrency;
   priceAmount: string | number;
+  /**
+   * Snapshot del % de comisión Cashea al crear la orden (fracción 0..1).
+   * Sólo presente cuando `type='cashea'`. Preserva el % aunque el admin
+   * cambie el valor global en Configuración después.
+   */
+  casheaCommissionRate?: string | number | null;
+  /**
+   * Modo tasa fija para órdenes seguro. Cuando true, la cuenta por cobrar del
+   * seguro se compara en Bs usando `fixedExchangeRate` (snapshot).
+   */
+  useFixedRate?: boolean;
+  fixedExchangeRateId?: string | null;
+  fixedExchangeRate?: {
+    id: string;
+    currency: 'USD' | 'EUR';
+    amountBs: string | number;
+    effectiveDate: string;
+  } | null;
   servicePricing?: Array<{
     serviceTypeId: string;
     kind: 'particular' | 'insurance' | 'doctor' | 'care_center';
     priceUsd: string | number;
-    priceEur: string | number;
   }>;
   createdById: string;
   createdBy?: {
@@ -120,7 +134,6 @@ export interface Order {
   attendedAt?: string | null;
   otherStudies?: string | null;
   doctorAmount?: string | number | null;
-  doctorAmountCurrency?: DoctorAmountCurrency | null;
   billingExchangeRateId?: string | null;
   billingExchangeRate?: {
     id: string;
@@ -154,7 +167,6 @@ export interface BillingProviderInput {
   doctorId?: string;
   careCenterId?: string;
   amount: number;
-  currency: DoctorAmountCurrency;
 }
 
 export interface BillingOrderDto {
@@ -183,8 +195,9 @@ export interface CreateOrderDto {
   pathologyIds?: string[];
   orderDate: string;
   appointmentDate: string;
-  priceCurrency: OrderCurrency;
   priceAmount: number;
+  useFixedRate?: boolean;
+  fixedExchangeRateId?: string;
   payments?: OrderPaymentInput[];
 }
 
@@ -245,7 +258,8 @@ export const ORDER_TYPE_LABEL: Record<OrderType, string> = {
 export const PAYMENT_TYPE_LABEL: Record<OrderPaymentType, string> = {
   mobile_payment: 'Pago móvil',
   bank_transfer: 'Transferencia',
-  cash_foreign: 'Efectivo divisas',
+  cash_usd: 'Efectivo dólares',
+  cash_eur: 'Efectivo euros',
   cash_bs: 'Efectivo bolívares',
   other: 'Otro',
 };

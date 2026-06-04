@@ -1,6 +1,5 @@
 function buildResource<T extends string>(resource: T) {
   return {
-    VIEW: `${resource}.view`,
     LIST: `${resource}.list`,
     CREATE: `${resource}.create`,
     UPDATE: `${resource}.update`,
@@ -13,7 +12,6 @@ function buildResource<T extends string>(resource: T) {
 
 export const PERMISSIONS = {
   USERS: {
-    VIEW: 'users.view',
     LIST: 'users.list',
     CREATE: 'users.create',
     UPDATE: 'users.update',
@@ -24,7 +22,6 @@ export const PERMISSIONS = {
     RESTORE: 'users.restore',
   },
   ROLES: {
-    VIEW: 'roles.view',
     LIST: 'roles.list',
     CREATE: 'roles.create',
     UPDATE: 'roles.update',
@@ -47,9 +44,9 @@ export const PERMISSIONS = {
   CONTRACTORS: buildResource('contractors'),
   EXCHANGE_RATES: buildResource('exchange-rates'),
   BRANCHES: buildResource('branches'),
+  TAX_UNITS: buildResource('tax-units'),
   ORDERS: {
     LIST: 'orders.list',
-    VIEW: 'orders.view',
     CREATE: 'orders.create',
     UPDATE: 'orders.update',
     SOFT_DELETE: 'orders.soft-delete',
@@ -63,23 +60,19 @@ export const PERMISSIONS = {
   },
   ACCOUNTS_PAYABLE: {
     LIST: 'accounts-payable.list',
-    VIEW: 'accounts-payable.view',
     UPDATE: 'accounts-payable.update',
   },
   ACCOUNTS_RECEIVABLE: {
     LIST: 'accounts-receivable.list',
-    VIEW: 'accounts-receivable.view',
     UPDATE: 'accounts-receivable.update',
-  },
-  CREDITS_RECEIVABLE: {
-    LIST: 'credits-receivable.list',
-    VIEW: 'credits-receivable.view',
-    UPDATE: 'credits-receivable.update',
   },
   TAXES_PAYABLE: {
     LIST: 'taxes-payable.list',
-    VIEW: 'taxes-payable.view',
     UPDATE: 'taxes-payable.update',
+  },
+  APP_CONFIG: {
+    VIEW: 'app-config.view',
+    UPDATE: 'app-config.update',
   },
   REPORTS: {
     RECEIVABLES_LIST: 'reports.receivables.list',

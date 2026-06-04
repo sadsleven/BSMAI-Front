@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Eye, Plus, HandCoins } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
 import { AccountsReceivableDetail } from '../components/AccountsReceivableDetail';
 import {
   Table,
@@ -23,6 +24,7 @@ import { SortableHeader, type SortDir } from '@/components/ui/sortable-header';
 import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
+import { formatCreated } from '@/lib/dates';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { Can } from '@/modules/auth/presentation/components/Can';
@@ -32,10 +34,18 @@ import { getHttpErrorMessage } from '@/lib/api';
 import { accountsReceivableGateway } from '../../infrastructure/accountsReceivableGateway';
 import {
   collectedBs,
+  collectedUsd,
+  debtorDisplayName,
+  debtorTypeOf,
+  isCasheaAccount,
+  isFixedRateAccount,
   pendingBs,
-  pendingOriginal,
+  pendingUsd,
   STATUS_LABEL,
+  targetBs,
+  targetUsd,
   type AccountsReceivable,
+  type AccountsReceivableDebtorType,
   type AccountsReceivableStatus,
 } from '../../domain/models/accountsReceivable';
 import { insuranceGateway } from '@/modules/insurances/infrastructure/insuranceGateway';
@@ -50,6 +60,7 @@ function readQuery(sp: URLSearchParams) {
     search: sp.get('search') ?? '',
     status: (sp.get('status') ?? '') as '' | AccountsReceivableStatus,
     insuranceId: sp.get('insuranceId') ?? '',
+    debtorType: (sp.get('debtorType') ?? '') as '' | AccountsReceivableDebtorType,
     sortBy: (sp.get('sortBy') ?? 'createdAt') as SortBy,
     sortDir: (sp.get('sortDir') ?? 'DESC') as SortDir,
   };
@@ -110,6 +121,7 @@ export function AccountsReceivableList() {
         search: filters.search || undefined,
         status: filters.status || undefined,
         insuranceId: filters.insuranceId || undefined,
+        debtorType: filters.debtorType || undefined,
         sortBy: filters.sortBy,
         sortDir: filters.sortDir,
       });
@@ -134,7 +146,12 @@ export function AccountsReceivableList() {
     setSp(new URLSearchParams(), { replace: true });
   };
 
-  const hasActiveFilters = !!(filters.search || filters.status || filters.insuranceId);
+  const hasActiveFilters = !!(
+    filters.search ||
+    filters.status ||
+    filters.insuranceId ||
+    filters.debtorType
+  );
 
   const toggleSelect = (id: string) =>
     setSelected((prev) => {
@@ -188,7 +205,7 @@ export function AccountsReceivableList() {
         <DataTableToolbar
           searchValue={searchInput}
           onSearchChange={setSearchInput}
-          searchPlaceholder="Buscar por número de orden…"
+          searchPlaceholder="Buscar por N° cuenta, N° orden, seguro o titular…"
           hasActiveFilters={hasActiveFilters}
           onClear={clearFilters}
           filters={
@@ -205,7 +222,25 @@ export function AccountsReceivableList() {
                 <SelectContent>
                   <SelectItem value="all">Estado: todos</SelectItem>
                   <SelectItem value="uncollected">No cobrada</SelectItem>
+                  <SelectItem value="partially_collected">Cobrada parcialmente</SelectItem>
                   <SelectItem value="collected">Cobrada</SelectItem>
+                  <SelectItem value="overcollected">Sobre-cobrada</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={filters.debtorType || 'all'}
+                onValueChange={(v) =>
+                  updateParam({ debtorType: v === 'all' ? undefined : v })
+                }
+              >
+                <SelectTrigger className="h-9 w-44">
+                  <SelectValue placeholder="Deudor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Deudor: todos</SelectItem>
+                  <SelectItem value="insurance">Seguro</SelectItem>
+                  <SelectItem value="holder">Titular (crédito)</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -255,7 +290,7 @@ export function AccountsReceivableList() {
                 </SortableHeader>
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                Seguro
+                Deudor
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Monto orden
@@ -297,18 +332,20 @@ export function AccountsReceivableList() {
                     description={
                       hasActiveFilters
                         ? 'Limpiá los filtros para ver todas las cuentas.'
-                        : 'Las cuentas se generan al crear órdenes tipo seguro.'
+                        : 'Las cuentas se generan al crear órdenes tipo seguro, crédito o Cashea.'
                     }
                   />
                 </TableCell>
               </TableRow>
             ) : (
               data.map((a) => {
+                const fixed = isFixedRateAccount(a);
+                const pUsd = pendingUsd(a);
+                const collected = collectedUsd(a);
                 const pBs = pendingBs(a);
-                const pOrig = pendingOriginal(a);
-                const collected = collectedBs(a);
+                const collectedBsVal = collectedBs(a);
+                const debtorType = debtorTypeOf(a);
                 // Permite seleccionar mientras no esté completamente cobrada.
-                // Receivable sin cap: 'overcollected' / 'collected' bloquean para evitar más cobros.
                 const isUncollected =
                   a.status === 'uncollected' || a.status === 'partially_collected';
                 return (
@@ -333,45 +370,119 @@ export function AccountsReceivableList() {
                       </Link>
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm">
-                      {a.insurance?.name ?? '—'}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {isCasheaAccount(a) ? (
+                          <Badge
+                            variant="outline"
+                            className="bg-warning-soft text-warning border-warning/40"
+                          >
+                            Cashea
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant="outline"
+                            className={
+                              debtorType === 'holder'
+                                ? 'bg-brand-cyan-soft text-brand-blue-strong border-brand-cyan/40'
+                                : 'bg-brand-blue-soft text-brand-blue-strong border-brand-blue/30'
+                            }
+                          >
+                            {debtorType === 'holder' ? 'Titular' : 'Seguro'}
+                          </Badge>
+                        )}
+                        {fixed ? (
+                          <Badge
+                            variant="outline"
+                            className="bg-brand-blue-soft text-brand-blue-strong border-brand-blue/30"
+                          >
+                            Tasa fija
+                          </Badge>
+                        ) : null}
+                        <span className="truncate">{debtorDisplayName(a)}</span>
+                      </div>
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono">
-                      {Number(a.order.priceAmount).toFixed(2)}{' '}
-                      {a.order.priceCurrency}
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm font-mono">
-                      {pBs !== null ? (
-                        <div
-                          className={
-                            Math.abs(pBs) <= 0.01
-                              ? 'text-success'
-                              : pBs < 0
-                                ? 'text-brand-blue-strong'
-                                : collected > 0
-                                  ? 'text-warning'
-                                  : 'text-foreground'
-                          }
-                        >
-                          {pOrig !== null ? (
-                            <>
+                      {(() => {
+                        const price = Number(a.order.priceAmount);
+                        if (fixed) {
+                          const tBs = targetBs(a) ?? 0;
+                          const rateBs = Number(
+                            a.order.fixedExchangeRate?.amountBs ?? 0,
+                          );
+                          return (
+                            <div className="space-y-0.5">
                               <div>
-                                {pBs < 0 ? '+' : ''}
-                                {Math.abs(pOrig).toFixed(2)} {a.order.priceCurrency}
+                                {tBs.toLocaleString('es-VE', {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}{' '}
+                                Bs
                               </div>
-                              <div className="text-xs text-muted-foreground">
-                                Bs. {Math.abs(pBs).toFixed(2)}
+                              <div className="text-[10px] text-muted-foreground font-sans">
+                                fija · {price.toFixed(2)} USD × {rateBs.toFixed(2)}
                               </div>
-                            </>
-                          ) : (
-                            <div>
-                              {pBs < 0 ? '+' : ''}
-                              {Math.abs(pBs).toFixed(2)} Bs.
                             </div>
-                          )}
-                        </div>
-                      ) : (
-                        '—'
-                      )}
+                          );
+                        }
+                        const target = targetUsd(a);
+                        if (isCasheaAccount(a) && target !== null) {
+                          return (
+                            <div className="space-y-0.5">
+                              <div>{target.toFixed(2)} USD</div>
+                              <div className="text-[10px] text-muted-foreground font-sans">
+                                neto · precio {price.toFixed(2)}
+                              </div>
+                            </div>
+                          );
+                        }
+                        return `${price.toFixed(2)} USD`;
+                      })()}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono">
+                      {fixed
+                        ? pBs !== null
+                          ? (() => {
+                              const v = pBs;
+                              return (
+                                <div
+                                  className={
+                                    Math.abs(v) <= 0.01
+                                      ? 'text-success'
+                                      : v < 0
+                                        ? 'text-brand-blue-strong'
+                                        : collectedBsVal > 0
+                                          ? 'text-warning'
+                                          : 'text-foreground'
+                                  }
+                                >
+                                  {v < 0 ? '+' : ''}
+                                  {Math.abs(v).toLocaleString('es-VE', {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })}{' '}
+                                  Bs
+                                </div>
+                              );
+                            })()
+                          : '—'
+                        : pUsd !== null
+                          ? (
+                              <div
+                                className={
+                                  Math.abs(pUsd) <= 0.01
+                                    ? 'text-success'
+                                    : pUsd < 0
+                                      ? 'text-brand-blue-strong'
+                                      : collected > 0
+                                        ? 'text-warning'
+                                        : 'text-foreground'
+                                }
+                              >
+                                {pUsd < 0 ? '+' : ''}
+                                {Math.abs(pUsd).toFixed(2)} USD
+                              </div>
+                            )
+                          : '—'}
                     </TableCell>
                     <TableCell className="py-3.5 px-4">
                       {(() => {
@@ -407,10 +518,8 @@ export function AccountsReceivableList() {
                         );
                       })()}
                     </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm text-muted-foreground">
-                      {a.createdAt
-                        ? new Date(a.createdAt).toLocaleDateString('es-VE')
-                        : '—'}
+                    <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                      {formatCreated(a.createdAt)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-right">
                       <Button

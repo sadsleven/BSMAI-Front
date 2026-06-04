@@ -32,7 +32,8 @@ import {
 import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
-import { formatBs, formatDate, formatNumber, inDateRange } from '../../domain/format';
+import { formatUsd, formatBs, formatDate, formatNumber, inDateRange } from '../../domain/format';
+import { bsToUsd, useUsdRate, usdToBs } from '../../domain/useUsdRate';
 import { REPORT_PAGE_SIZE } from '../../infrastructure/fetchAll';
 import { getHttpErrorMessage } from '@/lib/api';
 
@@ -46,7 +47,7 @@ type DisbursementRow = {
   bankCode: string | null | undefined;
   amountValue: number;
   amountCurrency: 'USD' | 'EUR' | 'BS';
-  amountInBs: number;
+  amountInUsd: number;
   destination: string;
   accountNumber: string;
   kind: DestKind;
@@ -71,6 +72,7 @@ export function ReportDisbursements() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [overCap, setOverCap] = useState(false);
+  const usdRate = useUsdRate();
 
   useEffect(() => {
     let cancelled = false;
@@ -97,7 +99,7 @@ export function ReportDisbursements() {
               bankCode: p.bankCode,
               amountValue: Number(p.amountValue ?? 0),
               amountCurrency: p.amountCurrency,
-              amountInBs: Number(p.amountInBs ?? 0),
+              amountInUsd: Number(p.amountInUsd ?? 0),
               destination: apRecipientName(ap),
               accountNumber: ap.payableNumber,
               kind: 'provider',
@@ -114,7 +116,7 @@ export function ReportDisbursements() {
               bankCode: p.bankCode,
               amountValue: Number(p.amountValue ?? 0),
               amountCurrency: p.amountCurrency,
-              amountInBs: Number(p.amountInBs ?? 0),
+              amountInUsd: bsToUsd(p.amountInBs, usdRate),
               destination: `Retención · ${taxRecipientName(t)}`,
               accountNumber: t.taxPayableNumber,
               kind: 'tax',
@@ -132,7 +134,7 @@ export function ReportDisbursements() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [usdRate]);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -179,9 +181,9 @@ export function ReportDisbursements() {
     let provider = 0;
     let tax = 0;
     filtered.forEach((it) => {
-      total += it.amountInBs;
-      if (it.kind === 'provider') provider += it.amountInBs;
-      else tax += it.amountInBs;
+      total += it.amountInUsd;
+      if (it.kind === 'provider') provider += it.amountInUsd;
+      else tax += it.amountInUsd;
     });
     return { total, provider, tax, count: filtered.length };
   }, [filtered]);
@@ -214,26 +216,26 @@ export function ReportDisbursements() {
               icon: ArrowUpCircle,
               tone: 'destructive',
               label: 'Total egresos',
-              value: formatBs(totals.total),
+              value: formatUsd(totals.total),
               hint: `${formatNumber(totals.count)} pagos`,
             },
             {
               icon: Banknote,
               tone: 'blue',
               label: 'A proveedores',
-              value: formatBs(totals.provider),
+              value: formatUsd(totals.provider),
             },
             {
               icon: Receipt,
               tone: 'warning',
               label: 'A impuestos',
-              value: formatBs(totals.tax),
+              value: formatUsd(totals.tax),
             },
             {
               icon: TrendingUp,
               tone: 'cyan',
               label: 'Promedio por pago',
-              value: totals.count > 0 ? formatBs(totals.total / totals.count) : '—',
+              value: totals.count > 0 ? formatUsd(totals.total / totals.count) : '—',
             },
           ]}
         />
@@ -313,15 +315,16 @@ export function ReportDisbursements() {
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Banco</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Referencia</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Monto</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Monto USD</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Monto Bs.</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <SkeletonTableRows rows={6} columns={9} />
+              <SkeletonTableRows rows={6} columns={10} />
             ) : paged.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="p-0">
+                <TableCell colSpan={10} className="p-0">
                   <EmptyState
                     icon={ArrowUpCircle}
                     title={hasActiveFilters ? 'Sin resultados' : 'Sin pagos emitidos'}
@@ -368,7 +371,10 @@ export function ReportDisbursements() {
                     {it.amountCurrency} {it.amountValue.toFixed(2)}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-destructive">
-                    {formatBs(it.amountInBs)}
+                    {formatUsd(it.amountInUsd)}
+                  </TableCell>
+                  <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-destructive">
+                    {formatBs(usdToBs(it.amountInUsd, usdRate))}
                   </TableCell>
                 </TableRow>
               ))

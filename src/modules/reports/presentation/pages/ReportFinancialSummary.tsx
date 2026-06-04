@@ -24,16 +24,17 @@ import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import {
-  formatBs,
+  formatUsd,
   formatMonth,
   formatPercent,
   inDateRange,
   monthBucket,
 } from '../../domain/format';
 import { REPORT_PAGE_SIZE } from '../../infrastructure/fetchAll';
+import { bsToUsd, useUsdRate } from '../../domain/useUsdRate';
 import { getHttpErrorMessage } from '@/lib/api';
 
-type PaymentRow = { date: string; amountInBs: number };
+type PaymentRow = { date: string; amountInUsd: number };
 type Bucket = {
   month: string;
   income: number;
@@ -53,6 +54,7 @@ export function ReportFinancialSummary() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [overCap, setOverCap] = useState(false);
+  const usdRate = useUsdRate();
 
   useEffect(() => {
     let cancelled = false;
@@ -74,7 +76,7 @@ export function ReportFinancialSummary() {
           arRes.data.flatMap((a) =>
             (a.payments ?? []).map((p) => ({
               date: p.paymentDate,
-              amountInBs: Number(p.amountInBs || 0),
+              amountInUsd: Number(p.amountInUsd || 0),
             })),
           ),
         );
@@ -82,7 +84,7 @@ export function ReportFinancialSummary() {
           apRes.data.flatMap((a) =>
             (a.payments ?? []).map((p) => ({
               date: p.paymentDate,
-              amountInBs: Number(p.amountInBs || 0),
+              amountInUsd: Number(p.amountInUsd || 0),
             })),
           ),
         );
@@ -90,7 +92,7 @@ export function ReportFinancialSummary() {
           taxRes.data.flatMap((a) =>
             (a.payments ?? []).map((p) => ({
               date: p.paymentDate,
-              amountInBs: Number(p.amountInBs || 0),
+              amountInUsd: bsToUsd(p.amountInBs, usdRate),
             })),
           ),
         );
@@ -104,7 +106,7 @@ export function ReportFinancialSummary() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [usdRate]);
 
   const buckets = useMemo<Bucket[]>(() => {
     const map = new Map<string, Bucket>();
@@ -119,15 +121,15 @@ export function ReportFinancialSummary() {
     const within = (d: string) => inDateRange(d, filters.from || undefined, filters.to || undefined);
     arPayments.forEach((p) => {
       if (!within(p.date)) return;
-      ensure(monthBucket(p.date)).income += p.amountInBs;
+      ensure(monthBucket(p.date)).income += p.amountInUsd;
     });
     apPayments.forEach((p) => {
       if (!within(p.date)) return;
-      ensure(monthBucket(p.date)).providerExpense += p.amountInBs;
+      ensure(monthBucket(p.date)).providerExpense += p.amountInUsd;
     });
     taxPayments.forEach((p) => {
       if (!within(p.date)) return;
-      ensure(monthBucket(p.date)).taxExpense += p.amountInBs;
+      ensure(monthBucket(p.date)).taxExpense += p.amountInUsd;
     });
     return Array.from(map.values()).sort((a, b) => (a.month < b.month ? 1 : -1));
   }, [arPayments, apPayments, taxPayments, filters.from, filters.to]);
@@ -170,21 +172,21 @@ export function ReportFinancialSummary() {
               icon: ArrowDownCircle,
               tone: 'success',
               label: 'Ingresos',
-              value: formatBs(totals.income),
+              value: formatUsd(totals.income),
               hint: 'Cobros recibidos',
             },
             {
               icon: ArrowUpCircle,
               tone: 'destructive',
               label: 'Egresos',
-              value: formatBs(totals.expense),
-              hint: `Proveedores ${formatBs(totals.providerExpense)} · Impuestos ${formatBs(totals.taxExpense)}`,
+              value: formatUsd(totals.expense),
+              hint: `Proveedores ${formatUsd(totals.providerExpense)} · Impuestos ${formatUsd(totals.taxExpense)}`,
             },
             {
               icon: BarChart3,
               tone: totals.net >= 0 ? 'blue' : 'destructive',
               label: 'Resultado neto',
-              value: formatBs(totals.net),
+              value: formatUsd(totals.net),
             },
             {
               icon: PercentCircle,
@@ -262,21 +264,21 @@ export function ReportFinancialSummary() {
                       {formatMonth(b.month)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-success">
-                      {formatBs(b.income)}
+                      {formatUsd(b.income)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                      {formatBs(b.providerExpense)}
+                      {formatUsd(b.providerExpense)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                      {formatBs(b.taxExpense)}
+                      {formatUsd(b.taxExpense)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-destructive">
-                      {formatBs(exp)}
+                      {formatUsd(exp)}
                     </TableCell>
                     <TableCell
                       className={`py-3.5 px-4 text-sm font-mono text-right ${net >= 0 ? 'text-foreground' : 'text-destructive'}`}
                     >
-                      {formatBs(net)}
+                      {formatUsd(net)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-muted-foreground">
                       {formatPercent(margin)}

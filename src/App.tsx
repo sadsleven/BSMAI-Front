@@ -40,6 +40,9 @@ import { ContractorEdit } from './modules/contractors/presentation/pages/Contrac
 import { ExchangeRateList } from './modules/exchange-rates/presentation/pages/ExchangeRateList';
 import { ExchangeRateCreate } from './modules/exchange-rates/presentation/pages/ExchangeRateCreate';
 import { ExchangeRateEdit } from './modules/exchange-rates/presentation/pages/ExchangeRateEdit';
+import { TaxUnitList } from './modules/tax-units/presentation/pages/TaxUnitList';
+import { TaxUnitCreate } from './modules/tax-units/presentation/pages/TaxUnitCreate';
+import { TaxUnitEdit } from './modules/tax-units/presentation/pages/TaxUnitEdit';
 import { BranchList } from './modules/branches/presentation/pages/BranchList';
 import { BranchCreate } from './modules/branches/presentation/pages/BranchCreate';
 import { BranchEdit } from './modules/branches/presentation/pages/BranchEdit';
@@ -50,8 +53,6 @@ import { AccountsPayableList } from './modules/accounts-payable/presentation/pag
 import { AccountsPayableRegisterPayment } from './modules/accounts-payable/presentation/pages/AccountsPayableRegisterPayment';
 import { AccountsReceivableList } from './modules/accounts-receivable/presentation/pages/AccountsReceivableList';
 import { AccountsReceivableRegisterCollection } from './modules/accounts-receivable/presentation/pages/AccountsReceivableRegisterCollection';
-import { CreditsReceivableList } from './modules/credits-receivable/presentation/pages/CreditsReceivableList';
-import { CreditsReceivableRegisterCollection } from './modules/credits-receivable/presentation/pages/CreditsReceivableRegisterCollection';
 import { TaxesPayableList } from './modules/taxes-payable/presentation/pages/TaxesPayableList';
 import { TaxesPayableRegisterPayment } from './modules/taxes-payable/presentation/pages/TaxesPayableRegisterPayment';
 import { ReportReceivablesList } from './modules/reports/presentation/pages/ReportReceivablesList';
@@ -68,6 +69,8 @@ import { ReportTaxesRetained } from './modules/reports/presentation/pages/Report
 import { ReportExecutivePanel } from './modules/reports/presentation/pages/ReportExecutivePanel';
 import { ReportOrdersAnalytics } from './modules/reports/presentation/pages/ReportOrdersAnalytics';
 import { ReportInsurerCollections } from './modules/reports/presentation/pages/ReportInsurerCollections';
+import { AppConfigPage } from './modules/app-config/presentation/pages/AppConfigPage';
+import { GuidePage } from './modules/guide/presentation/pages/GuidePage';
 import { RequirePermission } from './modules/auth/presentation/components/RequirePermission';
 import { PERMISSIONS } from './modules/auth/domain/models/permissions';
 
@@ -96,6 +99,7 @@ function App() {
         >
           <Route index element={<DashboardPage />} />
           <Route path="profile" element={<ProfilePage />} />
+          <Route path="guide" element={<GuidePage />} />
           <Route path="users">
             <Route index element={<UserList />} />
             <Route path="create" element={<UserCreate />} />
@@ -152,6 +156,11 @@ function App() {
             <Route path="create" element={<ExchangeRateCreate />} />
             <Route path="edit/:id" element={<ExchangeRateEdit />} />
           </Route>
+          <Route path="tax-units">
+            <Route index element={<TaxUnitList />} />
+            <Route path="create" element={<TaxUnitCreate />} />
+            <Route path="edit/:id" element={<TaxUnitEdit />} />
+          </Route>
           <Route path="branches">
             <Route index element={<BranchList />} />
             <Route path="create" element={<BranchCreate />} />
@@ -176,13 +185,6 @@ function App() {
               element={<AccountsReceivableRegisterCollection />}
             />
           </Route>
-          <Route path="credits-receivable">
-            <Route index element={<CreditsReceivableList />} />
-            <Route
-              path="register-collection"
-              element={<CreditsReceivableRegisterCollection />}
-            />
-          </Route>
           <Route path="taxes-payable">
             <Route index element={<TaxesPayableList />} />
             <Route
@@ -190,6 +192,14 @@ function App() {
               element={<TaxesPayableRegisterPayment />}
             />
           </Route>
+          <Route
+            path="config"
+            element={
+              <RequirePermission permission={PERMISSIONS.APP_CONFIG.VIEW}>
+                <AppConfigPage />
+              </RequirePermission>
+            }
+          />
           <Route path="reports">
             <Route
               path="executive-panel"

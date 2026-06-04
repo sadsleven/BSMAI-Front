@@ -348,28 +348,21 @@ export const serviceTypeSchema = z.object({
     .optional(),
   isActive: z.boolean().optional(),
   particularPriceUsd: z
-    .number({ error: 'El precio Particular USD es obligatorio' })
+    .number()
     .positive('Debe ser > 0')
-    .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' }),
-  particularPriceEur: z
-    .number({ error: 'El precio Particular EUR es obligatorio' })
-    .positive('Debe ser > 0')
-    .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' }),
+    .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' })
+    .optional(),
 });
 export type ServiceTypeValues = z.infer<typeof serviceTypeSchema>;
 
 /**
- * Lista de precios por Tipo de Servicio (Seguro/Doctor/Centro). Ambos USD y EUR
- * obligatorios y > 0. Sin duplicados por serviceTypeId.
+ * Lista de precios por Tipo de Servicio (Seguro/Doctor/Centro). USD obligatorio
+ * y > 0. Sin duplicados por serviceTypeId.
  */
 const servicePriceRowSchema = z.object({
   serviceTypeId: z.string().uuid({ message: 'Seleccioná un servicio' }),
   priceUsd: z
     .number({ error: 'Precio USD requerido' })
-    .positive('Debe ser > 0')
-    .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' }),
-  priceEur: z
-    .number({ error: 'Precio EUR requerido' })
     .positive('Debe ser > 0')
     .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' }),
 });
@@ -437,6 +430,23 @@ export const exchangeRateSchema = z.object({
   isActive: z.boolean().optional(),
 });
 export type ExchangeRateValues = z.infer<typeof exchangeRateSchema>;
+
+/**
+ * Unidad Tributaria. `amountBs` numérico; `effectiveDate` es date (sin hora) —
+ * la UT se publica por Gaceta Oficial con vigencia desde un día calendario.
+ */
+export const taxUnitSchema = z.object({
+  amountBs: z
+    .number({ error: 'El monto es obligatorio' })
+    .positive('El monto debe ser mayor a 0')
+    .max(999_999_999.99, 'Monto excede el máximo permitido')
+    .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' }),
+  effectiveDate: z
+    .string({ error: 'La fecha efectiva es obligatoria' })
+    .min(1, 'La fecha efectiva es obligatoria'),
+  isActive: z.boolean().optional(),
+});
+export type TaxUnitValues = z.infer<typeof taxUnitSchema>;
 
 export const insuranceSchema = z.object({
   name: z
@@ -606,11 +616,11 @@ export { phoneNumberSchema };
 
 const ORDER_TYPES = ['cash', 'credit', 'insurance', 'cashea'] as const;
 const PROVIDER_TYPES = ['doctor', 'care_center'] as const;
-const ORDER_CURRENCIES = ['USD', 'EUR'] as const;
 const PAYMENT_TYPES_ORDER = [
   'mobile_payment',
   'bank_transfer',
-  'cash_foreign',
+  'cash_usd',
+  'cash_eur',
   'cash_bs',
   'other',
 ] as const;
@@ -666,6 +676,32 @@ export const orderPaymentSchema = z
           path: ['amountCurrency'],
           message: 'Debe ser BS',
         });
+    } else if (val.type === 'cash_usd') {
+      if (!trim(val.exchangeRateId))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['exchangeRateId'],
+          message: 'Tasa USD requerida',
+        });
+      if (val.amountCurrency !== 'USD')
+        ctx.addIssue({
+          code: 'custom',
+          path: ['amountCurrency'],
+          message: 'Debe ser USD',
+        });
+    } else if (val.type === 'cash_eur') {
+      if (!trim(val.exchangeRateId))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['exchangeRateId'],
+          message: 'Tasa EUR requerida',
+        });
+      if (val.amountCurrency !== 'EUR')
+        ctx.addIssue({
+          code: 'custom',
+          path: ['amountCurrency'],
+          message: 'Debe ser EUR',
+        });
     } else if (val.type === 'other') {
       if (!trim(val.referenceNumber))
         ctx.addIssue({
@@ -717,11 +753,12 @@ export const orderSchema = z
         message: 'La fecha no puede ser posterior a hoy',
       }),
     appointmentDate: z.string().min(1, 'Fecha de atención requerida'),
-    priceCurrency: z.enum(ORDER_CURRENCIES, { error: 'Moneda requerida' }),
     priceAmount: z
       .number({ error: 'Monto requerido' })
       .positive('Debe ser > 0')
       .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' }),
+    useFixedRate: z.boolean().optional(),
+    fixedExchangeRateId: z.string().uuid().optional().or(z.literal('')),
     payments: z.array(orderPaymentSchema).max(50).optional(),
   })
   .superRefine((val, ctx) => {
@@ -811,6 +848,22 @@ export const orderSchema = z
           path: ['appointmentDate'],
           message: 'Fecha de atención debe ser ≥ fecha de orden',
         });
+    }
+    if (val.useFixedRate) {
+      if (val.type !== 'insurance') {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['useFixedRate'],
+          message: 'La tasa fija solo aplica a órdenes tipo seguro',
+        });
+      }
+      if (!val.fixedExchangeRateId) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['fixedExchangeRateId'],
+          message: 'Seleccioná la tasa fija',
+        });
+      }
     }
   });
 export type OrderValues = z.infer<typeof orderSchema>;

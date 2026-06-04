@@ -15,6 +15,8 @@ function buildParams(
     search: q.search,
     status: q.status,
     insuranceId: q.insuranceId,
+    holderId: q.holderId,
+    debtorType: q.debtorType,
     branchId: q.branchId,
     orderId: q.orderId,
     sortBy: q.sortBy,

@@ -26,9 +26,9 @@ import {
   STATUS_LABEL,
   type AccountsReceivable,
   type AccountsReceivableStatus,
-  collectedBs,
-  targetBs,
-  pendingBs,
+  collectedUsd,
+  targetUsd,
+  pendingUsd,
 } from '@/modules/accounts-receivable/domain/models/accountsReceivable';
 import { orderGateway } from '@/modules/orders/infrastructure/orderGateway';
 import {
@@ -42,11 +42,13 @@ import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import {
+  formatUsd,
   formatBs,
   formatDate,
   formatNumber,
   inDateRange,
 } from '../../domain/format';
+import { useUsdRate, usdToBs } from '../../domain/useUsdRate';
 import { REPORT_PAGE_SIZE } from '../../infrastructure/fetchAll';
 import { getHttpErrorMessage } from '@/lib/api';
 
@@ -57,7 +59,7 @@ const STATUS_TONE: Record<AccountsReceivableStatus, string> = {
   overcollected: 'bg-brand-blue-soft text-brand-blue-strong',
 };
 
-const COLUMNS = 13;
+const COLUMNS = 16;
 
 export function ReportReceivablesList() {
   const [sp, setSp] = useSearchParams();
@@ -80,6 +82,7 @@ export function ReportReceivablesList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [overCap, setOverCap] = useState(false);
+  const usdRate = useUsdRate();
 
   useEffect(() => {
     let cancelled = false;
@@ -193,9 +196,9 @@ export function ReportReceivablesList() {
     let collected = 0;
     let pending = 0;
     enriched.forEach(({ ar }) => {
-      const t = targetBs(ar) ?? 0;
-      const c = collectedBs(ar);
-      const p = pendingBs(ar) ?? Math.max(0, t - c);
+      const t = targetUsd(ar) ?? 0;
+      const c = collectedUsd(ar);
+      const p = pendingUsd(ar) ?? Math.max(0, t - c);
       target += t;
       collected += c;
       pending += p;
@@ -226,21 +229,21 @@ export function ReportReceivablesList() {
               icon: Wallet,
               tone: 'blue',
               label: 'Total facturado',
-              value: formatBs(totals.target),
-              hint: 'Convertido a Bs por tasa de facturación',
+              value: formatUsd(totals.target),
+              hint: 'USD; conversión a Bs vía tasa actual.',
             },
             {
               icon: TrendingUp,
               tone: 'success',
               label: 'Total cobrado',
-              value: formatBs(totals.collected),
+              value: formatUsd(totals.collected),
               hint: `${totals.target > 0 ? ((totals.collected / totals.target) * 100).toFixed(1) : '0.0'}% de cobranza`,
             },
             {
               icon: AlertCircle,
               tone: 'warning',
               label: 'Pendiente por cobrar',
-              value: formatBs(totals.pending),
+              value: formatUsd(totals.pending),
             },
             {
               icon: Coins,
@@ -329,9 +332,12 @@ export function ReportReceivablesList() {
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Cuenta</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Clave</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Monto</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Tasa Bs.</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Tasa USD/Bs</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Monto USD</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Monto Bs.</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Cobrado USD</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Cobrado Bs.</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Pendiente USD</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Pendiente Bs.</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Estado</TableHead>
             </TableRow>
@@ -355,9 +361,9 @@ export function ReportReceivablesList() {
               </TableRow>
             ) : (
               paged.map(({ ar, order }) => {
-                const t = targetBs(ar);
-                const c = collectedBs(ar);
-                const p = pendingBs(ar);
+                const t = targetUsd(ar);
+                const c = collectedUsd(ar);
+                const p = pendingUsd(ar);
                 const rate = order?.billingExchangeRate
                   ? Number(order.billingExchangeRate.amountBs)
                   : null;
@@ -392,21 +398,28 @@ export function ReportReceivablesList() {
                       {order?.serviceKey ?? '—'}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                      {order
-                        ? `${order.priceCurrency} ${Number(order.priceAmount).toFixed(2)}`
-                        : '—'}
+                      {order ? `USD ${Number(order.priceAmount).toFixed(2)}` : '—'}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-muted-foreground">
                       {rate !== null ? rate.toFixed(2) : '—'}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                      {formatBs(t)}
+                      {formatUsd(t)}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
+                      {formatBs(usdToBs(t, usdRate))}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-success">
-                      {formatBs(c)}
+                      {formatUsd(c)}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-success">
+                      {formatBs(usdToBs(c, usdRate))}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-warning">
-                      {formatBs(p)}
+                      {formatUsd(p)}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-warning">
+                      {formatBs(usdToBs(p, usdRate))}
                     </TableCell>
                     <TableCell className="py-3.5 px-4">
                       <Badge

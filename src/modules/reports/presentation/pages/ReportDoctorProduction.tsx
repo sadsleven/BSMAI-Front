@@ -21,17 +21,16 @@ import { SkeletonTableRows } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { accountsPayableGateway } from '@/modules/accounts-payable/infrastructure/accountsPayableGateway';
 import {
-  amountToReceive,
-  billingRateBs,
-  paidBs,
+  amountToReceiveUsd,
+  paidUsd,
   recipientName,
   type AccountsPayable,
 } from '@/modules/accounts-payable/domain/models/accountsPayable';
-import { useTaxRates } from '@/lib/config/taxRates';
 import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
-import { formatBs, formatNumber, inDateRange } from '../../domain/format';
+import { formatUsd, formatBs, formatNumber, inDateRange } from '../../domain/format';
+import { useUsdRate, usdToBs } from '../../domain/useUsdRate';
 import { REPORT_PAGE_SIZE } from '../../infrastructure/fetchAll';
 import { getHttpErrorMessage } from '@/lib/api';
 
@@ -41,10 +40,10 @@ type Row = {
   name: string;
   accountsCount: number;
   ordersCount: number;
-  grossBs: number; // sum providerAmount × billing rate
-  netBs: number; // amountToReceive × billing rate
-  paidBs: number;
-  pendingBs: number;
+  grossUsd: number;
+  netUsd: number;
+  paidUsd: number;
+  pendingUsd: number;
 };
 
 export function ReportDoctorProduction() {
@@ -63,7 +62,7 @@ export function ReportDoctorProduction() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [overCap, setOverCap] = useState(false);
-  const taxRates = useTaxRates();
+  const usdRate = useUsdRate();
 
   useEffect(() => {
     let cancelled = false;
@@ -121,25 +120,21 @@ export function ReportDoctorProduction() {
           name: recipientName(ap),
           accountsCount: 0,
           ordersCount: 0,
-          grossBs: 0,
-          netBs: 0,
-          paidBs: 0,
-          pendingBs: 0,
+          grossUsd: 0,
+          netUsd: 0,
+          paidUsd: 0,
+          pendingUsd: 0,
         };
         map.set(key, row);
       }
       row.accountsCount += 1;
-      const rate = billingRateBs(ap) ?? 0;
-      const provAmt = Number(ap.providerAmount ?? 0);
-      const gross =
-        ap.providerAmountCurrency === 'BS' ? provAmt : provAmt * rate;
-      const ar = amountToReceive(ap, taxRates) ?? 0;
-      const net = ap.providerAmountCurrency === 'BS' ? ar : ar * rate;
-      const paid = paidBs(ap);
-      row.grossBs += gross;
-      row.netBs += net;
-      row.paidBs += paid;
-      row.pendingBs += Math.max(0, net - paid);
+      const gross = Number(ap.providerAmount ?? 0);
+      const net = amountToReceiveUsd(ap) ?? 0;
+      const paid = paidUsd(ap);
+      row.grossUsd += gross;
+      row.netUsd += net;
+      row.paidUsd += paid;
+      row.pendingUsd += Math.max(0, net - paid);
     });
 
     // ordersCount derivado por orderId distintos por proveedor.
@@ -158,8 +153,8 @@ export function ReportDoctorProduction() {
     const result = Array.from(map.values());
     const s = filters.search.toLowerCase().trim();
     const filtered = s ? result.filter((r) => r.name.toLowerCase().includes(s)) : result;
-    return filtered.sort((a, b) => b.grossBs - a.grossBs);
-  }, [rows, filters.from, filters.to, filters.providerType, filters.search, taxRates]);
+    return filtered.sort((a, b) => b.grossUsd - a.grossUsd);
+  }, [rows, filters.from, filters.to, filters.providerType, filters.search]);
 
   const totals = useMemo(() => {
     let gross = 0;
@@ -167,10 +162,10 @@ export function ReportDoctorProduction() {
     let paid = 0;
     let pending = 0;
     aggregated.forEach((r) => {
-      gross += r.grossBs;
-      net += r.netBs;
-      paid += r.paidBs;
-      pending += r.pendingBs;
+      gross += r.grossUsd;
+      net += r.netUsd;
+      paid += r.paidUsd;
+      pending += r.pendingUsd;
     });
     return { gross, net, paid, pending };
   }, [aggregated]);
@@ -201,22 +196,22 @@ export function ReportDoctorProduction() {
               icon: Stethoscope,
               tone: 'cyan',
               label: 'Total facturado al proveedor',
-              value: formatBs(totals.gross),
+              value: formatUsd(totals.gross),
               hint: 'Antes de retenciones',
             },
             {
               icon: TrendingUp,
               tone: 'success',
               label: 'Pagado',
-              value: formatBs(totals.paid),
-              hint: `Pendiente ${formatBs(totals.pending)}`,
+              value: formatUsd(totals.paid),
+              hint: `Pendiente ${formatUsd(totals.pending)}`,
             },
             {
               icon: Crown,
               tone: 'warning',
               label: 'Top proveedor',
               value: top ? top.name : '—',
-              hint: top ? formatBs(top.grossBs) : undefined,
+              hint: top ? formatUsd(top.grossUsd) : undefined,
             },
           ]}
         />
@@ -275,18 +270,22 @@ export function ReportDoctorProduction() {
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Tipo</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Órdenes</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Cuentas</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Bruto USD</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Bruto Bs.</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">A recibir USD</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">A recibir Bs.</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Pagado USD</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Pagado Bs.</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Pendiente USD</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Pendiente Bs.</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <SkeletonTableRows rows={6} columns={9} />
+              <SkeletonTableRows rows={6} columns={13} />
             ) : aggregated.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="p-0">
+                <TableCell colSpan={13} className="p-0">
                   <EmptyState
                     icon={UserCog}
                     title={hasActiveFilters ? 'Sin resultados' : 'Sin producción registrada'}
@@ -315,16 +314,28 @@ export function ReportDoctorProduction() {
                     {formatNumber(r.accountsCount)}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                    {formatBs(r.grossBs)}
+                    {formatUsd(r.grossUsd)}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                    {formatBs(r.netBs)}
+                    {formatBs(usdToBs(r.grossUsd, usdRate))}
+                  </TableCell>
+                  <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
+                    {formatUsd(r.netUsd)}
+                  </TableCell>
+                  <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
+                    {formatBs(usdToBs(r.netUsd, usdRate))}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-success">
-                    {formatBs(r.paidBs)}
+                    {formatUsd(r.paidUsd)}
+                  </TableCell>
+                  <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-success">
+                    {formatBs(usdToBs(r.paidUsd, usdRate))}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-warning">
-                    {formatBs(r.pendingBs)}
+                    {formatUsd(r.pendingUsd)}
+                  </TableCell>
+                  <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-warning">
+                    {formatBs(usdToBs(r.pendingUsd, usdRate))}
                   </TableCell>
                 </TableRow>
               ))

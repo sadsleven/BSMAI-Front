@@ -48,6 +48,7 @@ import { SortableHeader, type SortDir } from '@/components/ui/sortable-header';
 import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
+import { formatCreated } from '@/lib/dates';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import {
@@ -432,6 +433,9 @@ export function UserList() {
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Estado
               </TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                Creación
+              </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">
                 Acciones
               </TableHead>
@@ -439,10 +443,10 @@ export function UserList() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <SkeletonTableRows rows={5} columns={6} />
+              <SkeletonTableRows rows={5} columns={7} />
             ) : users.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="p-0">
+                <TableCell colSpan={7} className="p-0">
                   <EmptyState
                     title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay usuarios'}
                     description={
@@ -525,9 +529,12 @@ export function UserList() {
                     <TableCell className="py-3.5 px-4">
                       <StatusBadge user={user} />
                     </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                      {formatCreated(user.createdAt)}
+                    </TableCell>
                     <TableCell className="py-3.5 px-4 text-right">
                       <div className="inline-flex items-center gap-0.5">
-                        <Can permission={PERMISSIONS.USERS.VIEW}>
+                        <Can permission={PERMISSIONS.USERS.LIST}>
                           <Button
                             variant="ghost"
                             size="icon"

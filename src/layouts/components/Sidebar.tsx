@@ -15,6 +15,7 @@ import {
   FileText,
   Briefcase,
   TrendingUp,
+  Calculator,
   Building,
   ClipboardList,
   Wallet,
@@ -33,6 +34,8 @@ import {
   LayoutDashboard,
   LineChart,
   PiggyBank,
+  Settings,
+  BookOpen,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -100,14 +103,8 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
           show: has(PERMISSIONS.ACCOUNTS_RECEIVABLE.LIST),
         },
         {
-          icon: Coins,
-          label: 'Créditos por cobrar',
-          href: '/credits-receivable',
-          show: has(PERMISSIONS.CREDITS_RECEIVABLE.LIST),
-        },
-        {
           icon: Receipt,
-          label: 'Impuestos por pagar',
+          label: 'Retenciones por pagar',
           href: '/taxes-payable',
           show: has(PERMISSIONS.TAXES_PAYABLE.LIST),
         },
@@ -135,6 +132,12 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
           href: '/contractors',
           show: has(PERMISSIONS.CONTRACTORS.LIST),
         },
+      ],
+    },
+    {
+      title: 'Guías',
+      items: [
+        { icon: BookOpen, label: 'Guía del sistema', href: '/guide', show: true },
       ],
     },
     {
@@ -281,6 +284,18 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
           label: 'Tasas de cambio',
           href: '/exchange-rates',
           show: has(PERMISSIONS.EXCHANGE_RATES.LIST),
+        },
+        {
+          icon: Calculator,
+          label: 'Unidades tributarias',
+          href: '/tax-units',
+          show: has(PERMISSIONS.TAX_UNITS.LIST),
+        },
+        {
+          icon: Settings,
+          label: 'Configuración',
+          href: '/config',
+          show: has(PERMISSIONS.APP_CONFIG.VIEW),
         },
       ],
     },

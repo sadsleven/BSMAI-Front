@@ -24,6 +24,7 @@ import { SortableHeader, type SortDir } from '@/components/ui/sortable-header';
 import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
+import { formatCreated } from '@/lib/dates';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { Can } from '@/modules/auth/presentation/components/Can';
@@ -32,18 +33,16 @@ import { notify } from '@/lib/notifications/toast';
 import { getHttpErrorMessage } from '@/lib/api';
 import { accountsPayableGateway } from '../../infrastructure/accountsPayableGateway';
 import {
-  amountToReceive,
+  amountToReceiveUsd,
   canSelectForPayment,
   effectiveStatus,
   EFFECTIVE_STATUS_LABEL,
-  paidBs,
-  pendingBs,
-  pendingOriginal,
+  paidUsd,
+  pendingUsd,
   recipientName,
   type AccountsPayable,
   type AccountsPayableStatus,
 } from '../../domain/models/accountsPayable';
-import { useTaxRates } from '@/lib/config/taxRates';
 import { doctorGateway } from '@/modules/doctors/infrastructure/doctorGateway';
 import { careCenterGateway } from '@/modules/care-centers/infrastructure/careCenterGateway';
 import {
@@ -79,7 +78,6 @@ export function AccountsPayableList() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [detailId, setDetailId] = useState<string | null>(null);
-  const taxRates = useTaxRates();
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [careCenters, setCareCenters] = useState<CareCenter[]>([]);
 
@@ -357,10 +355,9 @@ export function AccountsPayableList() {
               </TableRow>
             ) : (
               data.map((a) => {
-                const ar = amountToReceive(a, taxRates);
-                const pBs = pendingBs(a, taxRates);
-                const pOrig = pendingOriginal(a, taxRates);
-                const paid = paidBs(a);
+                const ar = amountToReceiveUsd(a);
+                const pUsd = pendingUsd(a);
+                const paid = paidUsd(a);
                 const eff = effectiveStatus(a);
                 const selectable = canSelectForPayment(a);
                 return (
@@ -394,39 +391,24 @@ export function AccountsPayableList() {
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono">
                       {a.order?.doctorAmount
-                        ? `${Number(a.order?.doctorAmount).toFixed(2)} ${a.order.doctorAmountCurrency}`
+                        ? `${Number(a.order?.doctorAmount).toFixed(2)} USD`
                         : '—'}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono">
-                      {ar !== null
-                        ? `${ar.toFixed(2)} ${a.order.doctorAmountCurrency}`
-                        : '—'}
+                      {ar !== null ? `${ar.toFixed(2)} USD` : '—'}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono">
-                      {pBs !== null ? (
+                      {pUsd !== null ? (
                         <div
                           className={
-                            pBs <= 0.01
+                            pUsd <= 0.01
                               ? 'text-success'
                               : paid > 0
                                 ? 'text-warning'
                                 : 'text-foreground'
                           }
                         >
-                          {pOrig !== null &&
-                          a.order.doctorAmountCurrency &&
-                          a.order.doctorAmountCurrency !== 'BS' ? (
-                            <>
-                              <div>
-                                {pOrig.toFixed(2)} {a.order.doctorAmountCurrency}
-                              </div>
-                              <div className="text-xs text-muted-foreground">
-                                Bs. {pBs.toFixed(2)}
-                              </div>
-                            </>
-                          ) : (
-                            <div>{pBs.toFixed(2)} Bs.</div>
-                          )}
+                          {pUsd.toFixed(2)} USD
                         </div>
                       ) : (
                         '—'
@@ -458,10 +440,8 @@ export function AccountsPayableList() {
                         {EFFECTIVE_STATUS_LABEL[eff]}
                       </span>
                     </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm text-muted-foreground">
-                      {a.createdAt
-                        ? new Date(a.createdAt).toLocaleDateString('es-VE')
-                        : '—'}
+                    <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                      {formatCreated(a.createdAt)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-right">
                       <Button

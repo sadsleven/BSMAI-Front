@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, BriefcaseMedical, Hospital, X, AlertTriangle } from 'lucide-react';
+import { Search, BriefcaseMedical, Hospital, X, AlertTriangle, Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
@@ -160,8 +160,11 @@ export function ProviderSearchSelect({
             }}
             onFocus={() => setOpen(true)}
             disabled={disabled}
-            className={cn('h-9 pl-9', error && 'border-destructive')}
+            className={cn('h-9 pl-9 pr-9', error && 'border-destructive')}
           />
+          {loading ? (
+            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground animate-spin" />
+          ) : null}
           {open && rect ? (
             createPortal(
             <div
@@ -175,7 +178,10 @@ export function ProviderSearchSelect({
               className="z-50 max-h-[280px] overflow-y-auto rounded-lg border bg-card shadow-md"
             >
               {loading ? (
-                <div className="p-3 text-sm text-muted-foreground">Buscando…</div>
+                <div className="p-3 text-sm text-muted-foreground flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Cargando opciones…
+                </div>
               ) : providerType === 'doctor' ? (
                 docResults.length === 0 ? (
                   <div className="p-3 text-sm text-muted-foreground">Sin resultados.</div>

@@ -29,6 +29,7 @@ import { SortableHeader, type SortDir } from '@/components/ui/sortable-header';
 import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
+import { formatCreatedDateTime } from '@/lib/dates';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { Plus, Pencil, Trash2, Eye, Undo2, ListChecks } from 'lucide-react';
@@ -406,6 +407,16 @@ export function OrderList() {
                   Monto
                 </SortableHeader>
               </TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                <SortableHeader<SortBy>
+                  column="createdAt"
+                  activeColumn={filters.sortBy}
+                  direction={filters.sortDir}
+                  onSort={onSort}
+                >
+                  Creación
+                </SortableHeader>
+              </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">
                 Acciones
               </TableHead>
@@ -413,10 +424,10 @@ export function OrderList() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <SkeletonTableRows rows={5} columns={9} />
+              <SkeletonTableRows rows={5} columns={10} />
             ) : orders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="p-0">
+                <TableCell colSpan={10} className="p-0">
                   <EmptyState
                     title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay órdenes'}
                     description={
@@ -469,11 +480,14 @@ export function OrderList() {
                       <StatusBadge status={order.status} />
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono">
-                      {Number(order.priceAmount).toFixed(2)} {order.priceCurrency}
+                      {Number(order.priceAmount).toFixed(2)} USD
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                      {formatCreatedDateTime(order.createdAt)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-right">
                       <div className="inline-flex items-center gap-0.5">
-                        <Can permission={PERMISSIONS.ORDERS.VIEW}>
+                        <Can permission={PERMISSIONS.ORDERS.LIST}>
                           <Button
                             variant="ghost"
                             size="icon"

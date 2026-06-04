@@ -15,19 +15,19 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { bankGateway } from '@/modules/banks/infrastructure/bankGateway';
 import type { Bank } from '@/modules/banks/domain/models/bank';
 import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchangeRate';
+import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
 import type { OrderPaymentValues } from '@/lib/validations/schemas';
 import {
   PAYMENT_TYPE_LABEL,
-  type OrderCurrency,
   type OrderPaymentType,
-  type PaymentCurrency,
 } from '../../domain/models/order';
 import { cn } from '@/lib/utils';
 
 const ALL_TYPES: OrderPaymentType[] = [
   'mobile_payment',
   'bank_transfer',
-  'cash_foreign',
+  'cash_usd',
+  'cash_eur',
   'cash_bs',
   'other',
 ];
@@ -62,10 +62,10 @@ export type PaymentMethodInfo = {
 export type OrderPaymentFormProps = {
   payments: OrderPaymentValues[];
   onChange: (next: OrderPaymentValues[]) => void;
-  /** Moneda de la orden — define amountCurrency para `cash_foreign` y `other`. */
-  orderCurrency: OrderCurrency;
-  /** Tasa actual de la moneda de la orden (provista por el padre). */
-  currentRate: ExchangeRate | null;
+  /** Tasa USD/Bs vigente (ref para convertir pagos BS y EUR a USD). */
+  usdRate: ExchangeRate | null;
+  /** Notifica al padre cuando se carga una tasa EUR (para cache de lookup). */
+  onEurRateLoaded?: (rate: ExchangeRate) => void;
   errors?: PaymentItemErrors[];
   disabled?: boolean;
   /** Oculta los botones internos "Agregar pago" (el padre los renderiza). */
@@ -80,31 +80,37 @@ export type OrderPaymentFormProps = {
 
 function defaultsForType(
   type: OrderPaymentType,
-  orderCurrency: OrderCurrency,
   todayIso: string,
-  currentRateId?: string,
+  usdRateId?: string,
+  eurRateId?: string,
 ): OrderPaymentValues {
   const base = {
     type,
     paymentDate: todayIso,
     referenceNumber: '',
     bankCode: '',
-    exchangeRateId: currentRateId ?? '',
+    exchangeRateId: '',
     accountNumber: '',
     amountValue: 0,
   };
   if (type === 'mobile_payment' || type === 'bank_transfer' || type === 'cash_bs') {
-    return { ...base, amountCurrency: 'BS' };
+    return { ...base, exchangeRateId: usdRateId ?? '', amountCurrency: 'BS' };
   }
-  // cash_foreign, other → en moneda de la orden; el rate se necesita para Bs.
-  return { ...base, amountCurrency: orderCurrency as PaymentCurrency };
+  if (type === 'cash_usd') {
+    return { ...base, amountCurrency: 'USD' };
+  }
+  if (type === 'cash_eur') {
+    return { ...base, exchangeRateId: eurRateId ?? '', amountCurrency: 'EUR' };
+  }
+  // other → USD.
+  return { ...base, amountCurrency: 'USD' };
 }
 
 export function OrderPaymentForm({
   payments,
   onChange,
-  orderCurrency,
-  currentRate,
+  usdRate,
+  onEurRateLoaded,
   errors,
   disabled,
   hideAddButtons,
@@ -113,6 +119,7 @@ export function OrderPaymentForm({
   onRemovePayment,
 }: OrderPaymentFormProps) {
   const [banks, setBanks] = useState<Bank[]>([]);
+  const [eurRate, setEurRate] = useState<ExchangeRate | null>(null);
 
   useEffect(() => {
     bankGateway
@@ -121,24 +128,49 @@ export function OrderPaymentForm({
       .catch(() => setBanks([]));
   }, []);
 
-  // Backfill exchangeRateId once currentRate is known. BE requires it whenever
-  // amountCurrency != BS (for Bs conversion) and we also pre-fill BS-typed
-  // payments so the user sees the applied rate.
+  // Carga tasa EUR vigente para snapshot de pagos cash_eur.
   useEffect(() => {
-    if (!currentRate?.id) return;
+    let cancelled = false;
+    exchangeRateGateway
+      .getCurrent('EUR')
+      .then((r) => {
+        if (cancelled) return;
+        setEurRate(r);
+        onEurRateLoaded?.(r);
+      })
+      .catch(() => !cancelled && setEurRate(null));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Backfill exchangeRateId al cargar tasas. BS/mobile/bank → USD rate; EUR → EUR rate.
+  useEffect(() => {
+    if (!usdRate?.id && !eurRate?.id) return;
     let dirty = false;
     const next = payments.map((p) => {
       const hasRate = !!(p.exchangeRateId && p.exchangeRateId.trim());
-      if (!hasRate) {
+      if (hasRate) return p;
+      const needsUsd =
+        p.amountCurrency === 'BS' &&
+        (p.type === 'cash_bs' ||
+          p.type === 'mobile_payment' ||
+          p.type === 'bank_transfer');
+      const needsEur = p.amountCurrency === 'EUR' && p.type === 'cash_eur';
+      if (needsUsd && usdRate?.id) {
         dirty = true;
-        return { ...p, exchangeRateId: currentRate.id };
+        return { ...p, exchangeRateId: usdRate.id };
+      }
+      if (needsEur && eurRate?.id) {
+        dirty = true;
+        return { ...p, exchangeRateId: eurRate.id };
       }
       return p;
     });
     if (dirty) onChange(next);
-    // Intentionally only react to currentRate change; payments handled implicitly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentRate?.id]);
+  }, [usdRate?.id, eurRate?.id]);
 
   const todayIso = new Date().toISOString().slice(0, 10);
 
@@ -158,12 +190,20 @@ export function OrderPaymentForm({
   const add = (type: OrderPaymentType) => {
     onChange([
       ...payments,
-      defaultsForType(type, orderCurrency, todayIso, currentRate?.id),
+      defaultsForType(type, todayIso, usdRate?.id, eurRate?.id),
     ]);
   };
 
   const changeType = (idx: number, type: OrderPaymentType) => {
-    update(idx, defaultsForType(type, orderCurrency, payments[idx]?.paymentDate || todayIso, currentRate?.id));
+    update(
+      idx,
+      defaultsForType(
+        type,
+        payments[idx]?.paymentDate || todayIso,
+        usdRate?.id,
+        eurRate?.id,
+      ),
+    );
   };
 
   return (
@@ -176,13 +216,15 @@ export function OrderPaymentForm({
             const err = errors?.[i] ?? {};
             const isMobileOrTransfer = p.type === 'mobile_payment' || p.type === 'bank_transfer';
             const isBs = p.type === 'cash_bs';
-            const isForeign = p.type === 'cash_foreign';
+            const isUsd = p.type === 'cash_usd';
+            const isEur = p.type === 'cash_eur';
             const isOther = p.type === 'other';
             const lock = lockedFields?.[i] ?? null;
             const info = methodInfo?.[i] ?? null;
             const typeLocked = !!lock?.type;
             const bankLocked = !!lock?.bankCode;
             const accountLocked = !!lock?.accountNumber;
+            const rowRate = isEur ? eurRate : usdRate;
             return (
               <div key={i} className="rounded-lg border p-3 space-y-3 bg-card">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -230,24 +272,26 @@ export function OrderPaymentForm({
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Tasa de cambio</Label>
-                    <Input
-                      readOnly
-                      value={
-                        currentRate
-                          ? `1 ${currentRate.currency} = ${Number(currentRate.amountBs).toFixed(2)} Bs.`
-                          : '—'
-                      }
-                      className="h-9 bg-muted/30"
-                    />
-                    {err.exchangeRateId ? (
-                      <p className="text-xs text-destructive flex items-center gap-1">
-                        <AlertTriangle className="w-3 h-3" />
-                        {err.exchangeRateId}
-                      </p>
-                    ) : null}
-                  </div>
+                  {!isUsd && !isOther ? (
+                    <div className="space-y-1">
+                      <Label className="text-xs">Tasa de cambio</Label>
+                      <Input
+                        readOnly
+                        value={
+                          rowRate
+                            ? `1 ${rowRate.currency} = ${Number(rowRate.amountBs).toFixed(2)} Bs.`
+                            : '—'
+                        }
+                        className="h-9 bg-muted/30"
+                      />
+                      {err.exchangeRateId ? (
+                        <p className="text-xs text-destructive flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" />
+                          {err.exchangeRateId}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
 
                   {isMobileOrTransfer ? (
                     <div className="space-y-1">
@@ -313,9 +357,11 @@ export function OrderPaymentForm({
                       currencyPrefix={
                         isBs || isMobileOrTransfer
                           ? 'Bs.'
-                          : isForeign || isOther
-                            ? orderCurrency
-                            : p.amountCurrency
+                          : isUsd || isOther
+                            ? 'USD'
+                            : isEur
+                              ? 'EUR'
+                              : p.amountCurrency
                       }
                       className={cn(err.amountValue && 'border-destructive')}
                     />
@@ -399,26 +445,63 @@ export function OrderPaymentForm({
 }
 
 /**
- * Convierte un pago a la moneda de la orden usando la tasa histórica del pago.
- * - Si amountCurrency = orderCurrency → directo.
- * - Si amountCurrency = BS y orderCurrency = USD/EUR → BS / rate.amountBs.
- * - Si amountCurrency = USD/EUR distinto a orderCurrency → no soportado (devolvemos 0).
+ * Convierte un pago a USD.
+ * - USD → directo.
+ * - BS  → amount / usdRate.amountBs.
+ * - EUR → (amount × eurRate.amountBs) / usdRate.amountBs; eurRate viene del
+ *         snapshot del propio pago (exchangeRateId → rateLookup).
+ *
+ * Devuelve 0 si falta tasa requerida (UI debe alertar).
  */
-export function paymentInOrderCurrency(
+export function paymentInUsd(
   p: OrderPaymentValues,
-  orderCurrency: OrderCurrency,
+  usdRate: ExchangeRate | null | undefined,
   rateLookup: (id: string) => ExchangeRate | null,
 ): number {
   const amount = Number(p.amountValue || 0);
-  if (p.amountCurrency === orderCurrency) return amount;
-  if (p.amountCurrency === 'BS') {
-    const rateId = (p.exchangeRateId || '').trim();
-    if (!rateId) return 0;
-    const rate = rateLookup(rateId);
-    if (!rate) return 0;
-    const r = Number(rate.amountBs);
-    if (!r) return 0;
-    return amount / r;
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+  if (p.amountCurrency === 'USD') return amount;
+
+  const usdBs = Number(usdRate?.amountBs ?? 0);
+  if (!usdBs || usdBs <= 0) return 0;
+
+  if (p.amountCurrency === 'BS') return amount / usdBs;
+
+  // EUR
+  const rateId = (p.exchangeRateId || '').trim();
+  const eurRate = rateId ? rateLookup(rateId) : null;
+  const eurBs = Number(eurRate?.amountBs ?? 0);
+  if (!eurBs || eurBs <= 0) return 0;
+  return (amount * eurBs) / usdBs;
+}
+
+/**
+ * Convierte un pago a Bolívares.
+ *  - BS  → directo.
+ *  - USD → amount × usdRate.amountBs.
+ *  - EUR → amount × eurRate.amountBs (snapshot del pago).
+ *
+ * Devuelve 0 si falta tasa requerida.
+ */
+export function paymentInBs(
+  p: OrderPaymentValues,
+  usdRate: ExchangeRate | null | undefined,
+  rateLookup: (id: string) => ExchangeRate | null,
+): number {
+  const amount = Number(p.amountValue || 0);
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+  if (p.amountCurrency === 'BS') return amount;
+
+  if (p.amountCurrency === 'USD') {
+    const usdBs = Number(usdRate?.amountBs ?? 0);
+    if (!usdBs || usdBs <= 0) return 0;
+    return amount * usdBs;
   }
-  return 0;
+
+  // EUR
+  const rateId = (p.exchangeRateId || '').trim();
+  const eurRate = rateId ? rateLookup(rateId) : null;
+  const eurBs = Number(eurRate?.amountBs ?? 0);
+  if (!eurBs || eurBs <= 0) return 0;
+  return amount * eurBs;
 }

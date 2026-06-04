@@ -92,7 +92,6 @@ export function CareCenterEdit() {
               ? { id: sp.serviceType.id, name: sp.serviceType.name }
               : undefined,
             priceUsd: Number(sp.priceUsd) || 0,
-            priceEur: Number(sp.priceEur) || 0,
           })),
           isActive: c.isActive,
         });

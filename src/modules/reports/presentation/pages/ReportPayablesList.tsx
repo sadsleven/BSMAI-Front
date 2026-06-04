@@ -26,12 +26,11 @@ import {
   EFFECTIVE_STATUS_LABEL,
   type AccountsPayable,
   type AccountsPayableStatus,
-  amountToReceive,
+  amountToReceiveUsd,
   effectiveStatus,
-  paidBs,
-  pendingBs,
+  paidUsd,
+  pendingUsd,
   recipientName,
-  targetBs,
 } from '@/modules/accounts-payable/domain/models/accountsPayable';
 import { orderGateway } from '@/modules/orders/infrastructure/orderGateway';
 import { holderDisplayName, type Order } from '@/modules/orders/domain/models/order';
@@ -39,11 +38,11 @@ import { doctorGateway } from '@/modules/doctors/infrastructure/doctorGateway';
 import { careCenterGateway } from '@/modules/care-centers/infrastructure/careCenterGateway';
 import { fullName as doctorFullName, type Doctor } from '@/modules/doctors/domain/models/doctor';
 import type { CareCenter } from '@/modules/care-centers/domain/models/careCenter';
-import { useTaxRates } from '@/lib/config/taxRates';
 import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
-import { formatBs, formatDate, formatNumber, inDateRange } from '../../domain/format';
+import { formatUsd, formatBs, formatDate, formatNumber, inDateRange } from '../../domain/format';
+import { useUsdRate, usdToBs } from '../../domain/useUsdRate';
 import { REPORT_PAGE_SIZE } from '../../infrastructure/fetchAll';
 import { getHttpErrorMessage } from '@/lib/api';
 
@@ -54,7 +53,7 @@ const STATUS_TONE: Record<string, string> = {
   undefined: 'bg-muted text-muted-foreground',
 };
 
-const COLUMNS = 13;
+const COLUMNS = 15;
 
 export function ReportPayablesList() {
   const [sp, setSp] = useSearchParams();
@@ -79,7 +78,7 @@ export function ReportPayablesList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [overCap, setOverCap] = useState(false);
-  const taxRates = useTaxRates();
+  const usdRate = useUsdRate();
 
   useEffect(() => {
     (async () => {
@@ -200,15 +199,15 @@ export function ReportPayablesList() {
     let paid = 0;
     let pending = 0;
     enriched.forEach(({ ap }) => {
-      const t = targetBs(ap, taxRates) ?? 0;
-      const p = paidBs(ap);
-      const pen = pendingBs(ap, taxRates) ?? Math.max(0, t - p);
+      const t = amountToReceiveUsd(ap) ?? 0;
+      const p = paidUsd(ap);
+      const pen = pendingUsd(ap) ?? Math.max(0, t - p);
       target += t;
       paid += p;
       pending += pen;
     });
     return { target, paid, pending, count: enriched.length };
-  }, [enriched, taxRates]);
+  }, [enriched]);
 
   const paged = useMemo(() => {
     const start = (filters.page - 1) * filters.limit;
@@ -234,21 +233,21 @@ export function ReportPayablesList() {
               icon: Wallet,
               tone: 'blue',
               label: 'Total a pagar',
-              value: formatBs(totals.target),
+              value: formatUsd(totals.target),
               hint: 'Tras retenciones',
             },
             {
               icon: TrendingUp,
               tone: 'success',
               label: 'Total pagado',
-              value: formatBs(totals.paid),
+              value: formatUsd(totals.paid),
               hint: `${totals.target > 0 ? ((totals.paid / totals.target) * 100).toFixed(1) : '0.0'}% de avance`,
             },
             {
               icon: AlertCircle,
               tone: 'warning',
               label: 'Pendiente por pagar',
-              value: formatBs(totals.pending),
+              value: formatUsd(totals.pending),
             },
             {
               icon: Banknote,
@@ -356,7 +355,9 @@ export function ReportPayablesList() {
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Procedimiento</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Facturación</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">A recibir</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Pagado USD</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Pagado Bs.</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Pendiente USD</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Pendiente Bs.</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Pago</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Estado</TableHead>
@@ -381,9 +382,9 @@ export function ReportPayablesList() {
               </TableRow>
             ) : (
               paged.map(({ ap, order }) => {
-                const ar = amountToReceive(ap, taxRates);
-                const paid = paidBs(ap);
-                const pend = pendingBs(ap, taxRates);
+                const ar = amountToReceiveUsd(ap);
+                const paid = paidUsd(ap);
+                const pend = pendingUsd(ap);
                 const eff = effectiveStatus(ap);
                 const lastPayment = (ap.payments ?? []).slice().sort((a, b) => {
                   return (
@@ -417,20 +418,22 @@ export function ReportPayablesList() {
                       {procedureFromOrder(order)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                      {order
-                        ? `${order.priceCurrency} ${Number(order.priceAmount).toFixed(2)}`
-                        : '—'}
+                      {order ? `USD ${Number(order.priceAmount).toFixed(2)}` : '—'}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                      {ar !== null && ap.providerAmountCurrency
-                        ? `${ap.providerAmountCurrency} ${ar.toFixed(2)}`
-                        : '—'}
+                      {ar !== null ? `USD ${ar.toFixed(2)}` : '—'}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-success">
-                      {formatBs(paid)}
+                      {formatUsd(paid)}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-success">
+                      {formatBs(usdToBs(paid, usdRate))}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-warning">
-                      {formatBs(pend)}
+                      {formatUsd(pend)}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-warning">
+                      {formatBs(usdToBs(pend, usdRate))}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm">
                       {lastPayment ? (

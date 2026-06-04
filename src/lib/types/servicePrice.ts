@@ -2,7 +2,7 @@ import type { ServiceType } from '@/modules/service-types/domain/models/serviceT
 
 /**
  * Fila de precio que un actor (Seguro, Doctor, Centro) carga por Tipo de Servicio.
- * Compartido entre los tres formularios.
+ * Compartido entre los tres formularios. Sólo USD.
  */
 export interface ServicePriceRow {
   id?: string;
@@ -10,11 +10,9 @@ export interface ServicePriceRow {
   /** Eager desde BE; opcional para nuevas filas. */
   serviceType?: Pick<ServiceType, 'id' | 'name'>;
   priceUsd: number | string;
-  priceEur: number | string;
 }
 
 export interface ServicePricePayload {
   serviceTypeId: string;
   priceUsd: number;
-  priceEur: number;
 }

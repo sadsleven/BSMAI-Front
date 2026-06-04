@@ -50,8 +50,12 @@ function buildDto(values: OrderValues): CreateOrderDto {
     pathologyIds: values.pathologyIds ?? [],
     orderDate: values.orderDate,
     appointmentDate: values.appointmentDate,
-    priceCurrency: values.priceCurrency,
     priceAmount: values.priceAmount,
+    useFixedRate: values.type === 'insurance' && !!values.useFixedRate,
+    fixedExchangeRateId:
+      values.type === 'insurance' && values.useFixedRate && values.fixedExchangeRateId
+        ? values.fixedExchangeRateId
+        : undefined,
     payments: (values.payments ?? []).map<OrderPaymentInput>((p) => ({
       type: p.type,
       paymentDate: p.paymentDate,
@@ -95,8 +99,9 @@ export function OrderEdit() {
       pathologyIds: [],
       orderDate: '',
       appointmentDate: '',
-      priceCurrency: 'USD',
       priceAmount: 0,
+      useFixedRate: false,
+      fixedExchangeRateId: '',
       payments: [],
     },
   });
@@ -143,8 +148,9 @@ export function OrderEdit() {
           pathologyIds: (order.pathologies ?? []).map((p) => p.id),
           orderDate: order.orderDate.slice(0, 10),
           appointmentDate: order.appointmentDate.slice(0, 16),
-          priceCurrency: order.priceCurrency,
           priceAmount: Number(order.priceAmount),
+          useFixedRate: !!order.useFixedRate,
+          fixedExchangeRateId: order.fixedExchangeRateId ?? '',
           payments: (order.payments ?? []).map((pay) => ({
             id: pay.id,
             type: pay.type,

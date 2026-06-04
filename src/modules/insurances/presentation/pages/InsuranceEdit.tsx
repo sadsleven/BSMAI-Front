@@ -76,7 +76,6 @@ export function InsuranceEdit() {
               ? { id: sp.serviceType.id, name: sp.serviceType.name }
               : undefined,
             priceUsd: Number(sp.priceUsd) || 0,
-            priceEur: Number(sp.priceEur) || 0,
           })),
           isActive: i.isActive ?? true,
         });
@@ -271,14 +270,12 @@ export function InsuranceEdit() {
                     | {
                         serviceTypeId?: { message?: string };
                         priceUsd?: { message?: string };
-                        priceEur?: { message?: string };
                       }
                     | undefined
                   >
                 )?.map?.((e) => ({
                   serviceTypeId: e?.serviceTypeId?.message,
                   priceUsd: e?.priceUsd?.message,
-                  priceEur: e?.priceEur?.message,
                 }));
                 return (
                   <ServicePricesTable

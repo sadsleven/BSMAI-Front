@@ -16,6 +16,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { DateTimePicker } from '@/components/ui/date-time-picker';
 import { Stepper, type StepDef } from '@/components/ui/stepper';
 import { Badge } from '@/components/ui/badge';
+import { ChipMultiSelect } from '@/components/ui/chip-multi-select';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { AlertTriangle, Building, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -27,10 +28,7 @@ import {
   getUserBranches,
   setLastBranchId,
 } from '@/lib/auth/branches';
-import type {
-  OrderCurrency,
-  OrderType,
-} from '../../domain/models/order';
+import type { OrderType } from '../../domain/models/order';
 import { ORDER_TYPE_LABEL } from '../../domain/models/order';
 import type { OrderValues } from '@/lib/validations/schemas';
 import type { Patient } from '@/modules/patients/domain/models/patient';
@@ -42,6 +40,7 @@ import { serviceTypeGateway } from '@/modules/service-types/infrastructure/servi
 import { pathologyGateway } from '@/modules/pathologies/infrastructure/pathologyGateway';
 import { specialtyGateway } from '@/modules/specialties/infrastructure/specialtyGateway';
 import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
+import { appConfigGateway } from '@/modules/app-config/infrastructure/appConfigGateway';
 import { PatientSearchSelect } from './PatientSearchSelect';
 import { PatientCreateModal } from './PatientCreateModal';
 import { AuthorizeAmountModal } from './AuthorizeAmountModal';
@@ -55,7 +54,7 @@ import type { Doctor } from '@/modules/doctors/domain/models/doctor';
 import type { CareCenter } from '@/modules/care-centers/domain/models/careCenter';
 import {
   OrderPaymentForm,
-  paymentInOrderCurrency,
+  paymentInUsd,
   type PaymentItemErrors,
 } from './OrderPaymentForm';
 import type { Order } from '../../domain/models/order';
@@ -185,6 +184,7 @@ export function OrderForm({
   const [confirmTypeChange, setConfirmTypeChange] = useState<OrderType | null>(null);
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]);
   const [pathologies, setPathologies] = useState<Pathology[]>([]);
+  const [pathologiesLoading, setPathologiesLoading] = useState(true);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [currentRate, setCurrentRate] = useState<ExchangeRate | null>(null);
   void initialProvider;
@@ -222,29 +222,46 @@ export function OrderForm({
 
   useEffect(() => {
     serviceTypeGateway.listAssignable().then(setServiceTypes).catch(() => setServiceTypes([]));
-    pathologyGateway.listAssignable().then(setPathologies).catch(() => setPathologies([]));
+    pathologyGateway
+      .listAssignable()
+      .then(setPathologies)
+      .catch(() => setPathologies([]))
+      .finally(() => setPathologiesLoading(false));
     specialtyGateway.listAssignable().then(setSpecialties).catch(() => setSpecialties([]));
   }, []);
 
-  const priceCurrency = useWatch({ control, name: 'priceCurrency' }) as
-    | 'USD'
-    | 'EUR'
-    | undefined;
-
+  // Plataforma USD-only: monto en USD; tasa USD/Bs usada solo para convertir
+  // pagos en BS/EUR (vía rate snapshot del propio pago).
   useEffect(() => {
-    if (!priceCurrency) return;
     let cancelled = false;
     exchangeRateGateway
-      .getCurrent(priceCurrency)
+      .getCurrent('USD')
       .then((r) => !cancelled && setCurrentRate(r))
       .catch(() => !cancelled && setCurrentRate(null));
     return () => {
       cancelled = true;
     };
-  }, [priceCurrency]);
+  }, []);
 
-  const lookupRate = (id: string) =>
-    currentRate && currentRate.id === id ? currentRate : null;
+  // Lista USD para selector "Tasa fija" en órdenes seguro.
+  const [usdRates, setUsdRates] = useState<ExchangeRate[]>([]);
+  useEffect(() => {
+    exchangeRateGateway
+      .list({
+        limit: 100,
+        currency: 'USD',
+        sortBy: 'effectiveDate',
+        sortDir: 'DESC',
+      })
+      .then((res) => setUsdRates(res.data))
+      .catch(() => setUsdRates([]));
+  }, []);
+
+  // Cache EUR rates por id (necesarias para convertir cash_eur → USD).
+  const [eurRatesById, setEurRatesById] = useState<Record<string, ExchangeRate>>({});
+  const lookupRate = (id: string): ExchangeRate | null =>
+    eurRatesById[id] ??
+    (currentRate && currentRate.id === id ? currentRate : null);
 
   // Holder/patient sync
   const onHolderChange = (next: Patient | null) => {
@@ -371,23 +388,79 @@ export function OrderForm({
     );
   })();
 
-  // Payments totals
+  // Payments totals (USD).
   const totalPaid = useMemo(() => {
     if (!payments) return 0;
     return payments.reduce(
-      (acc, p) => acc + paymentInOrderCurrency(p, (priceCurrency as OrderCurrency) ?? 'USD', lookupRate),
+      (acc, p) => acc + paymentInUsd(p, currentRate, lookupRate),
       0,
     );
-  }, [payments, priceCurrency, currentRate]);
+  }, [payments, currentRate, eurRatesById]);
 
   const priceAmount = useWatch({ control, name: 'priceAmount' }) as number | undefined;
   const diff = (priceAmount ?? 0) - totalPaid;
-  const diffBs =
-    currentRate && currentRate.amountBs ? diff * Number(currentRate.amountBs) : null;
 
   const showPayments = type === 'cash';
   const isCashea = type === 'cashea';
-  const casheaNet = isCashea ? +(((priceAmount ?? 0) * 0.9).toFixed(2)) : 0;
+
+  // Tasa fija — solo aplica a seguro. Limpia campos cuando type cambia fuera de insurance.
+  const useFixedRateVal = useWatch({ control, name: 'useFixedRate' }) as
+    | boolean
+    | undefined;
+  const fixedExchangeRateIdVal = useWatch({
+    control,
+    name: 'fixedExchangeRateId',
+  }) as string | '' | undefined;
+  useEffect(() => {
+    if (type !== 'insurance') {
+      if (useFixedRateVal)
+        setValue('useFixedRate', false, { shouldDirty: true, shouldValidate: true });
+      if (fixedExchangeRateIdVal)
+        setValue('fixedExchangeRateId', '', { shouldDirty: true });
+      return;
+    }
+    // Auto-seleccionar la tasa más reciente cuando se activa el checkbox sin tasa.
+    if (useFixedRateVal && !fixedExchangeRateIdVal && usdRates.length > 0) {
+      setValue('fixedExchangeRateId', usdRates[0].id, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    }
+  }, [type, useFixedRateVal, fixedExchangeRateIdVal, usdRates, setValue]);
+  const fixedRateObj = useMemo(
+    () =>
+      fixedExchangeRateIdVal
+        ? usdRates.find((r) => r.id === fixedExchangeRateIdVal) ?? null
+        : null,
+    [fixedExchangeRateIdVal, usdRates],
+  );
+
+  // Comisión Cashea: snapshot persistido si la orden ya existe, sino el valor
+  // global actual cargado on-demand. Default 0.10 hasta que el fetch resuelva.
+  const [globalCasheaRate, setGlobalCasheaRate] = useState<number | null>(null);
+  useEffect(() => {
+    if (!isCashea || savedOrder) return;
+    let cancelled = false;
+    appConfigGateway
+      .getCasheaCommission()
+      .then((cfg) => !cancelled && setGlobalCasheaRate(cfg.commissionRate))
+      .catch(() => !cancelled && setGlobalCasheaRate(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [isCashea, savedOrder]);
+  const casheaRate = isCashea
+    ? savedOrder?.casheaCommissionRate != null
+      ? Number(savedOrder.casheaCommissionRate)
+      : globalCasheaRate ?? 0.1
+    : 0;
+  const casheaCommissionAmount = isCashea
+    ? +((priceAmount ?? 0) * casheaRate).toFixed(2)
+    : 0;
+  const casheaNet = isCashea
+    ? +((priceAmount ?? 0) * (1 - casheaRate)).toFixed(2)
+    : 0;
+  const casheaRatePct = +(casheaRate * 100).toFixed(2);
 
   // Price breakdown derived from selected service types + insurance/Particular.
   const orderServiceTypeRows = (useWatch({ control, name: 'serviceTypes' }) ?? []) as Array<{
@@ -399,7 +472,6 @@ export function OrderForm({
   const serviceTypeIds = orderServiceTypeRows.map((r) => r.serviceTypeId).filter(Boolean);
   const insuranceId = useWatch({ control, name: 'insuranceId' }) as string | '' | undefined;
   const isInsuranceOrder = type === 'insurance';
-  const specialtyId = useWatch({ control, name: 'specialtyId' }) as string | '' | undefined;
 
   // Carga los servicePrices del seguro elegido (kind: 'insurance').
   // Particular se lee directo de `serviceTypes[].particularPrice*`.
@@ -431,7 +503,6 @@ export function OrderForm({
   };
 
   const priceLines: PriceLine[] = useMemo(() => {
-    const ccy = (priceCurrency as 'USD' | 'EUR' | undefined) ?? 'USD';
     const ispByST = new Map(
       insuranceServicePrices.map((r) => [r.serviceTypeId, r]),
     );
@@ -441,7 +512,7 @@ export function OrderForm({
       if (isInsuranceOrder) {
         const row = ispByST.get(id);
         if (!row) return { id, name: st.name, amount: null };
-        const raw = ccy === 'USD' ? row.priceUsd : row.priceEur;
+        const raw = row.priceUsd;
         const num = raw === null || raw === undefined ? null : Number(raw);
         return {
           id,
@@ -449,8 +520,8 @@ export function OrderForm({
           amount: num !== null && Number.isFinite(num) && num > 0 ? num : null,
         };
       }
-      // Particular: lee `particularPrice*` del ST.
-      const raw = ccy === 'USD' ? st.particularPriceUsd : st.particularPriceEur;
+      // Particular: lee `particularPriceUsd` del ST.
+      const raw = st.particularPriceUsd;
       const num = raw === null || raw === undefined ? null : Number(raw);
       return {
         id,
@@ -458,7 +529,7 @@ export function OrderForm({
         amount: num !== null && Number.isFinite(num) && num > 0 ? num : null,
       };
     });
-  }, [serviceTypeIds, serviceTypes, insuranceServicePrices, isInsuranceOrder, priceCurrency]);
+  }, [serviceTypeIds, serviceTypes, insuranceServicePrices, isInsuranceOrder]);
 
   const computedPriceSum = useMemo(
     () => priceLines.reduce((acc, l) => acc + (l.amount ?? 0), 0),
@@ -503,7 +574,7 @@ export function OrderForm({
     }
     lastAppliedSumRef.current = rounded;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [computedPriceSum, amountLocked, hasAuthorization, insuranceId, priceCurrency, serviceTypeIds.join(',')]);
+  }, [computedPriceSum, amountLocked, hasAuthorization, insuranceId, serviceTypeIds.join(',')]);
 
   const orderSteps = buildOrderSteps(
     !!savedOrder,
@@ -724,12 +795,103 @@ export function OrderForm({
                 />
                 <FieldError message={errors.serviceKey?.message} />
               </div>
+
+              <div className="space-y-2 pt-3 border-t border-dashed">
+                <div className="flex items-start gap-2">
+                  <input
+                    id="useFixedRate"
+                    type="checkbox"
+                    checked={!!useFixedRateVal}
+                    onChange={(e) =>
+                      setValue('useFixedRate', e.target.checked, {
+                        shouldDirty: true,
+                        shouldValidate: true,
+                      })
+                    }
+                    className="h-4 w-4 mt-0.5"
+                  />
+                  <div className="space-y-0.5">
+                    <Label htmlFor="useFixedRate" className="text-sm font-medium">
+                      Tasa fija para esta orden
+                    </Label>
+                    <p className="text-[11px] text-muted-foreground">
+                      La cuenta por cobrar del seguro quedará fija en bolívares a
+                      la tasa seleccionada. Los cobros se descuentan en Bs sin
+                      importar la tasa del día del pago.
+                    </p>
+                  </div>
+                </div>
+                {useFixedRateVal ? (
+                  <div className="space-y-1.5 pl-6">
+                    <RequiredLabel required>Tasa fija USD/Bs</RequiredLabel>
+                    <Controller
+                      control={control}
+                      name="fixedExchangeRateId"
+                      render={({ field }) => (
+                        <Select
+                          value={(field.value as string) || ''}
+                          onValueChange={(v) =>
+                            field.onChange(v === '__none__' ? '' : v)
+                          }
+                          disabled={usdRates.length === 0}
+                        >
+                          <SelectTrigger
+                            className={cn(
+                              'h-9',
+                              errors.fixedExchangeRateId?.message &&
+                                'border-destructive',
+                            )}
+                          >
+                            <SelectValue
+                              placeholder={
+                                usdRates.length === 0
+                                  ? 'No hay tasas USD cargadas'
+                                  : 'Seleccioná tasa USD/Bs'
+                              }
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {usdRates.map((r) => (
+                              <SelectItem key={r.id} value={r.id}>
+                                {`Bs. ${Number(r.amountBs).toFixed(2)} · ${new Date(
+                                  r.effectiveDate,
+                                ).toLocaleDateString('es-VE')}`}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                    <FieldError
+                      message={errors.fixedExchangeRateId?.message}
+                    />
+                    {fixedRateObj && priceAmount ? (
+                      <p className="text-[11px] text-muted-foreground">
+                        Total a cobrar al seguro:{' '}
+                        <span className="font-mono font-semibold text-foreground">
+                          {(
+                            priceAmount * Number(fixedRateObj.amountBs)
+                          ).toLocaleString('es-VE', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}{' '}
+                          Bs
+                        </span>
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
             </div>
           ) : null}
         </div>
       </FormSection>
 
-      <FormSection title="Servicio" description="Especialidad y patologías de la orden.">
+      <FormSection
+        title="Servicio"
+        description="Especialidad y patologías de la orden."
+        allowOverflow
+      >
         <FormGrid>
           <div className="space-y-1.5">
             <RequiredLabel required>Especialidad</RequiredLabel>
@@ -739,16 +901,7 @@ export function OrderForm({
               render={({ field }) => (
                 <Select
                   value={field.value || ''}
-                  onValueChange={(v) => {
-                    field.onChange(v);
-                    // Al cambiar especialidad, limpiar proveedores en cada fila ST.
-                    const rows = (orderServiceTypeRows ?? []).map((r) => ({
-                      ...r,
-                      doctorId: undefined,
-                      careCenterId: undefined,
-                    }));
-                    setValue('serviceTypes', rows, { shouldDirty: true });
-                  }}
+                  onValueChange={(v) => field.onChange(v)}
                 >
                   <SelectTrigger
                     className={cn('h-9', errors.specialtyId?.message && 'border-destructive')}
@@ -769,59 +922,29 @@ export function OrderForm({
           </div>
 
           <div className="space-y-1.5 sm:col-span-2">
-            <RequiredLabel>Patologías (opcional)</RequiredLabel>
             <Controller
               control={control}
               name="pathologyIds"
               render={({ field }) => {
                 const selected: string[] = Array.isArray(field.value) ? field.value : [];
-                const toggle = (id: string) =>
-                  field.onChange(
-                    selected.includes(id)
-                      ? selected.filter((v) => v !== id)
-                      : [...selected, id],
-                  );
                 return (
-                  <div
-                    className={cn(
-                      'flex flex-wrap gap-2 p-3 border rounded-lg bg-muted/20 min-h-[44px]',
-                      errors.pathologyIds?.message && 'border-destructive',
-                    )}
-                  >
-                    {pathologies.length === 0 ? (
-                      <span className="text-xs text-muted-foreground">
-                        No hay patologías activas.
-                      </span>
-                    ) : (
-                      pathologies.map((p) => {
-                        const active = selected.includes(p.id);
-                        return (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => toggle(p.id)}
-                            className={cn(
-                              'inline-flex items-center rounded-md border px-2 py-1 text-xs font-medium transition-colors',
-                              active
-                                ? 'bg-primary text-primary-foreground border-primary'
-                                : 'bg-background hover:bg-accent',
-                            )}
-                          >
-                            {p.name}
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
+                  <ChipMultiSelect
+                    label="Patologías (opcional)"
+                    value={selected}
+                    onChange={(next) => field.onChange(next)}
+                    options={pathologies.map((p) => ({ id: p.id, label: p.name }))}
+                    loading={pathologiesLoading}
+                    searchPlaceholder="Buscar patología…"
+                    emptyLabel="No hay patologías activas."
+                    counterSuffix={{ singular: 'seleccionada', plural: 'seleccionadas' }}
+                    error={
+                      typeof errors.pathologyIds?.message === 'string'
+                        ? errors.pathologyIds.message
+                        : undefined
+                    }
+                  />
                 );
               }}
-            />
-            <FieldError
-              message={
-                typeof errors.pathologyIds?.message === 'string'
-                  ? errors.pathologyIds.message
-                  : undefined
-              }
             />
           </div>
         </FormGrid>
@@ -829,7 +952,7 @@ export function OrderForm({
 
       <FormSection
         title="Tipos de Servicio y Proveedores"
-        description="Cada Tipo de Servicio se atiende por su propio proveedor (doctor o centro). Los proveedores se filtran por la especialidad seleccionada."
+        description="Cada Tipo de Servicio se atiende por su propio proveedor (doctor o centro)."
         allowOverflow
       >
         <Controller
@@ -862,7 +985,6 @@ export function OrderForm({
                 }>}
                 onChange={field.onChange}
                 serviceTypes={serviceTypes}
-                specialtyId={specialtyId || undefined}
                 errors={rowErrors}
                 initialProviders={initialProvidersMap}
               />
@@ -928,21 +1050,7 @@ export function OrderForm({
         <FormGrid>
           <div className="space-y-1.5">
             <RequiredLabel required>Moneda</RequiredLabel>
-            <Controller
-              control={control}
-              name="priceCurrency"
-              render={({ field }) => (
-                <Select value={field.value || 'USD'} onValueChange={field.onChange}>
-                  <SelectTrigger className="h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="USD">USD</SelectItem>
-                    <SelectItem value="EUR">EUR</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
-            />
+            <Input readOnly value="USD" className="h-9 bg-muted/30" />
           </div>
           <div className="space-y-1.5">
             <RequiredLabel required>
@@ -955,7 +1063,7 @@ export function OrderForm({
                 <CurrencyAmountInput
                   value={typeof field.value === 'number' ? field.value : undefined}
                   onChange={(v) => field.onChange(v ?? 0)}
-                  currencyPrefix={priceCurrency || 'USD'}
+                  currencyPrefix="USD"
                   disabled={isInsuranceOrder || !canEditAmount}
                   className={cn(errors.priceAmount?.message && 'border-destructive')}
                 />
@@ -1015,7 +1123,7 @@ export function OrderForm({
               <span>
                 Detalle por tipo de servicio · {isInsuranceOrder ? 'Tarifa de seguro' : 'Particular'}
               </span>
-              <span>{priceCurrency || 'USD'}</span>
+              <span>USD</span>
             </div>
             <div className="divide-y">
               {priceLines.map((l) => (
@@ -1039,7 +1147,7 @@ export function OrderForm({
               <div className="flex items-center justify-between px-3 py-2 text-sm font-semibold bg-muted/40">
                 <span>Total</span>
                 <span className="font-mono">
-                  {computedPriceSum.toFixed(2)} {priceCurrency || 'USD'}
+                  {computedPriceSum.toFixed(2)} USD
                 </span>
               </div>
             </div>
@@ -1052,31 +1160,38 @@ export function OrderForm({
           </div>
         ) : null}
         {isCashea ? (
-          <div className="mt-4 rounded-lg border border-dashed bg-warning-soft/40 px-4 py-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="space-y-1">
-              <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
-                Precio
+          <div className="mt-4 space-y-2">
+            <div className="rounded-lg border border-dashed bg-warning-soft/40 px-4 py-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+                  Precio
+                </div>
+                <div className="text-sm font-semibold">
+                  {(priceAmount ?? 0).toFixed(2)} USD
+                </div>
               </div>
-              <div className="text-sm font-semibold">
-                {(priceAmount ?? 0).toFixed(2)} {priceCurrency}
+              <div className="space-y-1">
+                <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+                  Comisión Cashea ({casheaRatePct}%)
+                </div>
+                <div className="text-sm font-semibold text-destructive">
+                  -{casheaCommissionAmount.toFixed(2)} USD
+                </div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+                  Monto a recibir por Cashea
+                </div>
+                <div className="text-base font-bold text-success">
+                  {casheaNet.toFixed(2)} USD
+                </div>
               </div>
             </div>
-            <div className="space-y-1">
-              <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
-                Comisión Cashea (10%)
-              </div>
-              <div className="text-sm font-semibold text-destructive">
-                -{((priceAmount ?? 0) * 0.1).toFixed(2)} {priceCurrency}
-              </div>
-            </div>
-            <div className="space-y-1">
-              <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
-                Monto a recibir por Cashea
-              </div>
-              <div className="text-base font-bold text-success">
-                {casheaNet.toFixed(2)} {priceCurrency}
-              </div>
-            </div>
+            <p className="text-[11px] text-muted-foreground">
+              {savedOrder?.casheaCommissionRate != null
+                ? 'Comisión fija — snapshot al crear la orden.'
+                : 'Comisión vigente al momento de crear la orden. Configurable en Administración → Configuración.'}
+            </p>
           </div>
         ) : null}
       </FormSection>
@@ -1112,8 +1227,12 @@ export function OrderForm({
                 <OrderPaymentForm
                   payments={field.value ?? []}
                   onChange={(next) => field.onChange(next)}
-                  orderCurrency={(priceCurrency as OrderCurrency) ?? 'USD'}
-                  currentRate={currentRate}
+                  usdRate={currentRate}
+                  onEurRateLoaded={(r) =>
+                    setEurRatesById((prev) =>
+                      prev[r.id] ? prev : { ...prev, [r.id]: r },
+                    )
+                  }
                   errors={paymentsErrors}
                 />
               );
@@ -1126,7 +1245,7 @@ export function OrderForm({
                 Total orden
               </div>
               <div className="text-lg font-semibold">
-                {(priceAmount ?? 0).toFixed(2)} {priceCurrency}
+                {(priceAmount ?? 0).toFixed(2)} USD
               </div>
             </div>
             <div className="space-y-1">
@@ -1134,7 +1253,7 @@ export function OrderForm({
                 Total pagado
               </div>
               <div className="text-lg font-semibold">
-                {totalPaid.toFixed(2)} {priceCurrency}
+                {totalPaid.toFixed(2)} USD
               </div>
             </div>
             <div className="space-y-1">
@@ -1153,24 +1272,26 @@ export function OrderForm({
                 )}
               </div>
               {Math.abs(diff) >= 0.01 ? (
-                diffBs !== null ? (
-                  <div className="text-xs text-muted-foreground">
+                <div className="text-xs text-muted-foreground space-y-0.5">
+                  <div>
                     {diff > 0 ? 'Faltan' : 'Excede'}{' '}
-                    <span className="font-mono">
-                      Bs. {Math.abs(diffBs).toLocaleString('es-VE', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </span>
-                    <span className="ml-1 text-[10px]">
-                      (tasa {Number(currentRate?.amountBs ?? 0).toFixed(2)} Bs/{priceCurrency})
-                    </span>
+                    <span className="font-mono">USD {Math.abs(diff).toFixed(2)}</span>
                   </div>
-                ) : (
-                  <div className="text-xs text-muted-foreground italic">
-                    Sin tasa de cambio activa para {priceCurrency} — no se puede calcular diferencia en Bs.
-                  </div>
-                )
+                  {currentRate ? (
+                    <div>
+                      {diff > 0 ? 'Faltan' : 'Excede'}{' '}
+                      <span className="font-mono">
+                        Bs{' '}
+                        {(
+                          Math.abs(diff) * Number(currentRate.amountBs)
+                        ).toLocaleString('es-VE', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
               ) : null}
             </div>
           </div>
@@ -1196,7 +1317,6 @@ export function OrderForm({
           open={authorizeOpen}
           onOpenChange={setAuthorizeOpen}
           orderId={savedOrder.id}
-          currency={(priceCurrency as OrderCurrency) ?? 'USD'}
           currentAmount={priceAmount ?? 0}
           onAuthorized={(updated) => {
             setValue('priceAmount', Number(updated.priceAmount), {

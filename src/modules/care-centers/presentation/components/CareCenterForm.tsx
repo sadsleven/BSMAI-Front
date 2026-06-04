@@ -143,6 +143,7 @@ export function CareCenterForm({ existingSpecialties }: CareCenterFormProps) {
       <FormSection
         title="Especialidades"
         description="Asigná al menos una especialidad clínica que se atiende en el centro."
+        allowOverflow
       >
         <Controller
           name="specialtyIds"
@@ -202,14 +203,12 @@ export function CareCenterForm({ existingSpecialties }: CareCenterFormProps) {
                 | {
                     serviceTypeId?: { message?: string };
                     priceUsd?: { message?: string };
-                    priceEur?: { message?: string };
                   }
                 | undefined
               >
             )?.map?.((e) => ({
               serviceTypeId: e?.serviceTypeId?.message,
               priceUsd: e?.priceUsd?.message,
-              priceEur: e?.priceEur?.message,
             }));
             return (
               <ServicePricesTable

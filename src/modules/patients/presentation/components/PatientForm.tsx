@@ -393,6 +393,7 @@ export function PatientForm({
       <FormSection
         title="Contratistas"
         description="Asigná uno o más contratistas al paciente. Cada contratista aporta sus propios seguros."
+        allowOverflow
       >
         <Controller
           name="contractorIds"
@@ -415,6 +416,7 @@ export function PatientForm({
       <FormSection
         title="Seguros directos"
         description="Seguros asignados directamente al paciente (sin contratista). No podés elegir seguros ya cubiertos por algún contratista seleccionado."
+        allowOverflow
       >
         <Controller
           name="directInsuranceIds"

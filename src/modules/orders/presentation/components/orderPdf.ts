@@ -74,7 +74,7 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
     : 0;
   const priceFx = Number(order.priceAmount) || 0;
   const priceBs = rateBs > 0 ? priceFx * rateBs : priceFx;
-  const currencySymbol = order.priceCurrency === 'USD' ? '$' : '€';
+  const currencySymbol = '$';
 
   const cobroKind: 'insurance' | 'particular' =
     order.type === 'insurance' ? 'insurance' : 'particular';
@@ -83,8 +83,7 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
       (p) => p.serviceTypeId === serviceTypeId && p.kind === cobroKind,
     );
     if (!snap) return 0;
-    const raw = order.priceCurrency === 'USD' ? snap.priceUsd : snap.priceEur;
-    return Number(raw) || 0;
+    return Number(snap.priceUsd) || 0;
   };
   const stsRaw = (order.orderServiceTypes ?? []).filter(
     (row) => !!row.serviceTypeId,

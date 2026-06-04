@@ -33,8 +33,6 @@ export type ServiceProviderTableProps = {
   value: ServiceProviderRowValue[];
   onChange: (next: ServiceProviderRowValue[]) => void;
   serviceTypes: ServiceType[];
-  /** Specialty seleccionada de la orden — filtra los proveedores asignables por fila. */
-  specialtyId?: string;
   /** Errores Zod por fila. */
   errors?: Array<ServiceProviderRowErrors | undefined>;
   /** Hidrata el chip de proveedor en modo edición. Map key `${type}:${id}`. */
@@ -45,13 +43,12 @@ export type ServiceProviderTableProps = {
 /**
  * Tabla de filas Tipo de Servicio + Proveedor para el Paso 1 de Órdenes.
  * Cada fila independiente: cambia ST/proveedor sin afectar las demás.
- * El selector de ST excluye los ya elegidos. Provider filtrado por especialidad.
+ * Selector de ST excluye los ya elegidos.
  */
 export function ServiceProviderTable({
   value,
   onChange,
   serviceTypes,
-  specialtyId,
   errors,
   initialProviders,
   disabled,
@@ -249,17 +246,11 @@ export function ServiceProviderTable({
                           providerType={row.providerType}
                           value={cachedProvider}
                           onChange={(pv) => setRowProvider(idx, pv)}
-                          specialtyId={specialtyId}
-                          disabled={disabled || !specialtyId}
+                          disabled={disabled}
                           hideLabel
                           compact
                           error={rowError?.doctorId ?? rowError?.careCenterId}
                         />
-                        {!specialtyId && (
-                          <p className="text-[11px] italic text-muted-foreground">
-                            Elegí una especialidad arriba para buscar proveedores.
-                          </p>
-                        )}
                       </div>
                     </td>
                     <td className="px-2 py-3 text-right align-top">

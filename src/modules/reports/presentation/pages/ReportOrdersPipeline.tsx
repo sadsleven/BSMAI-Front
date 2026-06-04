@@ -42,7 +42,7 @@ import { ReportShell } from '../components/ReportShell';
 import { KpiRow, type KpiTone } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import {
-  formatBs,
+  formatUsd,
   formatDate,
   formatNumber,
   daysBetween,
@@ -206,7 +206,7 @@ export function ReportOrdersPipeline() {
             tone: STATUS_META[st].tone,
             label: ORDER_STATUS_LABEL[st],
             value: formatNumber(byStatus[st].count),
-            hint: byStatus[st].amountBs > 0 ? formatBs(byStatus[st].amountBs) : undefined,
+            hint: byStatus[st].amountBs > 0 ? formatUsd(byStatus[st].amountBs) : undefined,
           }))}
         />
       }
@@ -345,7 +345,7 @@ export function ReportOrdersPipeline() {
                       {formatNumber(days)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                      {o.priceCurrency} {Number(o.priceAmount).toFixed(2)}
+                      USD {Number(o.priceAmount).toFixed(2)}
                     </TableCell>
                   </TableRow>
                 );
