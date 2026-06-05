@@ -13,6 +13,7 @@ import { FormSection } from '@/components/ui/form-section';
 import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { getHttpErrorMessage } from '@/lib/api';
+import { formatMoney } from '@/lib/format/money';
 import { orderPaymentSchema, type OrderPaymentValues } from '@/lib/validations/schemas';
 import {
   OrderPaymentForm,
@@ -385,7 +386,7 @@ export function AccountsReceivableRegisterCollection() {
                               </span>
                             </div>
                             <div className="text-[11px] text-muted-foreground truncate">
-                              {(targetUsd(c) ?? 0).toFixed(2)} USD
+                              {formatMoney(targetUsd(c) ?? 0)} USD
                               {isCasheaAccount(c) ? ' · Cashea' : ''}
                             </div>
                           </div>
@@ -415,26 +416,19 @@ export function AccountsReceivableRegisterCollection() {
                     <div className="text-sm font-mono text-right">
                       {isFixedRateAccount(a) ? (
                         <>
-                          {(targetBs(a) ?? 0).toLocaleString('es-VE', {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}{' '}
-                          Bs
+                          {formatMoney(targetBs(a) ?? 0)} Bs
                           <div className="text-[10px] text-muted-foreground font-sans">
-                            tasa fija · {Number(a.order.priceAmount).toFixed(2)}{' '}
-                            USD ×{' '}
-                            {Number(
-                              a.order.fixedExchangeRate?.amountBs ?? 0,
-                            ).toFixed(2)}
+                            tasa fija · {formatMoney(a.order.priceAmount)} USD ×{' '}
+                            {formatMoney(a.order.fixedExchangeRate?.amountBs ?? 0)} Bs
                           </div>
                         </>
                       ) : (
                         <>
-                          {(targetUsd(a) ?? 0).toFixed(2)} USD
+                          {formatMoney(targetUsd(a) ?? 0)} USD
                           {isCasheaAccount(a) ? (
                             <div className="text-[10px] text-muted-foreground font-sans">
                               neto Cashea · precio{' '}
-                              {Number(a.order.priceAmount).toFixed(2)}
+                              {formatMoney(a.order.priceAmount)}
                             </div>
                           ) : null}
                         </>
@@ -457,13 +451,7 @@ export function AccountsReceivableRegisterCollection() {
             </ul>
             {(() => {
               const unit = useFixedRateMode ? 'Bs' : 'USD';
-              const fmt = (n: number) =>
-                useFixedRateMode
-                  ? n.toLocaleString('es-VE', {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })
-                  : n.toFixed(2);
+              const fmt = (n: number) => formatMoney(n);
               return (
                 <>
                   <div className="border-t pt-3 mt-1 flex items-center justify-between text-sm font-semibold">
@@ -523,12 +511,9 @@ export function AccountsReceivableRegisterCollection() {
                           {totals.totalPending < 0 ? 'Excede' : 'Faltan'}{' '}
                           <span className="font-mono">
                             Bs{' '}
-                            {(
-                              Math.abs(totals.totalPending) * Number(usdRate.amountBs)
-                            ).toLocaleString('es-VE', {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })}
+                            {formatMoney(
+                              Math.abs(totals.totalPending) * Number(usdRate.amountBs),
+                            )}
                           </span>
                         </div>
                       ) : null}
@@ -593,14 +578,14 @@ export function AccountsReceivableRegisterCollection() {
                   </div>
                   <div className="font-mono">
                     {useFixedRateMode
-                      ? `${totalPaymentsBs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Bs`
-                      : `${totalPaymentsUsd.toFixed(2)} USD`}
+                      ? `${formatMoney(totalPaymentsBs)} Bs`
+                      : `${formatMoney(totalPaymentsUsd)} USD`}
                   </div>
                 </div>
                 <div className="rounded-md border p-2 bg-muted/30">
                   <div className="text-xs text-muted-foreground">Tasa USD actual</div>
                   <div className="font-mono">
-                    1 USD = {Number(usdRate.amountBs).toFixed(2)} Bs.
+                    1 USD = {formatMoney(usdRate.amountBs)} Bs.
                   </div>
                 </div>
               </div>

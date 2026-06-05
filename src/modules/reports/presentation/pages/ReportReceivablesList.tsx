@@ -49,6 +49,7 @@ import {
   inDateRange,
 } from '../../domain/format';
 import { useUsdRate, usdToBs } from '../../domain/useUsdRate';
+import { formatMoney } from '@/lib/format/money';
 import { REPORT_PAGE_SIZE } from '../../infrastructure/fetchAll';
 import { getHttpErrorMessage } from '@/lib/api';
 
@@ -398,10 +399,10 @@ export function ReportReceivablesList() {
                       {order?.serviceKey ?? '—'}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                      {order ? `USD ${Number(order.priceAmount).toFixed(2)}` : '—'}
+                      {order ? `USD ${formatMoney(order.priceAmount)}` : '—'}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-muted-foreground">
-                      {rate !== null ? rate.toFixed(2) : '—'}
+                      {rate !== null ? formatMoney(rate) : '—'}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
                       {formatUsd(t)}

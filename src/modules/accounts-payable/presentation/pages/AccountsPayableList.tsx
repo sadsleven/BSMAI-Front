@@ -31,6 +31,7 @@ import { Can } from '@/modules/auth/presentation/components/Can';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { notify } from '@/lib/notifications/toast';
 import { getHttpErrorMessage } from '@/lib/api';
+import { formatMoney } from '@/lib/format/money';
 import { accountsPayableGateway } from '../../infrastructure/accountsPayableGateway';
 import {
   amountToReceiveUsd,
@@ -391,11 +392,11 @@ export function AccountsPayableList() {
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono">
                       {a.order?.doctorAmount
-                        ? `${Number(a.order?.doctorAmount).toFixed(2)} USD`
+                        ? `${formatMoney(a.order?.doctorAmount)} USD`
                         : '—'}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono">
-                      {ar !== null ? `${ar.toFixed(2)} USD` : '—'}
+                      {ar !== null ? `${formatMoney(ar)} USD` : '—'}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono">
                       {pUsd !== null ? (
@@ -408,7 +409,7 @@ export function AccountsPayableList() {
                                 : 'text-foreground'
                           }
                         >
-                          {pUsd.toFixed(2)} USD
+                          {formatMoney(pUsd)} USD
                         </div>
                       ) : (
                         '—'

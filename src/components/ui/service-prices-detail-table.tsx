@@ -10,6 +10,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import type { ServicePriceRow } from '@/lib/types/servicePrice';
+import { formatMoney } from '@/lib/format/money';
 
 export function ServicePricesDetailTable({ prices }: { prices: ServicePriceRow[] }) {
   const [query, setQuery] = useState('');
@@ -70,7 +71,7 @@ export function ServicePricesDetailTable({ prices }: { prices: ServicePriceRow[]
                     {sp.serviceType?.name ?? sp.serviceTypeId}
                   </TableCell>
                   <TableCell className="py-2.5 px-4 text-right font-mono text-sm whitespace-nowrap">
-                    $ {Number(sp.priceUsd).toFixed(2)}
+                    $ {formatMoney(sp.priceUsd)}
                   </TableCell>
                 </TableRow>
               ))

@@ -22,6 +22,7 @@ import {
 import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
 import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchangeRate';
 import { PaymentHistoryList } from './PaymentHistoryList';
+import { formatMoney } from '@/lib/format/money';
 
 export type AccountsPayableDetailProps = {
   accountId: string | null;
@@ -105,14 +106,14 @@ export function AccountsPayableDetail({
               label="Monto al doctor"
               value={
                 account.order?.doctorAmount
-                  ? `${Number(account.order?.doctorAmount).toFixed(2)} USD`
+                  ? `${formatMoney(account.order?.doctorAmount)} USD`
                   : null
               }
               mono
             />
             <DetailRow
               label="Monto a recibir"
-              value={ar !== null ? `${ar.toFixed(2)} USD` : null}
+              value={ar !== null ? `${formatMoney(ar)} USD` : null}
               mono
             />
             <DetailRow
@@ -136,14 +137,14 @@ export function AccountsPayableDetail({
                   Total a pagar
                 </div>
                 <div className="text-lg font-semibold">
-                  {ar !== null ? `${ar.toFixed(2)} USD` : '—'}
+                  {ar !== null ? `${formatMoney(ar)} USD` : '—'}
                 </div>
               </div>
               <div className="space-y-1">
                 <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
                   Total pagado
                 </div>
-                <div className="text-lg font-semibold">{pd.toFixed(2)} USD</div>
+                <div className="text-lg font-semibold">{formatMoney(pd)} USD</div>
               </div>
               <div className="space-y-1">
                 <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
@@ -158,7 +159,7 @@ export function AccountsPayableDetail({
                     </Badge>
                   ) : (
                     <Badge variant="default" className="bg-warning text-white">
-                      Faltan {pUsd.toFixed(2)} USD
+                      Faltan {formatMoney(pUsd)} USD
                     </Badge>
                   )}
                 </div>
@@ -167,10 +168,7 @@ export function AccountsPayableDetail({
                     Faltan{' '}
                     <span className="font-mono">
                       Bs{' '}
-                      {(pUsd * Number(usdRate.amountBs)).toLocaleString('es-VE', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
+                      {formatMoney(pUsd * Number(usdRate.amountBs))}
                     </span>
                   </div>
                 ) : null}

@@ -4,6 +4,7 @@ import { saveAs } from 'file-saver';
 import type { Order } from '../../domain/models/order';
 import { holderDisplayName } from '../../domain/models/order';
 import type { OrderProviderGroup } from './orderExcel';
+import { formatMoney } from '@/lib/format/money';
 
 const COMPANY = {
   name: 'ATENCIÓN MÉDICA AFMI',
@@ -102,8 +103,7 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
   const totalBs = sumStsBs > 0 ? sumStsBs : priceBs;
   const totalFx = rateBs > 0 ? totalBs / rateBs : priceFx;
 
-  const fmtMoney = (n: number): string =>
-    n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtMoney = (n: number): string => formatMoney(n);
 
   // Anchos proporcionales al Excel (cols 17.57/6.14/39/10.57/12.86 → 86.14 total)
   // Página A4 útil ≈ 182mm. Mapeo a mm.

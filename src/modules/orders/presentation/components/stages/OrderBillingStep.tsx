@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { notify } from '@/lib/notifications/toast';
 import { getHttpErrorMessage } from '@/lib/api';
+import { formatMoney } from '@/lib/format/money';
 import { orderGateway } from '../../../infrastructure/orderGateway';
 import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
 import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchangeRate';
@@ -351,7 +352,7 @@ export function OrderBillingStep({
                         disabled={isFinalized}
                       />
                       <p className="text-[11px] text-muted-foreground">
-                        Sugerido: {p.suggested.toFixed(2)} USD
+                        Sugerido: {formatMoney(p.suggested)} USD
                       </p>
                     </div>
                   </div>
@@ -366,7 +367,7 @@ export function OrderBillingStep({
                           <span>{l.stName}</span>
                           {l.amount !== null ? (
                             <span className="font-mono">
-                              {l.amount.toFixed(2)} USD
+                              {formatMoney(l.amount)} USD
                             </span>
                           ) : (
                             <span className="text-warning italic">Sin precio</span>
@@ -403,7 +404,7 @@ export function OrderBillingStep({
                       <th className="text-left font-medium px-3 py-2">Proveedor</th>
                       <th className="text-right font-medium px-3 py-2">Sugerido</th>
                       <th className="text-right font-medium px-3 py-2">A pagar (bruto)</th>
-                      <th className="text-right font-medium px-3 py-2">Delta</th>
+                      <th className="text-right font-medium px-3 py-2">Diferencia</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -422,13 +423,13 @@ export function OrderBillingStep({
                             </div>
                           </td>
                           <td className="px-3 py-2 text-right font-mono">
-                            {p.suggested.toFixed(2)} USD
+                            {formatMoney(p.suggested)} USD
                           </td>
                           <td className="px-3 py-2 text-right font-mono">
                             {p.amount === undefined ? (
                               <span className="text-muted-foreground italic">—</span>
                             ) : (
-                              <>{p.amount.toFixed(2)} USD</>
+                              <>{formatMoney(p.amount)} USD</>
                             )}
                           </td>
                           <td
@@ -440,7 +441,7 @@ export function OrderBillingStep({
                           >
                             {delta === null
                               ? '—'
-                              : `${delta > 0 ? '+' : ''}${delta.toFixed(2)} USD`}
+                              : `${delta > 0 ? '+' : ''}${formatMoney(delta)} USD`}
                           </td>
                         </tr>
                       );
@@ -450,7 +451,7 @@ export function OrderBillingStep({
                     <tr className="border-t">
                       <td className="px-3 py-2">Total</td>
                       <td className="px-3 py-2 text-right font-mono">
-                        {totalSuggested.toFixed(2)} USD
+                        {formatMoney(totalSuggested)} USD
                       </td>
                       <td
                         className={cn(
@@ -458,11 +459,11 @@ export function OrderBillingStep({
                           exceedsCap && 'text-destructive',
                         )}
                       >
-                        {totalUsd.toFixed(2)} USD
+                        {formatMoney(totalUsd)} USD
                       </td>
                       <td className="px-3 py-2 text-right font-mono">
                         {(totalUsd - totalSuggested >= 0 ? '+' : '') +
-                          (totalUsd - totalSuggested).toFixed(2)}{' '}
+                          formatMoney(totalUsd - totalSuggested)}{' '}
                         USD
                       </td>
                     </tr>
@@ -474,27 +475,27 @@ export function OrderBillingStep({
             <div className="rounded-lg border bg-muted/30 p-3 text-sm grid sm:grid-cols-4 gap-3">
               <div>
                 <div className="text-xs text-muted-foreground">Monto declarado</div>
-                <div className="font-mono">{priceAmount.toFixed(2)} USD</div>
+                <div className="font-mono">{formatMoney(priceAmount)} USD</div>
               </div>
               <div>
                 <div className="text-xs text-muted-foreground">Sugerido total</div>
-                <div className="font-mono">{totalSuggested.toFixed(2)} USD</div>
+                <div className="font-mono">{formatMoney(totalSuggested)} USD</div>
               </div>
               <div>
                 <div className="text-xs text-muted-foreground">Total a pagar</div>
                 <div className={cn('font-mono', exceedsCap && 'text-destructive')}>
-                  {totalUsd.toFixed(2)} USD
+                  {formatMoney(totalUsd)} USD
                 </div>
               </div>
               <div>
                 <div className="text-xs text-muted-foreground">Ganancia neta</div>
-                <div className="font-mono">{netProfit.toFixed(2)} USD</div>
+                <div className="font-mono">{formatMoney(netProfit)} USD</div>
               </div>
             </div>
 
             {exceedsCap && (
               <p className="text-xs text-destructive">
-                La suma supera el monto declarado de la orden ({priceAmount.toFixed(2)} USD).
+                La suma supera el monto declarado de la orden ({formatMoney(priceAmount)} USD).
               </p>
             )}
 

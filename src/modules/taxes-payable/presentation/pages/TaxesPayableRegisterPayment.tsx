@@ -13,6 +13,7 @@ import { FormSection } from '@/components/ui/form-section';
 import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { getHttpErrorMessage } from '@/lib/api';
+import { formatMoney } from '@/lib/format/money';
 import { orderPaymentSchema, type OrderPaymentValues } from '@/lib/validations/schemas';
 import {
   OrderPaymentForm,
@@ -393,7 +394,7 @@ export function TaxesPayableRegisterPayment() {
                                 )}
                               </div>
                               <div className="text-[11px] text-muted-foreground truncate">
-                                {amt.toFixed(2)} Bs.
+                                {formatMoney(amt)} Bs.
                               </div>
                             </div>
                           </label>
@@ -427,7 +428,7 @@ export function TaxesPayableRegisterPayment() {
                       </div>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
-                      <div className="text-sm font-mono">{amt.toFixed(2)} Bs.</div>
+                      <div className="text-sm font-mono">{formatMoney(amt)} Bs.</div>
                       <Button
                         type="button"
                         variant="ghost"
@@ -446,7 +447,7 @@ export function TaxesPayableRegisterPayment() {
             </ul>
             <div className="border-t pt-3 mt-1 flex items-center justify-between text-sm font-semibold">
               <span>Total a pagar al SENIAT</span>
-              <span className="font-mono">{totals.totalToReceive.toFixed(2)} Bs.</span>
+              <span className="font-mono">{formatMoney(totals.totalToReceive)} Bs.</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 pt-3 border-t">
@@ -455,7 +456,7 @@ export function TaxesPayableRegisterPayment() {
                   Total a pagar
                 </div>
                 <div className="text-lg font-semibold">
-                  {totals.totalToReceive.toFixed(2)} Bs.
+                  {formatMoney(totals.totalToReceive)} Bs.
                 </div>
               </div>
               <div className="space-y-1">
@@ -463,7 +464,7 @@ export function TaxesPayableRegisterPayment() {
                   Ya pagado
                 </div>
                 <div className="text-lg font-semibold">
-                  {totals.totalPaid.toFixed(2)} Bs.
+                  {formatMoney(totals.totalPaid)} Bs.
                 </div>
               </div>
               <div className="space-y-1">
@@ -477,7 +478,7 @@ export function TaxesPayableRegisterPayment() {
                     </Badge>
                   ) : (
                     <Badge variant="default" className="bg-warning text-white">
-                      Faltan {totals.totalPending.toFixed(2)} Bs.
+                      Faltan {formatMoney(totals.totalPending)} Bs.
                     </Badge>
                   )}
                 </div>
@@ -551,12 +552,12 @@ export function TaxesPayableRegisterPayment() {
               <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                 <div className="rounded-md border p-2 bg-muted/30">
                   <div className="text-xs text-muted-foreground">Total pagos</div>
-                  <div className="font-mono">{totalPaymentsBs.toFixed(2)} Bs.</div>
+                  <div className="font-mono">{formatMoney(totalPaymentsBs)} Bs.</div>
                 </div>
                 <div className="rounded-md border p-2 bg-muted/30">
                   <div className="text-xs text-muted-foreground">Tasa USD</div>
                   <div className="font-mono">
-                    1 USD = {Number(usdRate.amountBs).toFixed(2)} Bs.
+                    1 USD = {formatMoney(usdRate.amountBs)} Bs.
                   </div>
                 </div>
               </div>

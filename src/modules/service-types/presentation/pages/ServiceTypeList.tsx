@@ -36,6 +36,7 @@ import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
 import { formatCreated } from '@/lib/dates';
+import { formatMoney } from '@/lib/format/money';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { Plus, Pencil, Trash2, Power, FileText, Undo2, Eye } from 'lucide-react';
@@ -363,7 +364,7 @@ export function ServiceTypeList() {
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-right font-mono text-sm">
                     {p.particularPriceUsd != null
-                      ? `$ ${Number(p.particularPriceUsd).toFixed(2)}`
+                      ? `$ ${formatMoney(p.particularPriceUsd)}`
                       : '—'}
                   </TableCell>
                   <TableCell className="py-3.5 px-4">

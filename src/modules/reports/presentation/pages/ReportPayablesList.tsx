@@ -42,6 +42,7 @@ import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { formatUsd, formatBs, formatDate, formatNumber, inDateRange } from '../../domain/format';
+import { formatMoney } from '@/lib/format/money';
 import { useUsdRate, usdToBs } from '../../domain/useUsdRate';
 import { REPORT_PAGE_SIZE } from '../../infrastructure/fetchAll';
 import { getHttpErrorMessage } from '@/lib/api';
@@ -418,10 +419,10 @@ export function ReportPayablesList() {
                       {procedureFromOrder(order)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                      {order ? `USD ${Number(order.priceAmount).toFixed(2)}` : '—'}
+                      {order ? `USD ${formatMoney(order.priceAmount)}` : '—'}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                      {ar !== null ? `USD ${ar.toFixed(2)}` : '—'}
+                      {ar !== null ? `USD ${formatMoney(ar)}` : '—'}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-success">
                       {formatUsd(paid)}

@@ -1,5 +1,6 @@
 import { Banknote } from 'lucide-react';
 import { PAYMENT_TYPE_LABEL } from '@/modules/orders/domain/models/order';
+import { formatMoney } from '@/lib/format/money';
 
 type PaymentLike = {
   id: string;
@@ -53,10 +54,10 @@ export function PaymentHistoryList({
           const date = p.paymentDate
             ? new Date(p.paymentDate).toLocaleDateString('es-VE')
             : '—';
-          const amount = Number(p.amountValue).toFixed(2);
-          const nativeAmount = Number(
+          const amount = formatMoney(p.amountValue);
+          const nativeAmount = formatMoney(
             (isBsNative ? p.amountInBs : p.amountInUsd) ?? 0,
-          ).toFixed(2);
+          );
           const meta: string[] = [];
           if (p.bankCode) meta.push(`Banco ${p.bankCode}`);
           if (p.referenceNumber) meta.push(`Ref. ${p.referenceNumber}`);
@@ -99,7 +100,7 @@ export function PaymentHistoryList({
       <div className="border-t pt-2 flex items-center justify-between text-sm font-semibold">
         <span>Total acumulado</span>
         <span className="font-mono">
-          {totalNative.toFixed(2)} {nativeLabel}
+          {formatMoney(totalNative)} {nativeLabel}
         </span>
       </div>
     </div>

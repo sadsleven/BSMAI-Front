@@ -25,6 +25,7 @@ import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
 import { formatCreated } from '@/lib/dates';
+import { formatMoney } from '@/lib/format/money';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { Can } from '@/modules/auth/presentation/components/Can';
@@ -65,10 +66,7 @@ function readQuery(sp: URLSearchParams) {
 }
 
 function formatBs(n: number): string {
-  return new Intl.NumberFormat('es-VE', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(n);
+  return formatMoney(n);
 }
 
 export function TaxesPayableList() {

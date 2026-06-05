@@ -33,6 +33,7 @@ import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { formatUsd, formatBs, formatDate, formatNumber, inDateRange } from '../../domain/format';
+import { formatMoney } from '@/lib/format/money';
 import { bsToUsd, useUsdRate, usdToBs } from '../../domain/useUsdRate';
 import { REPORT_PAGE_SIZE } from '../../infrastructure/fetchAll';
 import { getHttpErrorMessage } from '@/lib/api';
@@ -368,7 +369,7 @@ export function ReportDisbursements() {
                     {it.referenceNumber ?? '—'}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                    {it.amountCurrency} {it.amountValue.toFixed(2)}
+                    {it.amountCurrency} {formatMoney(it.amountValue)}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-destructive">
                     {formatUsd(it.amountInUsd)}

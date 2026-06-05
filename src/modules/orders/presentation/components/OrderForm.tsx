@@ -20,6 +20,7 @@ import { ChipMultiSelect } from '@/components/ui/chip-multi-select';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { AlertTriangle, Building, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatMoney } from '@/lib/format/money';
 import { useAuthStore } from '@/modules/auth/domain/store/authStore';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
@@ -853,7 +854,7 @@ export function OrderForm({
                           <SelectContent>
                             {usdRates.map((r) => (
                               <SelectItem key={r.id} value={r.id}>
-                                {`Bs. ${Number(r.amountBs).toFixed(2)} · ${new Date(
+                                {`Bs. ${formatMoney(r.amountBs)} · ${new Date(
                                   r.effectiveDate,
                                 ).toLocaleDateString('es-VE')}`}
                               </SelectItem>
@@ -869,12 +870,7 @@ export function OrderForm({
                       <p className="text-[11px] text-muted-foreground">
                         Total a cobrar al seguro:{' '}
                         <span className="font-mono font-semibold text-foreground">
-                          {(
-                            priceAmount * Number(fixedRateObj.amountBs)
-                          ).toLocaleString('es-VE', {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}{' '}
+                          {formatMoney(priceAmount * Number(fixedRateObj.amountBs))}{' '}
                           Bs
                         </span>
                       </p>
@@ -1140,14 +1136,14 @@ export function OrderForm({
                   >
                     {l.amount === null
                       ? 'Sin precio definido'
-                      : l.amount.toFixed(2)}
+                      : formatMoney(l.amount)}
                   </span>
                 </div>
               ))}
               <div className="flex items-center justify-between px-3 py-2 text-sm font-semibold bg-muted/40">
                 <span>Total</span>
                 <span className="font-mono">
-                  {computedPriceSum.toFixed(2)} USD
+                  {formatMoney(computedPriceSum)} USD
                 </span>
               </div>
             </div>
@@ -1167,7 +1163,7 @@ export function OrderForm({
                   Precio
                 </div>
                 <div className="text-sm font-semibold">
-                  {(priceAmount ?? 0).toFixed(2)} USD
+                  {formatMoney(priceAmount ?? 0)} USD
                 </div>
               </div>
               <div className="space-y-1">
@@ -1175,7 +1171,7 @@ export function OrderForm({
                   Comisión Cashea ({casheaRatePct}%)
                 </div>
                 <div className="text-sm font-semibold text-destructive">
-                  -{casheaCommissionAmount.toFixed(2)} USD
+                  -{formatMoney(casheaCommissionAmount)} USD
                 </div>
               </div>
               <div className="space-y-1">
@@ -1183,7 +1179,7 @@ export function OrderForm({
                   Monto a recibir por Cashea
                 </div>
                 <div className="text-base font-bold text-success">
-                  {casheaNet.toFixed(2)} USD
+                  {formatMoney(casheaNet)} USD
                 </div>
               </div>
             </div>
@@ -1245,7 +1241,7 @@ export function OrderForm({
                 Total orden
               </div>
               <div className="text-lg font-semibold">
-                {(priceAmount ?? 0).toFixed(2)} USD
+                {formatMoney(priceAmount ?? 0)} USD
               </div>
             </div>
             <div className="space-y-1">
@@ -1253,7 +1249,7 @@ export function OrderForm({
                 Total pagado
               </div>
               <div className="text-lg font-semibold">
-                {totalPaid.toFixed(2)} USD
+                {formatMoney(totalPaid)} USD
               </div>
             </div>
             <div className="space-y-1">
@@ -1267,7 +1263,7 @@ export function OrderForm({
                   </Badge>
                 ) : (
                   <Badge variant="default" className="bg-warning text-white">
-                    {diff > 0 ? `Faltan ${diff.toFixed(2)}` : `Excede ${Math.abs(diff).toFixed(2)}`}
+                    {diff > 0 ? `Faltan ${formatMoney(diff)}` : `Excede ${formatMoney(Math.abs(diff))}`}
                   </Badge>
                 )}
               </div>
@@ -1275,19 +1271,14 @@ export function OrderForm({
                 <div className="text-xs text-muted-foreground space-y-0.5">
                   <div>
                     {diff > 0 ? 'Faltan' : 'Excede'}{' '}
-                    <span className="font-mono">USD {Math.abs(diff).toFixed(2)}</span>
+                    <span className="font-mono">USD {formatMoney(Math.abs(diff))}</span>
                   </div>
                   {currentRate ? (
                     <div>
                       {diff > 0 ? 'Faltan' : 'Excede'}{' '}
                       <span className="font-mono">
                         Bs{' '}
-                        {(
-                          Math.abs(diff) * Number(currentRate.amountBs)
-                        ).toLocaleString('es-VE', {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
+                        {formatMoney(Math.abs(diff) * Number(currentRate.amountBs))}
                       </span>
                     </div>
                   ) : null}

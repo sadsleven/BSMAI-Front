@@ -7,6 +7,7 @@ import {
   DetailSection,
 } from '@/components/ui/detail-dialog';
 import { notify } from '@/lib/notifications/toast';
+import { formatMoney } from '@/lib/format/money';
 import { orderGateway } from '../../infrastructure/orderGateway';
 import {
   holderDisplayId,
@@ -195,18 +196,18 @@ export function OrderDetailBody({
       </DetailSection>
 
       <DetailSection title="Monto">
-        <DetailRow label="Precio" value={`${Number(order.priceAmount).toFixed(2)} USD`} mono />
+        <DetailRow label="Precio" value={`${formatMoney(order.priceAmount)} USD`} mono />
         {order?.doctorAmount != null && (
           <DetailRow
             label="Monto al proveedor"
-            value={`${Number(order?.doctorAmount).toFixed(2)} USD`}
+            value={`${formatMoney(order?.doctorAmount)} USD`}
             mono
           />
         )}
         {order.billingExchangeRate && (
           <DetailRow
             label="Tasa facturación"
-            value={`1 ${order.billingExchangeRate.currency} = ${Number(order.billingExchangeRate.amountBs).toFixed(2)} Bs.`}
+            value={`1 ${order.billingExchangeRate.currency} = ${formatMoney(order.billingExchangeRate.amountBs)} Bs.`}
             mono
           />
         )}
@@ -260,7 +261,7 @@ export function OrderDetailBody({
                   )}
                 </div>
                 <div className="text-sm font-mono text-right">
-                  {Number(p.amountValue).toFixed(2)} {p.amountCurrency}
+                  {formatMoney(p.amountValue)} {p.amountCurrency}
                 </div>
               </li>
             ))}

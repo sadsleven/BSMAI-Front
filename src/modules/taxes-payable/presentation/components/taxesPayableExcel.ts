@@ -5,6 +5,7 @@ import {
   recipientName,
   type TaxPayable,
 } from '../../domain/models/taxesPayable';
+import { formatMoney } from '@/lib/format/money';
 
 const COMPANY = {
   name: 'ATENCIÓN MÉDICA AFMI',
@@ -16,10 +17,7 @@ const COMPANY = {
 };
 
 function fmtBs(n: number): string {
-  return new Intl.NumberFormat('es-VE', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(n);
+  return formatMoney(n);
 }
 
 function safeFilenameSegment(s: string): string {

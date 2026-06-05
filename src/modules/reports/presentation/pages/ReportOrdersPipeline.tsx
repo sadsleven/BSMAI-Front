@@ -48,6 +48,7 @@ import {
   daysBetween,
   inDateRange,
 } from '../../domain/format';
+import { formatMoney } from '@/lib/format/money';
 import { REPORT_PAGE_SIZE } from '../../infrastructure/fetchAll';
 import { getHttpErrorMessage } from '@/lib/api';
 
@@ -345,7 +346,7 @@ export function ReportOrdersPipeline() {
                       {formatNumber(days)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                      USD {Number(o.priceAmount).toFixed(2)}
+                      USD {formatMoney(o.priceAmount)}
                     </TableCell>
                   </TableRow>
                 );

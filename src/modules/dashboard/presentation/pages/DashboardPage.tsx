@@ -19,6 +19,7 @@ import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import { formatMoney } from '@/lib/format/money';
 import { orderGateway } from '@/modules/orders/infrastructure/orderGateway';
 import { dashboardGateway } from '@/modules/dashboard/infrastructure/dashboardGateway';
 import {
@@ -185,10 +186,7 @@ function useAmountUsd(
 }
 
 function formatUsd(amount: number): string {
-  return new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
+  return formatMoney(amount);
 }
 
 function useRecentOrders(enabled: boolean) {
@@ -319,7 +317,7 @@ export function DashboardPage() {
         {canListPatients ? (
           <KpiCard
             label="Pacientes activos"
-            value={patients.value === null ? null : patients.value.toLocaleString('es-VE')}
+            value={patients.value === null ? null : formatMoney(patients.value, { decimals: 0 })}
             icon={UserRound}
             tone="blue"
             loading={patients.loading}
@@ -328,7 +326,7 @@ export function DashboardPage() {
         {canListOrders ? (
           <KpiCard
             label="Citas hoy"
-            value={todayAppts.value === null ? null : todayAppts.value.toLocaleString('es-VE')}
+            value={todayAppts.value === null ? null : formatMoney(todayAppts.value, { decimals: 0 })}
             icon={CalendarClock}
             tone="cyan"
             loading={todayAppts.loading}
@@ -337,7 +335,7 @@ export function DashboardPage() {
         {canListOrders ? (
           <KpiCard
             label="Órdenes pendientes"
-            value={pending.value === null ? null : pending.value.toLocaleString('es-VE')}
+            value={pending.value === null ? null : formatMoney(pending.value, { decimals: 0 })}
             icon={FileText}
             tone="amber"
             loading={pending.loading}
@@ -465,7 +463,7 @@ export function DashboardPage() {
                             <OrderStatusPill status={o.status} />
                           </td>
                           <td className="px-5 py-3 text-right font-semibold font-mono text-xs">
-                            {Number(o.priceAmount).toFixed(2)} USD
+                            {formatMoney(o.priceAmount)} USD
                           </td>
                         </tr>
                       ))}

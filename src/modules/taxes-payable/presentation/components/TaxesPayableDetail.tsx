@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/detail-dialog';
 import { notify } from '@/lib/notifications/toast';
 import { getHttpErrorMessage } from '@/lib/api';
+import { formatMoney } from '@/lib/format/money';
 import { Badge } from '@/components/ui/badge';
 import { taxesPayableGateway } from '../../infrastructure/taxesPayableGateway';
 import {
@@ -39,10 +40,7 @@ export type TaxesPayableDetailProps = {
 };
 
 function fmtBs(n: number): string {
-  return new Intl.NumberFormat('es-VE', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(n);
+  return formatMoney(n);
 }
 
 export function TaxesPayableDetail({
@@ -208,7 +206,7 @@ export function TaxesPayableDetail({
                     <span className="font-mono">{a.payableNumber}</span>
                     <span className="font-mono text-muted-foreground">
                       {a.providerAmount
-                        ? `${Number(a.providerAmount).toFixed(2)} USD`
+                        ? `${formatMoney(a.providerAmount)} USD`
                         : '—'}
                     </span>
                   </li>

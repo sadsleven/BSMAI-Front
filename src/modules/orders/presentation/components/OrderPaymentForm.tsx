@@ -22,6 +22,7 @@ import {
   type OrderPaymentType,
 } from '../../domain/models/order';
 import { cn } from '@/lib/utils';
+import { formatMoney } from '@/lib/format/money';
 
 const ALL_TYPES: OrderPaymentType[] = [
   'mobile_payment',
@@ -279,7 +280,7 @@ export function OrderPaymentForm({
                         readOnly
                         value={
                           rowRate
-                            ? `1 ${rowRate.currency} = ${Number(rowRate.amountBs).toFixed(2)} Bs.`
+                            ? `1 ${rowRate.currency} = ${formatMoney(rowRate.amountBs)} Bs.`
                             : '—'
                         }
                         className="h-9 bg-muted/30"

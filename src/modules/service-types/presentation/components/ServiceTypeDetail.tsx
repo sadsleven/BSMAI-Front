@@ -9,6 +9,7 @@ import { FileText } from 'lucide-react';
 import { serviceTypeGateway } from '../../infrastructure/serviceTypeGateway';
 import type { ServiceType } from '../../domain/models/serviceType';
 import { notify } from '@/lib/notifications/toast';
+import { formatMoney } from '@/lib/format/money';
 
 export type ServiceTypeDetailProps = {
   serviceTypeId: string | null;
@@ -74,7 +75,7 @@ export function ServiceTypeDetail({ serviceTypeId, open, onOpenChange }: Service
               label="USD"
               value={
                 serviceType.particularPriceUsd != null
-                  ? `$ ${Number(serviceType.particularPriceUsd).toFixed(2)}`
+                  ? `$ ${formatMoney(serviceType.particularPriceUsd)}`
                   : '—'
               }
             />

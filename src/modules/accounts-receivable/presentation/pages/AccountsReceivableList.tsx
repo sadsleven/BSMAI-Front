@@ -31,6 +31,7 @@ import { Can } from '@/modules/auth/presentation/components/Can';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { notify } from '@/lib/notifications/toast';
 import { getHttpErrorMessage } from '@/lib/api';
+import { formatMoney } from '@/lib/format/money';
 import { accountsReceivableGateway } from '../../infrastructure/accountsReceivableGateway';
 import {
   collectedBs,
@@ -411,15 +412,9 @@ export function AccountsReceivableList() {
                           );
                           return (
                             <div className="space-y-0.5">
-                              <div>
-                                {tBs.toLocaleString('es-VE', {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })}{' '}
-                                Bs
-                              </div>
+                              <div>{formatMoney(tBs)} Bs</div>
                               <div className="text-[10px] text-muted-foreground font-sans">
-                                fija · {price.toFixed(2)} USD × {rateBs.toFixed(2)}
+                                tasa fija · {formatMoney(price)} USD × {formatMoney(rateBs)} Bs
                               </div>
                             </div>
                           );
@@ -428,14 +423,14 @@ export function AccountsReceivableList() {
                         if (isCasheaAccount(a) && target !== null) {
                           return (
                             <div className="space-y-0.5">
-                              <div>{target.toFixed(2)} USD</div>
+                              <div>{formatMoney(target)} USD</div>
                               <div className="text-[10px] text-muted-foreground font-sans">
-                                neto · precio {price.toFixed(2)}
+                                neto · precio {formatMoney(price)}
                               </div>
                             </div>
                           );
                         }
-                        return `${price.toFixed(2)} USD`;
+                        return `${formatMoney(price)} USD`;
                       })()}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono">
@@ -456,11 +451,7 @@ export function AccountsReceivableList() {
                                   }
                                 >
                                   {v < 0 ? '+' : ''}
-                                  {Math.abs(v).toLocaleString('es-VE', {
-                                    minimumFractionDigits: 2,
-                                    maximumFractionDigits: 2,
-                                  })}{' '}
-                                  Bs
+                                  {formatMoney(Math.abs(v))} Bs
                                 </div>
                               );
                             })()
@@ -479,7 +470,7 @@ export function AccountsReceivableList() {
                                 }
                               >
                                 {pUsd < 0 ? '+' : ''}
-                                {Math.abs(pUsd).toFixed(2)} USD
+                                {formatMoney(Math.abs(pUsd))} USD
                               </div>
                             )
                           : '—'}

@@ -27,6 +27,7 @@ import {
 import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
 import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchangeRate';
 import { PaymentHistoryList } from '@/modules/accounts-payable/presentation/components/PaymentHistoryList';
+import { formatMoney } from '@/lib/format/money';
 
 export type AccountsReceivableDetailProps = {
   accountId: string | null;
@@ -114,21 +115,21 @@ export function AccountsReceivableDetail({
             />
             <DetailRow
               label="Precio orden"
-              value={`${Number(account.order.priceAmount).toFixed(2)} USD`}
+              value={`${formatMoney(account.order.priceAmount)} USD`}
               mono
             />
             {isCasheaAccount(account) ? (
               <>
                 <DetailRow
-                  label={`Comisión Cashea (${(casheaCommissionOf(account) * 100).toFixed(2)}%)`}
-                  value={`-${(
-                    Number(account.order.priceAmount) * casheaCommissionOf(account)
-                  ).toFixed(2)} USD`}
+                  label={`Comisión Cashea (${formatMoney(casheaCommissionOf(account) * 100)}%)`}
+                  value={`-${formatMoney(
+                    Number(account.order.priceAmount) * casheaCommissionOf(account),
+                  )} USD`}
                   mono
                 />
                 <DetailRow
                   label="Neto a cobrar"
-                  value={`${(targetUsd(account) ?? 0).toFixed(2)} USD`}
+                  value={`${formatMoney(targetUsd(account) ?? 0)} USD`}
                   mono
                 />
               </>
@@ -137,12 +138,12 @@ export function AccountsReceivableDetail({
               <>
                 <DetailRow
                   label="Tasa fija USD/Bs"
-                  value={`Bs. ${Number(account.order.fixedExchangeRate?.amountBs ?? 0).toFixed(2)} · ${new Date(account.order.fixedExchangeRate?.effectiveDate ?? '').toLocaleDateString('es-VE')}`}
+                  value={`Bs. ${formatMoney(account.order.fixedExchangeRate?.amountBs ?? 0)} · ${new Date(account.order.fixedExchangeRate?.effectiveDate ?? '').toLocaleDateString('es-VE')}`}
                   mono
                 />
                 <DetailRow
                   label="Total a cobrar (Bs)"
-                  value={`${(targetBs(account) ?? 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Bs`}
+                  value={`${formatMoney(targetBs(account) ?? 0)} Bs`}
                   mono
                 />
               </>
@@ -171,13 +172,7 @@ export function AccountsReceivableDetail({
             const target = fixed ? targetBs(account) ?? 0 : targetUsd(account) ?? 0;
             const collected = fixed ? collectedBs(account) : collectedUsd(account);
             const pending = fixed ? pendingBs(account) : pendingUsd(account);
-            const fmt = (n: number) =>
-              fixed
-                ? n.toLocaleString('es-VE', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })
-                : n.toFixed(2);
+            const fmt = (n: number) => formatMoney(n);
             return (
               <DetailSection title="Saldo">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
@@ -223,12 +218,7 @@ export function AccountsReceivableDetail({
                         {pending < 0 ? 'Excede' : 'Faltan'}{' '}
                         <span className="font-mono">
                           Bs{' '}
-                          {(
-                            Math.abs(pending) * Number(usdRate.amountBs)
-                          ).toLocaleString('es-VE', {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}
+                          {formatMoney(Math.abs(pending) * Number(usdRate.amountBs))}
                         </span>
                       </div>
                     ) : null}

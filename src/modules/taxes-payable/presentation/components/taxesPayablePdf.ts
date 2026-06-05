@@ -6,6 +6,7 @@ import {
   recipientName,
   type TaxPayable,
 } from '../../domain/models/taxesPayable';
+import { formatMoney } from '@/lib/format/money';
 
 const COMPANY = {
   name: 'ATENCIÓN MÉDICA AFMI',
@@ -16,10 +17,7 @@ const COMPANY = {
 };
 
 function fmtBs(n: number): string {
-  return new Intl.NumberFormat('es-VE', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(n);
+  return formatMoney(n);
 }
 
 function safeFilenameSegment(s: string): string {
@@ -66,7 +64,7 @@ export async function downloadInvoicePdf(tax: TaxPayable): Promise<void> {
     return [
       orderMap.get(a.orderId) ?? '—',
       a.payableNumber,
-      `${gross.toFixed(2)} USD`,
+      `${formatMoney(gross)} USD`,
     ];
   });
 
@@ -77,7 +75,7 @@ export async function downloadInvoicePdf(tax: TaxPayable): Promise<void> {
     styles: { fontSize: 9 },
     headStyles: { fillColor: [229, 231, 235], textColor: 20 },
     foot: [
-      ['', 'TOTAL BRUTO USD', `${totalGrossUsd.toFixed(2)} USD`],
+      ['', 'TOTAL BRUTO USD', `${formatMoney(totalGrossUsd)} USD`],
     ],
     footStyles: { fontStyle: 'bold', fillColor: [243, 244, 246], textColor: 20 },
   });

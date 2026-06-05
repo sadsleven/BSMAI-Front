@@ -30,6 +30,7 @@ import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
 import { formatCreatedDateTime } from '@/lib/dates';
+import { formatMoney } from '@/lib/format/money';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { Plus, Trash2, Eye, Undo2, ListChecks } from 'lucide-react';
@@ -478,7 +479,7 @@ export function OrderList() {
                       <StatusBadge status={order.status} />
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono">
-                      {Number(order.priceAmount).toFixed(2)} USD
+                      {formatMoney(order.priceAmount)} USD
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
                       {formatCreatedDateTime(order.createdAt)}

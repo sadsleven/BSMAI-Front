@@ -21,6 +21,7 @@ import { FormSection } from '@/components/ui/form-section';
 import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { getHttpErrorMessage } from '@/lib/api';
+import { formatMoney } from '@/lib/format/money';
 import { orderPaymentSchema, type OrderPaymentValues } from '@/lib/validations/schemas';
 import {
   OrderPaymentForm,
@@ -555,7 +556,7 @@ export function AccountsPayableRegisterPayment() {
                                 </span>
                               </div>
                               <div className="text-[11px] text-muted-foreground truncate">
-                                {ar !== null ? `${ar.toFixed(2)} USD` : '—'}
+                                {ar !== null ? `${formatMoney(ar)} USD` : '—'}
                               </div>
                             </div>
                           </label>
@@ -586,7 +587,7 @@ export function AccountsPayableRegisterPayment() {
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
                       <div className="text-sm font-mono">
-                        {ar !== null ? `${ar.toFixed(2)} USD` : '—'}
+                        {ar !== null ? `${formatMoney(ar)} USD` : '—'}
                       </div>
                       <Button
                         type="button"
@@ -606,7 +607,7 @@ export function AccountsPayableRegisterPayment() {
             </ul>
             <div className="border-t pt-3 mt-1 flex items-center justify-between text-sm font-semibold">
               <span>Total a pagar</span>
-              <span className="font-mono">{totals.totalToReceive.toFixed(2)} USD</span>
+              <span className="font-mono">{formatMoney(totals.totalToReceive)} USD</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 pt-3 border-t">
@@ -615,7 +616,7 @@ export function AccountsPayableRegisterPayment() {
                   Total a pagar
                 </div>
                 <div className="text-lg font-semibold">
-                  {totals.totalToReceive.toFixed(2)} USD
+                  {formatMoney(totals.totalToReceive)} USD
                 </div>
               </div>
               <div className="space-y-1">
@@ -623,7 +624,7 @@ export function AccountsPayableRegisterPayment() {
                   Ya pagado
                 </div>
                 <div className="text-lg font-semibold">
-                  {totals.totalPaid.toFixed(2)} USD
+                  {formatMoney(totals.totalPaid)} USD
                 </div>
               </div>
               <div className="space-y-1">
@@ -637,7 +638,7 @@ export function AccountsPayableRegisterPayment() {
                     </Badge>
                   ) : (
                     <Badge variant="default" className="bg-warning text-white">
-                      Faltan {totals.totalPending.toFixed(2)} USD
+                      Faltan {formatMoney(totals.totalPending)} USD
                     </Badge>
                   )}
                 </div>
@@ -646,12 +647,7 @@ export function AccountsPayableRegisterPayment() {
                     Faltan{' '}
                     <span className="font-mono">
                       Bs{' '}
-                      {(
-                        totals.totalPending * Number(usdRate.amountBs)
-                      ).toLocaleString('es-VE', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
+                      {formatMoney(totals.totalPending * Number(usdRate.amountBs))}
                     </span>
                   </div>
                 ) : null}
@@ -770,16 +766,16 @@ export function AccountsPayableRegisterPayment() {
                 <div className="rounded-md border p-2 bg-muted/30">
                   <div className="text-xs text-muted-foreground">Total pagos</div>
                   <div className="font-mono">
-                    {totalPaymentsBs.toFixed(2)} Bs.
+                    {formatMoney(totalPaymentsBs)} Bs.
                     <span className="ml-2 text-muted-foreground">
-                      ({totalPaymentsUsd.toFixed(2)} USD)
+                      ({formatMoney(totalPaymentsUsd)} USD)
                     </span>
                   </div>
                 </div>
                 <div className="rounded-md border p-2 bg-muted/30">
                   <div className="text-xs text-muted-foreground">Tasa USD</div>
                   <div className="font-mono">
-                    1 USD = {Number(usdRate.amountBs).toFixed(2)} Bs.
+                    1 USD = {formatMoney(usdRate.amountBs)} Bs.
                   </div>
                 </div>
               </div>
@@ -820,19 +816,19 @@ export function AccountsPayableRegisterPayment() {
                   <div className="rounded-md border p-2 bg-muted/30">
                     <div className="text-[11px] text-muted-foreground">UT vigente</div>
                     <div className="font-mono">
-                      Bs. {Number(taxUnit.amountBs).toFixed(2)}
+                      Bs. {formatMoney(taxUnit.amountBs)}
                     </div>
                   </div>
                   <div className="rounded-md border p-2 bg-muted/30">
                     <div className="text-[11px] text-muted-foreground">Sustraendo</div>
                     <div className="font-mono">
-                      {retentionPreview.retention.subtrahendBs.toFixed(2)} Bs.
+                      {formatMoney(retentionPreview.retention.subtrahendBs)} Bs.
                     </div>
                   </div>
                   <div className="rounded-md border p-2 bg-muted/30">
                     <div className="text-[11px] text-muted-foreground">Umbral PNR</div>
                     <div className="font-mono">
-                      {retentionPreview.retention.thresholdBs.toFixed(2)} Bs.
+                      {formatMoney(retentionPreview.retention.thresholdBs)} Bs.
                     </div>
                   </div>
                 </div>
@@ -843,10 +839,10 @@ export function AccountsPayableRegisterPayment() {
                       Bruto a facturar
                     </div>
                     <div className="text-lg font-semibold font-mono">
-                      {retentionPreview.totalGrossBs.toFixed(2)} Bs.
+                      {formatMoney(retentionPreview.totalGrossBs)} Bs.
                     </div>
                     <div className="text-[11px] text-muted-foreground font-mono">
-                      ({retentionPreview.totalGrossUsd.toFixed(2)} USD)
+                      ({formatMoney(retentionPreview.totalGrossUsd)} USD)
                     </div>
                   </div>
                   <div className="rounded-md border p-3 bg-warning-soft text-warning-strong">
@@ -854,14 +850,14 @@ export function AccountsPayableRegisterPayment() {
                       Retención al SENIAT
                     </div>
                     <div className="text-lg font-semibold font-mono">
-                      {retentionPreview.retention.taxAmountBs.toFixed(2)} Bs.
+                      {formatMoney(retentionPreview.retention.taxAmountBs)} Bs.
                     </div>
                     <div className="text-[11px] font-mono">
-                      tasa {(retentionPreview.retention.taxRate * 100).toFixed(0)}%
+                      tasa {formatMoney(retentionPreview.retention.taxRate * 100, { decimals: 0 })}%
                       {retentionPreview.retention.belowThreshold
                         ? ' · bajo umbral'
                         : retentionPreview.retention.subtrahendBs > 0
-                          ? ` − ${retentionPreview.retention.subtrahendBs.toFixed(2)} Bs.`
+                          ? ` − ${formatMoney(retentionPreview.retention.subtrahendBs)} Bs.`
                           : ''}
                     </div>
                   </div>
@@ -870,7 +866,7 @@ export function AccountsPayableRegisterPayment() {
                       Neto al proveedor
                     </div>
                     <div className="text-lg font-semibold font-mono">
-                      {retentionPreview.netBs.toFixed(2)} Bs.
+                      {formatMoney(retentionPreview.netBs)} Bs.
                     </div>
                     <div className="text-[11px] font-mono">
                       = bruto − retención
@@ -892,7 +888,7 @@ export function AccountsPayableRegisterPayment() {
                   ) : (
                     <Badge className="bg-warning text-white">
                       Diferencia{' '}
-                      {(totalPaymentsBs - retentionPreview.netBs).toFixed(2)} Bs.
+                      {formatMoney(totalPaymentsBs - retentionPreview.netBs)} Bs.
                     </Badge>
                   )}
                 </div>

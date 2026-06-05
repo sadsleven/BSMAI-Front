@@ -102,7 +102,7 @@ export function OrderEdit() {
 
   const setCurrentStep = (id: string) => {
     const next = new URLSearchParams(searchParams);
-    if (isWizardStep(id) && id !== 'register') next.set('step', id);
+    if (isWizardStep(id)) next.set('step', id);
     else next.delete('step');
     setSearchParams(next, { replace: true });
   };
