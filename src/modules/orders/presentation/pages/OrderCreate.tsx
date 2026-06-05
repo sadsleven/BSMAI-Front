@@ -96,7 +96,7 @@ export function OrderCreate() {
       const dto = buildDto(values);
       const created = await orderGateway.create(dto);
       notify.success('Orden creada en borrador. Continuá con el Paso 2.');
-      navigate(`/orders/edit/${created.id}`);
+      navigate(`/orders/edit/${created.id}`, { state: { step: 'attention' } });
     } catch (err) {
       notify.fromError(err, 'No se pudo crear la orden.');
     }
@@ -142,7 +142,7 @@ export function OrderCreate() {
                 Cancelar
               </Button>
               <Button type="submit" disabled={formState.isSubmitting}>
-                {formState.isSubmitting ? 'Guardando…' : 'Guardar borrador'}
+                {formState.isSubmitting ? 'Guardando…' : 'Guardar y continuar'}
               </Button>
             </div>
           </div>

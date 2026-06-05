@@ -40,7 +40,6 @@ import { formatCreated } from '@/lib/dates';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { Plus, Pencil, Trash2, Power, Undo2, Stethoscope, Eye } from 'lucide-react';
-import { DoctorDetail } from '../components/DoctorDetail';
 import { Can } from '@/modules/auth/presentation/components/Can';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
@@ -100,7 +99,6 @@ export function DoctorList() {
   const [actionLoading, setActionLoading] = useState(false);
   const [toggleTarget, setToggleTarget] = useState<Doctor | null>(null);
   const [restoreTarget, setRestoreTarget] = useState<Doctor | null>(null);
-  const [viewTargetId, setViewTargetId] = useState<string | null>(null);
 
   const canSeeDeleted =
     has(PERMISSIONS.DOCTORS.HARD_DELETE) || has(PERMISSIONS.DOCTORS.RESTORE);
@@ -433,15 +431,16 @@ export function DoctorList() {
                   <TableCell className="py-3.5 px-4 text-right">
                     <div className="inline-flex items-center gap-0.5">
                       <Can permission={PERMISSIONS.DOCTORS.LIST}>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Ver detalle"
-                          onClick={() => setViewTargetId(d.id)}
-                          className="w-8 h-8"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </Button>
+                        <Link to={`/doctors/${d.id}`}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Ver detalle"
+                            className="w-8 h-8"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                        </Link>
                       </Can>
                       {d.deletedAt ? (
                         <Can permission={PERMISSIONS.DOCTORS.RESTORE}>
@@ -638,13 +637,6 @@ export function DoctorList() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <DoctorDetail
-        doctorId={viewTargetId}
-        open={!!viewTargetId}
-        onOpenChange={(o) => {
-          if (!o) setViewTargetId(null);
-        }}
-      />
     </div>
   );
 }

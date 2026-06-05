@@ -445,7 +445,7 @@ export function TaxesPayableRegisterPayment() {
               })}
             </ul>
             <div className="border-t pt-3 mt-1 flex items-center justify-between text-sm font-semibold">
-              <span>Total a pagar al fisco</span>
+              <span>Total a pagar al SENIAT</span>
               <span className="font-mono">{totals.totalToReceive.toFixed(2)} Bs.</span>
             </div>
 
@@ -487,7 +487,7 @@ export function TaxesPayableRegisterPayment() {
 
           <FormSection
             title="Pagos"
-            description="Agregá un pago manual. El impuesto se paga al fisco — no se pre-cargan métodos del destinatario."
+            description="Agregá un pago manual. El impuesto se paga al SENIAT — no se pre-cargan métodos del destinatario."
           >
             <Controller
               control={control}

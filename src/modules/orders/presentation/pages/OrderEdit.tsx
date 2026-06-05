@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { FormProvider, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@/components/ui/button';
@@ -72,15 +72,20 @@ function buildDto(values: OrderValues): CreateOrderDto {
 export function OrderEdit() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { has } = usePermissions();
   const canAttention = has(PERMISSIONS.ORDERS.STAGE_ATTENTION);
+  const initialStep =
+    (location.state as { step?: string } | null)?.step === 'attention' && canAttention
+      ? 'attention'
+      : 'register';
   const [fetching, setFetching] = useState(true);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [initialOrder, setInitialOrder] = useState<Order | null>(null);
   const [holder, setHolder] = useState<Patient | null>(null);
   const [patient, setPatient] = useState<Patient | null>(null);
   const [provider, setProvider] = useState<ProviderSelectValue | null>(null);
-  const [currentStep, setCurrentStep] = useState<string>('register');
+  const [currentStep, setCurrentStep] = useState<string>(initialStep);
 
   const methods = useForm<OrderValues>({
     resolver: zodResolver(orderSchema),
@@ -234,9 +239,6 @@ export function OrderEdit() {
               <span className="text-destructive">*</span> Campos obligatorios
             </p>
             <div className="flex items-center gap-2 flex-wrap">
-              <Button type="button" variant="outline" onClick={tryCancel}>
-                Cancelar
-              </Button>
               {currentStep === 'register' && initialOrder?.status === 'draft' ? (
                 <Button type="submit" disabled={methods.formState.isSubmitting}>
                   {methods.formState.isSubmitting ? 'Guardando…' : 'Guardar cambios'}

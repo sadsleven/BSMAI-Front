@@ -204,7 +204,7 @@ export function TaxesPayableList() {
         <Can permission={PERMISSIONS.TAXES_PAYABLE.UPDATE}>
           <Button onClick={goRegister} disabled={selectedAccounts.length === 0}>
             <Plus className="w-4 h-4 mr-1.5" />
-            Registrar pago al fisco
+            Registrar pago al SENIAT
             {selectedAccounts.length > 0 && (
               <span className="ml-1 text-[11px] opacity-80">
                 ({selectedAccounts.length})

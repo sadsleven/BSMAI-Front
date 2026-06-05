@@ -74,6 +74,11 @@ export const PERMISSIONS = {
     VIEW: 'app-config.view',
     UPDATE: 'app-config.update',
   },
+  FILES: {
+    LIST: 'files.list',
+    CREATE: 'files.create',
+    SOFT_DELETE: 'files.soft-delete',
+  },
   REPORTS: {
     RECEIVABLES_LIST: 'reports.receivables.list',
     PAYABLES_LIST: 'reports.payables.list',

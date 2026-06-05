@@ -402,7 +402,7 @@ export function AccountsPayableRegisterPayment() {
   /**
    * Retención SENIAT preview: se calcula sobre el bruto total del lote, en Bs,
    * usando la UT vigente y el régimen del proveedor. El proveedor debe recibir
-   * el NETO; el monto retenido se entrega al fisco vía `taxes_payable`.
+   * el NETO; el monto retenido se entrega al SENIAT vía `taxes_payable`.
    */
   const retentionPreview = useMemo(() => {
     const usdBs = Number(usdRate?.amountBs ?? 0);
@@ -792,7 +792,7 @@ export function AccountsPayableRegisterPayment() {
 
           <FormSection
             title="Retención de ISLR (Decreto 1.808)"
-            description="Cálculo SENIAT sobre el bruto del lote. El proveedor recibe el neto; lo retenido genera un impuesto por pagar al fisco."
+            description="Cálculo SENIAT sobre el bruto del lote. El proveedor recibe el neto; lo retenido genera un impuesto por pagar al SENIAT."
           >
             {!taxUnit ? (
               <p className="text-sm text-destructive">
@@ -851,7 +851,7 @@ export function AccountsPayableRegisterPayment() {
                   </div>
                   <div className="rounded-md border p-3 bg-warning-soft text-warning-strong">
                     <div className="text-[11px] uppercase tracking-[0.06em]">
-                      Retención al fisco
+                      Retención al SENIAT
                     </div>
                     <div className="text-lg font-semibold font-mono">
                       {retentionPreview.retention.taxAmountBs.toFixed(2)} Bs.

@@ -35,7 +35,6 @@ import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { Plus, Pencil, Trash2, Eye, Undo2, ListChecks } from 'lucide-react';
 import { useOrderStore } from '../../domain/store/orderStore';
 import { orderGateway } from '../../infrastructure/orderGateway';
-import { OrderDetail } from '../components/OrderDetail';
 import {
   ORDER_STATUS_LABEL,
   ORDER_TYPE_LABEL,
@@ -175,7 +174,6 @@ export function OrderList() {
   const [hardConfirmStep, setHardConfirmStep] = useState(0);
   const [restoreTarget, setRestoreTarget] = useState<Order | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
-  const [detailId, setDetailId] = useState<string | null>(null);
 
   const handleSoftDelete = async () => {
     if (!deleteTarget) return;
@@ -488,15 +486,16 @@ export function OrderList() {
                     <TableCell className="py-3.5 px-4 text-right">
                       <div className="inline-flex items-center gap-0.5">
                         <Can permission={PERMISSIONS.ORDERS.LIST}>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            title="Ver detalle"
-                            className="w-8 h-8"
-                            onClick={() => setDetailId(order.id)}
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Button>
+                          <Link to={`/orders/${order.id}`}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Ver detalle"
+                              className="w-8 h-8"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                          </Link>
                         </Can>
                         <Can permission={PERMISSIONS.ORDERS.UPDATE}>
                           <Link to={`/orders/edit/${order.id}`}>
@@ -589,12 +588,6 @@ export function OrderList() {
           itemLabel="órdenes"
         />
       </div>
-
-      <OrderDetail
-        orderId={detailId}
-        open={!!detailId}
-        onOpenChange={(o) => !o && setDetailId(null)}
-      />
 
       <ConfirmDialog
         open={!!restoreTarget}

@@ -135,7 +135,7 @@ export function taxAmountBs(t: TaxPayable): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-/** Suma Bs de pagos aplicados al fisco. */
+/** Suma Bs de pagos aplicados al SENIAT. */
 export function paidBs(t: TaxPayable): number {
   return (t.payments ?? []).reduce((s, p) => s + Number(p.amountInBs || 0), 0);
 }

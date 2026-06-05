@@ -288,7 +288,7 @@ export function TaxesPayableDetail({
             </div>
           </DetailSection>
 
-          <DetailSection title="Saldo al fisco">
+          <DetailSection title="Saldo al SENIAT">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
               <div className="space-y-1">
                 <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
@@ -321,7 +321,7 @@ export function TaxesPayableDetail({
             </div>
           </DetailSection>
 
-          <DetailSection title={`Pagos al fisco registrados (${tax.payments?.length ?? 0})`}>
+          <DetailSection title={`Pagos al SENIAT registrados (${tax.payments?.length ?? 0})`}>
             <PaymentHistoryList payments={tax.payments} />
           </DetailSection>
 

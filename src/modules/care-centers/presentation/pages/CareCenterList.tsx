@@ -40,7 +40,6 @@ import { formatCreated } from '@/lib/dates';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { Plus, Pencil, Trash2, Power, Undo2, Hospital, Eye } from 'lucide-react';
-import { CareCenterDetail } from '../components/CareCenterDetail';
 import { Can } from '@/modules/auth/presentation/components/Can';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
@@ -98,7 +97,6 @@ export function CareCenterList() {
   const [actionLoading, setActionLoading] = useState(false);
   const [toggleTarget, setToggleTarget] = useState<CareCenter | null>(null);
   const [restoreTarget, setRestoreTarget] = useState<CareCenter | null>(null);
-  const [viewTargetId, setViewTargetId] = useState<string | null>(null);
 
   const canSeeDeleted =
     has(PERMISSIONS.CARE_CENTERS.HARD_DELETE) || has(PERMISSIONS.CARE_CENTERS.RESTORE);
@@ -409,15 +407,16 @@ export function CareCenterList() {
                   <TableCell className="py-3.5 px-4 text-right">
                     <div className="inline-flex items-center gap-0.5">
                       <Can permission={PERMISSIONS.CARE_CENTERS.LIST}>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Ver detalle"
-                          onClick={() => setViewTargetId(c.id)}
-                          className="w-8 h-8"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </Button>
+                        <Link to={`/care-centers/${c.id}`}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Ver detalle"
+                            className="w-8 h-8"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                        </Link>
                       </Can>
                       {c.deletedAt ? (
                         <Can permission={PERMISSIONS.CARE_CENTERS.RESTORE}>
@@ -614,13 +613,6 @@ export function CareCenterList() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <CareCenterDetail
-        centerId={viewTargetId}
-        open={!!viewTargetId}
-        onOpenChange={(o) => {
-          if (!o) setViewTargetId(null);
-        }}
-      />
     </div>
   );
 }

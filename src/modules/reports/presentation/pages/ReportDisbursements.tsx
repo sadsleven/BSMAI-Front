@@ -208,7 +208,7 @@ export function ReportDisbursements() {
   return (
     <ReportShell
       title="Pagos emitidos"
-      description="Salidas registradas a proveedores y al fisco (impuestos retenidos)"
+      description="Salidas registradas a proveedores y al SENIAT (impuestos retenidos)"
       kpis={
         <KpiRow
           items={[
@@ -331,7 +331,7 @@ export function ReportDisbursements() {
                     description={
                       hasActiveFilters
                         ? 'Ajustá los filtros para ver más resultados.'
-                        : 'Aún no se han registrado pagos a proveedores ni al fisco.'
+                        : 'Aún no se han registrado pagos a proveedores ni al SENIAT.'
                     }
                   />
                 </TableCell>

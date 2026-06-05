@@ -18,7 +18,7 @@ type PaymentLike = {
   amountValue: string | number;
   /** Monto convertido en USD. Presente en pagos AR/AP. */
   amountInUsd?: string | number;
-  /** Monto convertido en Bs. Presente en pagos al fisco (taxes_payable). */
+  /** Monto convertido en Bs. Presente en pagos al SENIAT (taxes_payable). */
   amountInBs?: string | number;
   createdAt?: string;
 };

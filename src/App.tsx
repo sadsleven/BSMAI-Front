@@ -19,12 +19,15 @@ import { SpecialtyEdit } from './modules/specialties/presentation/pages/Specialt
 import { PatientList } from './modules/patients/presentation/pages/PatientList';
 import { PatientCreate } from './modules/patients/presentation/pages/PatientCreate';
 import { PatientEdit } from './modules/patients/presentation/pages/PatientEdit';
+import { PatientDetailPage } from './modules/patients/presentation/pages/PatientDetailPage';
 import { DoctorList } from './modules/doctors/presentation/pages/DoctorList';
 import { DoctorCreate } from './modules/doctors/presentation/pages/DoctorCreate';
 import { DoctorEdit } from './modules/doctors/presentation/pages/DoctorEdit';
+import { DoctorDetailPage } from './modules/doctors/presentation/pages/DoctorDetailPage';
 import { CareCenterList } from './modules/care-centers/presentation/pages/CareCenterList';
 import { CareCenterCreate } from './modules/care-centers/presentation/pages/CareCenterCreate';
 import { CareCenterEdit } from './modules/care-centers/presentation/pages/CareCenterEdit';
+import { CareCenterDetailPage } from './modules/care-centers/presentation/pages/CareCenterDetailPage';
 import { InsuranceList } from './modules/insurances/presentation/pages/InsuranceList';
 import { InsuranceCreate } from './modules/insurances/presentation/pages/InsuranceCreate';
 import { InsuranceEdit } from './modules/insurances/presentation/pages/InsuranceEdit';
@@ -49,6 +52,7 @@ import { BranchEdit } from './modules/branches/presentation/pages/BranchEdit';
 import { OrderList } from './modules/orders/presentation/pages/OrderList';
 import { OrderCreate } from './modules/orders/presentation/pages/OrderCreate';
 import { OrderEdit } from './modules/orders/presentation/pages/OrderEdit';
+import { OrderDetailPage } from './modules/orders/presentation/pages/OrderDetailPage';
 import { AccountsPayableList } from './modules/accounts-payable/presentation/pages/AccountsPayableList';
 import { AccountsPayableRegisterPayment } from './modules/accounts-payable/presentation/pages/AccountsPayableRegisterPayment';
 import { AccountsReceivableList } from './modules/accounts-receivable/presentation/pages/AccountsReceivableList';
@@ -120,16 +124,19 @@ function App() {
             <Route index element={<PatientList />} />
             <Route path="create" element={<PatientCreate />} />
             <Route path="edit/:id" element={<PatientEdit />} />
+            <Route path=":id" element={<PatientDetailPage />} />
           </Route>
           <Route path="doctors">
             <Route index element={<DoctorList />} />
             <Route path="create" element={<DoctorCreate />} />
             <Route path="edit/:id" element={<DoctorEdit />} />
+            <Route path=":id" element={<DoctorDetailPage />} />
           </Route>
           <Route path="care-centers">
             <Route index element={<CareCenterList />} />
             <Route path="create" element={<CareCenterCreate />} />
             <Route path="edit/:id" element={<CareCenterEdit />} />
+            <Route path=":id" element={<CareCenterDetailPage />} />
           </Route>
           <Route path="insurances">
             <Route index element={<InsuranceList />} />
@@ -170,6 +177,7 @@ function App() {
             <Route index element={<OrderList />} />
             <Route path="create" element={<OrderCreate />} />
             <Route path="edit/:id" element={<OrderEdit />} />
+            <Route path=":id" element={<OrderDetailPage />} />
           </Route>
           <Route path="accounts-payable">
             <Route index element={<AccountsPayableList />} />

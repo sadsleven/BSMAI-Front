@@ -220,7 +220,7 @@ export function ReportTaxesRetained() {
             {
               icon: TrendingUp,
               tone: 'success',
-              label: 'Pagado al fisco',
+              label: 'Pagado al SENIAT',
               value: formatUsd(totals.paid),
               hint: `${totals.target > 0 ? formatPercent((totals.paid / totals.target) * 100) : '0%'} de avance`,
             },

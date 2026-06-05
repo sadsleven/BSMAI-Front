@@ -438,7 +438,7 @@ export function GuidePage() {
             <p className="text-sm text-muted-foreground">
               Por cada pago a un doctor se retiene un % de impuesto (3% persona
               natural, 5% persona jurídica — configurable vía variables de
-              entorno). Esa retención queda como impuesto por pagar al fisco,
+              entorno). Esa retención queda como impuesto por pagar al SENIAT,
               que luego se registra como pagado al SENIAT.
             </p>
           </section>
@@ -519,7 +519,7 @@ export function GuidePage() {
               </Card>
               <Card title="Pagos emitidos">
                 <p>
-                  Listado cronológico de pagos hechos a proveedores y al fisco
+                  Listado cronológico de pagos hechos a proveedores y al SENIAT
                   (impuestos). Detalle por método, banco, referencia.
                 </p>
               </Card>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowRight, Download, FileSpreadsheet } from 'lucide-react';
+import { Download, FileSpreadsheet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { FormSection } from '@/components/ui/form-section';
 import { FormSwitch } from '@/components/ui/form-switch';
@@ -48,6 +48,7 @@ export function OrderAttendStep({
       });
       notify.success('Atención registrada');
       onSaved();
+      if (attended) onAdvance?.();
     } catch (err) {
       notify.error(getHttpErrorMessage(err, 'No se pudo registrar la atención'));
     } finally {
@@ -161,17 +162,13 @@ export function OrderAttendStep({
           </div>
         </div>
         <div className="flex justify-end gap-2 mt-4 flex-wrap">
-          <Button type="button" onClick={onSubmit} disabled={saving}>
-            {saving ? 'Guardando...' : 'Marcar atendido'}
+          <Button type="button" onClick={onSubmit} disabled={saving || !attended}>
+            {saving
+              ? 'Guardando...'
+              : onAdvance
+                ? 'Marcar atendido y continuar al informe'
+                : 'Marcar atendido'}
           </Button>
-          {(order.status === 'attended' ||
-            order.status === 'report_issued' ||
-            order.status === 'finalized') && onAdvance ? (
-            <Button type="button" variant="outline" onClick={onAdvance}>
-              Continuar a Informe
-              <ArrowRight className="w-4 h-4 ml-1.5" />
-            </Button>
-          ) : null}
         </div>
       </FormSection>
     </div>

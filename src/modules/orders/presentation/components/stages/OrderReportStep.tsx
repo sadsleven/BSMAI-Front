@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { ArrowRight, Upload, X, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { notify } from '@/lib/notifications/toast';
 import { getHttpErrorMessage } from '@/lib/api';
+import { FileDropzone } from '@/modules/files/presentation/components/FileDropzone';
+import { ORDER_REPORT_KIND } from '@/modules/files/domain/models/file';
 import { orderGateway } from '../../../infrastructure/orderGateway';
 import type { Order } from '../../../domain/models/order';
 
@@ -13,8 +14,9 @@ const ACCEPT = '.pdf,.png,.jpg,.jpeg,.webp';
 /**
  * Paso 3 — Informe médico y estudios.
  *
- * Dropzone multi-file FE-only en MVP (estado local). El upload al BE se define
- * cuando se decida la estrategia de storage.
+ * Archivos suben direct cliente → Vercel Blob vía `<FileDropzone>` (módulo
+ * `files`). `otherStudies` se persiste con `PATCH /orders/:id/report` al
+ * emitir el informe.
  */
 export function OrderReportStep({
   order,
@@ -26,15 +28,7 @@ export function OrderReportStep({
   onAdvance?: () => void;
 }) {
   const [otherStudies, setOtherStudies] = useState(order.otherStudies ?? '');
-  const [files, setFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
-
-  const onFilesChange = (list: FileList | null) => {
-    if (!list) return;
-    setFiles((prev) => [...prev, ...Array.from(list)]);
-  };
-  const onRemove = (idx: number) =>
-    setFiles((prev) => prev.filter((_, i) => i !== idx));
 
   const onSubmit = async () => {
     setSaving(true);
@@ -44,6 +38,7 @@ export function OrderReportStep({
       });
       notify.success('Informe emitido');
       onSaved();
+      onAdvance?.();
     } catch (err) {
       notify.error(getHttpErrorMessage(err, 'No se pudo emitir el informe'));
     } finally {
@@ -58,48 +53,14 @@ export function OrderReportStep({
       <div className="space-y-2">
         <Label>Archivos adjuntos</Label>
         <p className="text-xs text-muted-foreground">
-          PDF, imágenes (PNG/JPG/WebP). Por ahora se almacenan sólo en el
-          navegador hasta definir el storage en backend.
+          PDF, imágenes (PNG/JPG/WebP). Los archivos se almacenan en Vercel Blob.
         </p>
-        <label
-          className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border p-6 cursor-pointer hover:bg-muted/40 transition-colors"
-          htmlFor="report-files"
-        >
-          <Upload className="w-6 h-6 text-muted-foreground" />
-          <span className="text-sm">Arrastrá o hacé click para subir</span>
-          <input
-            id="report-files"
-            type="file"
-            multiple
-            accept={ACCEPT}
-            className="hidden"
-            onChange={(e) => onFilesChange(e.target.files)}
-          />
-        </label>
-        {files.length > 0 && (
-          <ul className="space-y-1.5 mt-2">
-            {files.map((f, i) => (
-              <li
-                key={`${f.name}-${i}`}
-                className="flex items-center gap-2 text-sm rounded-md border bg-muted/40 px-3 py-2"
-              >
-                <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
-                <span className="truncate flex-1">{f.name}</span>
-                <span className="text-xs text-muted-foreground">
-                  {(f.size / 1024).toFixed(1)} KB
-                </span>
-                <button
-                  type="button"
-                  onClick={() => onRemove(i)}
-                  className="p-1 rounded hover:bg-destructive-soft hover:text-destructive transition-colors"
-                  aria-label="Quitar archivo"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+        <FileDropzone
+          ownerType="order"
+          ownerId={order.id}
+          kind={ORDER_REPORT_KIND}
+          accept={ACCEPT}
+        />
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -116,15 +77,12 @@ export function OrderReportStep({
 
       <div className="flex justify-end gap-2 flex-wrap">
         <Button type="button" onClick={onSubmit} disabled={saving}>
-          {saving ? 'Guardando...' : 'Emitir informe'}
+          {saving
+            ? 'Guardando...'
+            : onAdvance
+              ? 'Emitir informe y continuar a facturación'
+              : 'Emitir informe'}
         </Button>
-        {(order.status === 'report_issued' || order.status === 'finalized') &&
-        onAdvance ? (
-          <Button type="button" variant="outline" onClick={onAdvance}>
-            Continuar a Facturación
-            <ArrowRight className="w-4 h-4 ml-1.5" />
-          </Button>
-        ) : null}
       </div>
     </div>
   );
