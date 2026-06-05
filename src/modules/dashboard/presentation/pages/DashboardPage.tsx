@@ -6,6 +6,7 @@ import {
   Coins,
   FileText,
   HandCoins,
+  Landmark,
   Receipt,
   TrendingDown,
   TrendingUp,
@@ -281,6 +282,7 @@ export function DashboardPage() {
   const canListOrders = has(PERMISSIONS.ORDERS.LIST);
   const canListAr = has(PERMISSIONS.ACCOUNTS_RECEIVABLE.LIST);
   const canListAp = has(PERMISSIONS.ACCOUNTS_PAYABLE.LIST);
+  const canListTp = has(PERMISSIONS.TAXES_PAYABLE.LIST);
   const canSeeBilled = canListAp && canListAr;
 
   const now = new Date();
@@ -295,6 +297,7 @@ export function DashboardPage() {
   const collected = useAmountUsd(canListAr, dashboardGateway.collectedMonthUsd);
   const arTotal = useAmountUsd(canListAr, dashboardGateway.receivableTotalUsd);
   const apTotal = useAmountUsd(canListAp, dashboardGateway.payableTotalUsd);
+  const tpTotal = useAmountUsd(canListTp, dashboardGateway.taxesPayableTotalUsd);
   const recent = useRecentOrders(canListOrders);
   const upcoming = useUpcomingAppointments(canListOrders);
 
@@ -374,6 +377,15 @@ export function DashboardPage() {
             icon={Wallet}
             tone="amber"
             loading={apTotal.loading}
+          />
+        ) : null}
+        {canListTp ? (
+          <KpiCard
+            label="Retenciones por pagar"
+            value={tpTotal.value === null ? null : `$ ${formatUsd(tpTotal.value)}`}
+            icon={Landmark}
+            tone="amber"
+            loading={tpTotal.loading}
           />
         ) : null}
       </div>

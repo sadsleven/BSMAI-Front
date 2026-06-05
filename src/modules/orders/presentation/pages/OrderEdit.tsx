@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { FormProvider, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@/components/ui/button';
@@ -22,6 +22,11 @@ import type { ProviderSelectValue } from '../components/ProviderSearchSelect';
 import { patientGateway } from '@/modules/patients/infrastructure/patientGateway';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
+import {
+  isWizardStep,
+  lastAccessibleStep,
+  type OrderWizardStep,
+} from '../../domain/wizardStep';
 
 function buildDto(values: OrderValues): CreateOrderDto {
   return {
@@ -72,20 +77,35 @@ function buildDto(values: OrderValues): CreateOrderDto {
 export function OrderEdit() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { has } = usePermissions();
   const canAttention = has(PERMISSIONS.ORDERS.STAGE_ATTENTION);
-  const initialStep =
-    (location.state as { step?: string } | null)?.step === 'attention' && canAttention
-      ? 'attention'
-      : 'register';
+  const canReport = has(PERMISSIONS.ORDERS.STAGE_REPORT);
+  const canBilling = has(PERMISSIONS.ORDERS.STAGE_BILLING);
   const [fetching, setFetching] = useState(true);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [initialOrder, setInitialOrder] = useState<Order | null>(null);
   const [holder, setHolder] = useState<Patient | null>(null);
   const [patient, setPatient] = useState<Patient | null>(null);
   const [provider, setProvider] = useState<ProviderSelectValue | null>(null);
-  const [currentStep, setCurrentStep] = useState<string>(initialStep);
+
+  const urlStep = searchParams.get('step');
+  const currentStep: OrderWizardStep = isWizardStep(urlStep)
+    ? urlStep
+    : initialOrder
+      ? lastAccessibleStep(initialOrder, {
+          attention: canAttention,
+          report: canReport,
+          billing: canBilling,
+        })
+      : 'register';
+
+  const setCurrentStep = (id: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (isWizardStep(id) && id !== 'register') next.set('step', id);
+    else next.delete('step');
+    setSearchParams(next, { replace: true });
+  };
 
   const methods = useForm<OrderValues>({
     resolver: zodResolver(orderSchema),

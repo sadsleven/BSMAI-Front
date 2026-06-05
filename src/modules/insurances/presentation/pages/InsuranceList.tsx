@@ -44,7 +44,6 @@ import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
 import { notify } from '@/lib/notifications/toast';
 import { cn } from '@/lib/utils';
-import { InsuranceDetail } from '../components/InsuranceDetail';
 
 type SortBy = 'name' | 'createdAt' | 'updatedAt';
 type Deletion = 'active' | 'deleted' | 'all';
@@ -94,7 +93,6 @@ export function InsuranceList() {
   const [actionLoading, setActionLoading] = useState(false);
   const [toggleTarget, setToggleTarget] = useState<Insurance | null>(null);
   const [restoreTarget, setRestoreTarget] = useState<Insurance | null>(null);
-  const [viewTargetId, setViewTargetId] = useState<string | null>(null);
 
   const canSeeDeleted =
     has(PERMISSIONS.INSURANCES.HARD_DELETE) || has(PERMISSIONS.INSURANCES.RESTORE);
@@ -370,15 +368,16 @@ export function InsuranceList() {
                   <TableCell className="py-3.5 px-4 text-right">
                     <div className="inline-flex items-center gap-0.5">
                       <Can permission={PERMISSIONS.INSURANCES.LIST}>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Ver detalle"
-                          onClick={() => setViewTargetId(i.id)}
-                          className="w-8 h-8"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </Button>
+                        <Link to={`/insurances/${i.id}`}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Ver detalle"
+                            className="w-8 h-8"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                        </Link>
                       </Can>
                       {i.deletedAt ? (
                         <Can permission={PERMISSIONS.INSURANCES.RESTORE}>
@@ -568,13 +567,6 @@ export function InsuranceList() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <InsuranceDetail
-        insuranceId={viewTargetId}
-        open={!!viewTargetId}
-        onOpenChange={(o) => {
-          if (!o) setViewTargetId(null);
-        }}
-      />
     </div>
   );
 }

@@ -38,4 +38,8 @@ export const dashboardGateway = {
     const { data } = await api.get<AmountUsdResponse>('/dashboard/payable-total-usd');
     return data;
   },
+  async taxesPayableTotalUsd(): Promise<AmountUsdResponse> {
+    const { data } = await api.get<AmountUsdResponse>('/dashboard/taxes-payable-total-usd');
+    return data;
+  },
 };

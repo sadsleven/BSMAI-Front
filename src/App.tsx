@@ -31,6 +31,7 @@ import { CareCenterDetailPage } from './modules/care-centers/presentation/pages/
 import { InsuranceList } from './modules/insurances/presentation/pages/InsuranceList';
 import { InsuranceCreate } from './modules/insurances/presentation/pages/InsuranceCreate';
 import { InsuranceEdit } from './modules/insurances/presentation/pages/InsuranceEdit';
+import { InsuranceDetailPage } from './modules/insurances/presentation/pages/InsuranceDetailPage';
 import { PathologyList } from './modules/pathologies/presentation/pages/PathologyList';
 import { PathologyCreate } from './modules/pathologies/presentation/pages/PathologyCreate';
 import { PathologyEdit } from './modules/pathologies/presentation/pages/PathologyEdit';
@@ -142,6 +143,7 @@ function App() {
             <Route index element={<InsuranceList />} />
             <Route path="create" element={<InsuranceCreate />} />
             <Route path="edit/:id" element={<InsuranceEdit />} />
+            <Route path=":id" element={<InsuranceDetailPage />} />
           </Route>
           <Route path="pathologies">
             <Route index element={<PathologyList />} />

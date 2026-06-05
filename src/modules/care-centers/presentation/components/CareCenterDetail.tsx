@@ -12,6 +12,7 @@ import type { CareCenter } from '../../domain/models/careCenter';
 import type { Bank } from '@/modules/banks/domain/models/bank';
 import { bankGateway } from '@/modules/banks/infrastructure/bankGateway';
 import { notify } from '@/lib/notifications/toast';
+import { ServicePricesDetailTable } from '@/components/ui/service-prices-detail-table';
 
 const TYPE_LABEL = {
   mobile_payment: 'Pago Móvil',
@@ -91,6 +92,10 @@ export function CareCenterDetailBody({
             ) : (
               <p className="text-sm text-muted-foreground italic">Sin especialidades.</p>
             )}
+          </DetailSection>
+
+          <DetailSection title={`Precios por tipo de servicio (${center.servicePrices?.length ?? 0})`}>
+            <ServicePricesDetailTable prices={center.servicePrices ?? []} />
           </DetailSection>
 
           <DetailSection title={`Métodos de pago (${center.paymentMethods?.length ?? 0})`}>

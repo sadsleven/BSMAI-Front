@@ -32,7 +32,7 @@ import { SkeletonTableRows } from '@/components/ui/skeleton';
 import { formatCreatedDateTime } from '@/lib/dates';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
-import { Plus, Pencil, Trash2, Eye, Undo2, ListChecks } from 'lucide-react';
+import { Plus, Trash2, Eye, Undo2, ListChecks } from 'lucide-react';
 import { useOrderStore } from '../../domain/store/orderStore';
 import { orderGateway } from '../../infrastructure/orderGateway';
 import {
@@ -50,6 +50,7 @@ import { notify } from '@/lib/notifications/toast';
 import { useAuthStore } from '@/modules/auth/domain/store/authStore';
 import { getUserBranches } from '@/lib/auth/branches';
 import { cn } from '@/lib/utils';
+import { lastAccessibleStep } from '../../domain/wizardStep';
 
 type SortBy = 'orderNumber' | 'orderDate' | 'appointmentDate' | 'priceAmount' | 'createdAt' | 'updatedAt';
 type DeletionFilter = 'active' | 'deleted' | 'all';
@@ -445,7 +446,6 @@ export function OrderList() {
               </TableRow>
             ) : (
               orders.map((order) => {
-                const isDraft = order.status === 'draft';
                 const isDeleted = !!order.deletedAt;
                 return (
                   <TableRow key={order.id} className="hover:bg-[oklch(0.985_0.003_250)]">
@@ -498,7 +498,13 @@ export function OrderList() {
                           </Link>
                         </Can>
                         <Can permission={PERMISSIONS.ORDERS.UPDATE}>
-                          <Link to={`/orders/edit/${order.id}`}>
+                          <Link
+                            to={`/orders/edit/${order.id}?step=${lastAccessibleStep(order, {
+                              attention: has(PERMISSIONS.ORDERS.STAGE_ATTENTION),
+                              report: has(PERMISSIONS.ORDERS.STAGE_REPORT),
+                              billing: has(PERMISSIONS.ORDERS.STAGE_BILLING),
+                            })}`}
+                          >
                             <Button
                               variant="ghost"
                               size="icon"
@@ -524,30 +530,6 @@ export function OrderList() {
                           </Can>
                         ) : (
                           <>
-                            <Can permission={PERMISSIONS.ORDERS.UPDATE}>
-                              {isDraft ? (
-                                <Link to={`/orders/edit/${order.id}`}>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    title="Editar"
-                                    className="w-8 h-8"
-                                  >
-                                    <Pencil className="w-4 h-4" />
-                                  </Button>
-                                </Link>
-                              ) : (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  title="Solo se puede editar en borrador"
-                                  disabled
-                                  className="w-8 h-8 opacity-50 cursor-not-allowed"
-                                >
-                                  <Pencil className="w-4 h-4" />
-                                </Button>
-                              )}
-                            </Can>
                             <Can
                               anyOf={[
                                 PERMISSIONS.ORDERS.SOFT_DELETE,

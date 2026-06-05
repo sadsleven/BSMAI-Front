@@ -309,6 +309,9 @@ export function ServiceTypeList() {
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Descripción
               </TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">
+                Precio Particular
+              </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Estado
               </TableHead>
@@ -322,10 +325,10 @@ export function ServiceTypeList() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <SkeletonTableRows rows={5} columns={5} />
+              <SkeletonTableRows rows={5} columns={6} />
             ) : serviceTypes.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="p-0">
+                <TableCell colSpan={6} className="p-0">
                   <EmptyState
                     icon={FileText}
                     title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay tipos de servicio'}
@@ -357,6 +360,11 @@ export function ServiceTypeList() {
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm text-muted-foreground max-w-md truncate">
                     {p.description ?? '—'}
+                  </TableCell>
+                  <TableCell className="py-3.5 px-4 text-right font-mono text-sm">
+                    {p.particularPriceUsd != null
+                      ? `$ ${Number(p.particularPriceUsd).toFixed(2)}`
+                      : '—'}
                   </TableCell>
                   <TableCell className="py-3.5 px-4">
                     <StatusBadge p={p} />

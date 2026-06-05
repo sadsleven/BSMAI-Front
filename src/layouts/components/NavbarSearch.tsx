@@ -33,28 +33,28 @@ const GROUPS: Group[] = [
     label: 'Pacientes',
     icon: UserRound,
     permission: PERMISSIONS.PATIENTS.LIST,
-    toHref: (i) => `/patients/edit/${i.id}`,
+    toHref: (i) => `/patients/${i.id}`,
   },
   {
     key: 'orders',
     label: 'Órdenes',
     icon: FileText,
     permission: PERMISSIONS.ORDERS.LIST,
-    toHref: (i) => `/orders/edit/${i.id}`,
+    toHref: (i) => `/orders/${i.id}`,
   },
   {
     key: 'doctors',
     label: 'Doctores',
     icon: Stethoscope,
     permission: PERMISSIONS.DOCTORS.LIST,
-    toHref: (i) => `/doctors/edit/${i.id}`,
+    toHref: (i) => `/doctors/${i.id}`,
   },
   {
     key: 'careCenters',
     label: 'Centros de atención',
     icon: Building2,
     permission: PERMISSIONS.CARE_CENTERS.LIST,
-    toHref: (i) => `/care-centers/edit/${i.id}`,
+    toHref: (i) => `/care-centers/${i.id}`,
   },
 ];
 

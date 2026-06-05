@@ -12,6 +12,7 @@ import { fullName, type Doctor } from '../../domain/models/doctor';
 import type { Bank } from '@/modules/banks/domain/models/bank';
 import { bankGateway } from '@/modules/banks/infrastructure/bankGateway';
 import { notify } from '@/lib/notifications/toast';
+import { ServicePricesDetailTable } from '@/components/ui/service-prices-detail-table';
 
 const TYPE_LABEL = {
   mobile_payment: 'Pago Móvil',
@@ -101,6 +102,10 @@ export function DoctorDetailBody({
             ) : (
               <p className="text-sm text-muted-foreground italic">Sin especialidades.</p>
             )}
+          </DetailSection>
+
+          <DetailSection title={`Precios por tipo de servicio (${doctor.servicePrices?.length ?? 0})`}>
+            <ServicePricesDetailTable prices={doctor.servicePrices ?? []} />
           </DetailSection>
 
           <DetailSection title={`Métodos de pago (${doctor.paymentMethods?.length ?? 0})`}>

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Download, FileSpreadsheet } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { ArrowRight, Download, FileSpreadsheet, HandCoins, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CurrencyAmountInput } from '@/components/ui/currency-amount-input';
 import { FormSection } from '@/components/ui/form-section';
@@ -12,10 +13,6 @@ import { orderGateway } from '../../../infrastructure/orderGateway';
 import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
 import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchangeRate';
 import { accountsPayableGateway } from '@/modules/accounts-payable/infrastructure/accountsPayableGateway';
-import { accountsReceivableGateway } from '@/modules/accounts-receivable/infrastructure/accountsReceivableGateway';
-import type { AccountsPayable } from '@/modules/accounts-payable/domain/models/accountsPayable';
-import type { AccountsReceivable } from '@/modules/accounts-receivable/domain/models/accountsReceivable';
-import { OrderPaymentForm, paymentInUsd } from '../OrderPaymentForm';
 import { downloadFacturacionXlsx } from '../orderExcel';
 import { downloadFacturacionPdf } from '../orderPdf';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
@@ -24,7 +21,6 @@ import { doctorGateway } from '@/modules/doctors/infrastructure/doctorGateway';
 import { careCenterGateway } from '@/modules/care-centers/infrastructure/careCenterGateway';
 import type { ServicePriceRow } from '@/lib/types/servicePrice';
 import type { Order } from '../../../domain/models/order';
-import type { OrderPaymentValues } from '@/lib/validations/schemas';
 
 /**
  * Paso 4 — Facturación y liquidación (USD-only).
@@ -531,518 +527,49 @@ export function OrderBillingStep({
       )}
 
       {isFinalized ? (
-        <>
-          {providers.map((p) => (
-            <OrdenPorPagarSection
-              key={p.key}
-              order={order}
-              providerType={p.providerType}
-              providerId={p.providerId}
-              providerName={p.providerName}
-              onSaved={onSaved}
-            />
-          ))}
-          {order.type === 'insurance' ? (
-            <OrdenPorCobrarSection order={order} onSaved={onSaved} />
-          ) : null}
-          {order.type === 'credit' ? (
-            <CreditoPorCobrarSection order={order} onSaved={onSaved} />
-          ) : null}
-        </>
+        <FormSection
+          title="Próximos pasos"
+          description="Registrá pagos y cobros desde sus respectivas secciones."
+        >
+          <div className="flex flex-wrap gap-2">
+            {providers.map((p) => {
+              const params = new URLSearchParams();
+              params.set('search', order.orderNumber);
+              if (p.providerType === 'doctor') params.set('doctorId', p.providerId);
+              else params.set('careCenterId', p.providerId);
+              return (
+                <Link key={p.key} to={`/accounts-payable?${params.toString()}`}>
+                  <Button type="button" variant="outline">
+                    <Wallet className="w-4 h-4 mr-1.5" />
+                    Ir a Cuentas por pagar — {p.providerName}
+                    <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                  </Button>
+                </Link>
+              );
+            })}
+            {order.type === 'insurance' ||
+            order.type === 'credit' ||
+            order.type === 'cashea' ? (
+              <Link
+                to={`/accounts-receivable?search=${encodeURIComponent(order.orderNumber)}`}
+              >
+                <Button type="button" variant="outline">
+                  <HandCoins className="w-4 h-4 mr-1.5" />
+                  Ir a Cuentas por cobrar
+                  <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                </Button>
+              </Link>
+            ) : null}
+          </div>
+        </FormSection>
       ) : (
         <p className="text-xs italic text-muted-foreground">
           Finalizá la orden para registrar los pagos a los proveedores
           {order.type === 'insurance' ? ' y el cobro al seguro' : ''}
-          {order.type === 'credit' ? ' y el cobro del crédito al titular' : ''}.
+          {order.type === 'credit' ? ' y el cobro del crédito al titular' : ''}
+          {order.type === 'cashea' ? ' y el cobro vía Cashea' : ''}.
         </p>
       )}
     </div>
-  );
-}
-
-function OrdenPorPagarSection({
-  order,
-  providerType,
-  providerId,
-  providerName,
-  onSaved,
-}: {
-  order: Order;
-  providerType: 'doctor' | 'care_center';
-  providerId: string;
-  providerName: string;
-  onSaved: () => void;
-}) {
-  const [account, setAccount] = useState<AccountsPayable | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [payments, setPayments] = useState<OrderPaymentValues[]>([]);
-  const [usdRate, setUsdRate] = useState<ExchangeRate | null>(null);
-  const [eurRatesById, setEurRatesById] = useState<Record<string, ExchangeRate>>({});
-  const [saving, setSaving] = useState(false);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await accountsPayableGateway.list({
-        orderId: order.id,
-        doctorId: providerType === 'doctor' ? providerId : undefined,
-        careCenterId: providerType === 'care_center' ? providerId : undefined,
-        limit: 1,
-      });
-      setAccount(res.data[0] ?? null);
-    } catch (err) {
-      notify.error(getHttpErrorMessage(err, 'No se pudo cargar la orden por pagar'));
-    } finally {
-      setLoading(false);
-    }
-  }, [order.id, providerType, providerId]);
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const rate = await exchangeRateGateway.getCurrent('USD');
-        if (!cancelled) setUsdRate(rate);
-      } catch {
-        if (!cancelled) setUsdRate(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const lookupRate = (id: string): ExchangeRate | null =>
-    eurRatesById[id] ?? (usdRate && usdRate.id === id ? usdRate : null);
-
-  const totalPaymentsUsd = useMemo(() => {
-    return payments.reduce((sum, p) => sum + paymentInUsd(p, usdRate, lookupRate), 0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payments, usdRate, eurRatesById]);
-
-  const onRegister = async () => {
-    if (!account) return;
-    if (payments.length === 0) {
-      notify.error('Registrá al menos un pago');
-      return;
-    }
-    setSaving(true);
-    try {
-      await accountsPayableGateway.registerPayment({
-        payableIds: [account.id],
-        payments: payments.map((p) => ({
-          type: p.type,
-          paymentDate: p.paymentDate,
-          referenceNumber: p.referenceNumber || undefined,
-          bankCode: p.bankCode || undefined,
-          accountNumber: p.accountNumber || undefined,
-          exchangeRateId: p.exchangeRateId || undefined,
-          amountCurrency: p.amountCurrency,
-          amountValue: p.amountValue,
-        })),
-      });
-      notify.success('Pago registrado');
-      setPayments([]);
-      await load();
-      onSaved();
-    } catch (err) {
-      notify.fromError(err, 'No se pudo registrar el pago');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <FormSection
-      title={`Orden por pagar — ${providerName}`}
-      description={`Pago USD al ${providerType === 'doctor' ? 'doctor' : 'centro'}.`}
-      headerAction={
-        account?.status === 'paid' ? (
-          <Badge className="bg-success-soft text-success border-success/30">
-            Pagada
-          </Badge>
-        ) : (
-          <Badge className="bg-warning-soft text-warning border-warning/30">
-            No pagada
-          </Badge>
-        )
-      }
-    >
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Cargando cuenta…</p>
-      ) : !account ? (
-        <p className="text-sm text-destructive">
-          No se encontró la cuenta por pagar para esta orden.
-        </p>
-      ) : account.status === 'paid' ? (
-        <p className="text-sm text-muted-foreground">
-          Esta orden ya fue pagada
-          {account.paidAt
-            ? ` el ${new Date(account.paidAt).toLocaleDateString('es-VE')}`
-            : ''}
-          . Para ver detalles, ingresá a Cuentas por pagar.
-        </p>
-      ) : (
-        <>
-          <OrderPaymentForm
-            payments={payments}
-            onChange={setPayments}
-            usdRate={usdRate}
-            onEurRateLoaded={(r) =>
-              setEurRatesById((prev) =>
-                prev[r.id] ? prev : { ...prev, [r.id]: r },
-              )
-            }
-          />
-          {usdRate && (
-            <div className="grid grid-cols-2 gap-3 text-sm mt-4">
-              <div className="rounded-md border p-2 bg-muted/30">
-                <div className="text-xs text-muted-foreground">Total pagos</div>
-                <div className="font-mono">{totalPaymentsUsd.toFixed(2)} USD</div>
-              </div>
-              <div className="rounded-md border p-2 bg-muted/30">
-                <div className="text-xs text-muted-foreground">Tasa USD</div>
-                <div className="font-mono">
-                  1 USD = {Number(usdRate.amountBs).toFixed(2)} Bs.
-                </div>
-              </div>
-            </div>
-          )}
-          <div className="flex justify-end mt-4">
-            <Button
-              type="button"
-              onClick={onRegister}
-              disabled={saving || payments.length === 0 || !usdRate}
-            >
-              {saving ? 'Guardando…' : 'Registrar pago'}
-            </Button>
-          </div>
-        </>
-      )}
-    </FormSection>
-  );
-}
-
-function OrdenPorCobrarSection({
-  order,
-  onSaved,
-}: {
-  order: Order;
-  onSaved: () => void;
-}) {
-  const [account, setAccount] = useState<AccountsReceivable | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [payments, setPayments] = useState<OrderPaymentValues[]>([]);
-  const [usdRate, setUsdRate] = useState<ExchangeRate | null>(null);
-  const [eurRatesById, setEurRatesById] = useState<Record<string, ExchangeRate>>({});
-  const [saving, setSaving] = useState(false);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await accountsReceivableGateway.list({
-        orderId: order.id,
-        limit: 1,
-      });
-      setAccount(res.data[0] ?? null);
-    } catch (err) {
-      notify.error(getHttpErrorMessage(err, 'No se pudo cargar la orden por cobrar'));
-    } finally {
-      setLoading(false);
-    }
-  }, [order.id]);
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const rate = await exchangeRateGateway.getCurrent('USD');
-        if (!cancelled) setUsdRate(rate);
-      } catch {
-        if (!cancelled) setUsdRate(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const lookupRate = (id: string): ExchangeRate | null =>
-    eurRatesById[id] ?? (usdRate && usdRate.id === id ? usdRate : null);
-
-  const totalPaymentsUsd = useMemo(() => {
-    return payments.reduce((sum, p) => sum + paymentInUsd(p, usdRate, lookupRate), 0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payments, usdRate, eurRatesById]);
-
-  const onRegister = async () => {
-    if (!account) return;
-    if (payments.length === 0) {
-      notify.error('Registrá al menos un cobro');
-      return;
-    }
-    setSaving(true);
-    try {
-      await accountsReceivableGateway.registerCollection({
-        receivableIds: [account.id],
-        payments: payments.map((p) => ({
-          type: p.type,
-          paymentDate: p.paymentDate,
-          referenceNumber: p.referenceNumber || undefined,
-          bankCode: p.bankCode || undefined,
-          accountNumber: p.accountNumber || undefined,
-          exchangeRateId: p.exchangeRateId || undefined,
-          amountCurrency: p.amountCurrency,
-          amountValue: p.amountValue,
-        })),
-      });
-      notify.success('Cobro registrado');
-      setPayments([]);
-      await load();
-      onSaved();
-    } catch (err) {
-      notify.fromError(err, 'No se pudo registrar el cobro');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <FormSection
-      title="Orden por cobrar"
-      description="Registrá el cobro USD al seguro. Sin cap de monto."
-      headerAction={
-        account?.status === 'collected' ? (
-          <Badge className="bg-success-soft text-success border-success/30">
-            Cobrada
-          </Badge>
-        ) : (
-          <Badge className="bg-warning-soft text-warning border-warning/30">
-            No cobrada
-          </Badge>
-        )
-      }
-    >
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Cargando cuenta…</p>
-      ) : !account ? (
-        <p className="text-sm text-destructive">
-          No se encontró la cuenta por cobrar para esta orden.
-        </p>
-      ) : account.status === 'collected' ? (
-        <p className="text-sm text-muted-foreground">
-          Esta orden ya fue cobrada
-          {account.collectedAt
-            ? ` el ${new Date(account.collectedAt).toLocaleDateString('es-VE')}`
-            : ''}
-          . Para ver detalles, ingresá a Cuentas por cobrar.
-        </p>
-      ) : (
-        <>
-          <OrderPaymentForm
-            payments={payments}
-            onChange={setPayments}
-            usdRate={usdRate}
-            onEurRateLoaded={(r) =>
-              setEurRatesById((prev) =>
-                prev[r.id] ? prev : { ...prev, [r.id]: r },
-              )
-            }
-          />
-          {usdRate && (
-            <div className="grid grid-cols-2 gap-3 text-sm mt-4">
-              <div className="rounded-md border p-2 bg-muted/30">
-                <div className="text-xs text-muted-foreground">Total cobros</div>
-                <div className="font-mono">{totalPaymentsUsd.toFixed(2)} USD</div>
-              </div>
-              <div className="rounded-md border p-2 bg-muted/30">
-                <div className="text-xs text-muted-foreground">Tasa USD</div>
-                <div className="font-mono">
-                  1 USD = {Number(usdRate.amountBs).toFixed(2)} Bs.
-                </div>
-              </div>
-            </div>
-          )}
-          <div className="flex justify-end mt-4">
-            <Button
-              type="button"
-              onClick={onRegister}
-              disabled={saving || payments.length === 0 || !usdRate}
-            >
-              {saving ? 'Guardando…' : 'Registrar cobro'}
-            </Button>
-          </div>
-        </>
-      )}
-    </FormSection>
-  );
-}
-
-function CreditoPorCobrarSection({
-  order,
-  onSaved,
-}: {
-  order: Order;
-  onSaved: () => void;
-}) {
-  const [account, setAccount] = useState<AccountsReceivable | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [payments, setPayments] = useState<OrderPaymentValues[]>([]);
-  const [usdRate, setUsdRate] = useState<ExchangeRate | null>(null);
-  const [eurRatesById, setEurRatesById] = useState<Record<string, ExchangeRate>>({});
-  const [saving, setSaving] = useState(false);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await accountsReceivableGateway.list({
-        orderId: order.id,
-        debtorType: 'holder',
-        limit: 1,
-      });
-      setAccount(res.data[0] ?? null);
-    } catch (err) {
-      notify.error(getHttpErrorMessage(err, 'No se pudo cargar el crédito por cobrar'));
-    } finally {
-      setLoading(false);
-    }
-  }, [order.id]);
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const rate = await exchangeRateGateway.getCurrent('USD');
-        if (!cancelled) setUsdRate(rate);
-      } catch {
-        if (!cancelled) setUsdRate(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const lookupRate = (id: string): ExchangeRate | null =>
-    eurRatesById[id] ?? (usdRate && usdRate.id === id ? usdRate : null);
-
-  const totalPaymentsUsd = useMemo(() => {
-    return payments.reduce((sum, p) => sum + paymentInUsd(p, usdRate, lookupRate), 0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payments, usdRate, eurRatesById]);
-
-  const onRegister = async () => {
-    if (!account) return;
-    if (payments.length === 0) {
-      notify.error('Registrá al menos un cobro');
-      return;
-    }
-    setSaving(true);
-    try {
-      await accountsReceivableGateway.registerCollection({
-        receivableIds: [account.id],
-        payments: payments.map((p) => ({
-          type: p.type,
-          paymentDate: p.paymentDate,
-          referenceNumber: p.referenceNumber || undefined,
-          bankCode: p.bankCode || undefined,
-          accountNumber: p.accountNumber || undefined,
-          exchangeRateId: p.exchangeRateId || undefined,
-          amountCurrency: p.amountCurrency,
-          amountValue: p.amountValue,
-        })),
-      });
-      notify.success('Cobro registrado');
-      setPayments([]);
-      await load();
-      onSaved();
-    } catch (err) {
-      notify.fromError(err, 'No se pudo registrar el cobro');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <FormSection
-      title="Crédito por cobrar"
-      description="Registrá los pagos del titular hasta completar el crédito USD."
-      headerAction={
-        account?.status === 'collected' || account?.status === 'overcollected' ? (
-          <Badge className="bg-success-soft text-success border-success/30">
-            {account.status === 'overcollected' ? 'Sobre-cobrado' : 'Cobrado'}
-          </Badge>
-        ) : account?.status === 'partially_collected' ? (
-          <Badge className="bg-brand-cyan-soft text-brand-blue-strong border-brand-cyan/30">
-            Parcial
-          </Badge>
-        ) : (
-          <Badge className="bg-warning-soft text-warning border-warning/30">
-            No cobrado
-          </Badge>
-        )
-      }
-    >
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Cargando crédito…</p>
-      ) : !account ? (
-        <p className="text-sm text-destructive">
-          No se encontró el crédito por cobrar para esta orden.
-        </p>
-      ) : account.status === 'collected' || account.status === 'overcollected' ? (
-        <p className="text-sm text-muted-foreground">
-          Este crédito ya fue saldado
-          {account.collectedAt
-            ? ` el ${new Date(account.collectedAt).toLocaleDateString('es-VE')}`
-            : ''}
-          . Para ver detalles, ingresá a Cuentas por cobrar.
-        </p>
-      ) : (
-        <>
-          <OrderPaymentForm
-            payments={payments}
-            onChange={setPayments}
-            usdRate={usdRate}
-            onEurRateLoaded={(r) =>
-              setEurRatesById((prev) =>
-                prev[r.id] ? prev : { ...prev, [r.id]: r },
-              )
-            }
-          />
-          {usdRate && (
-            <div className="grid grid-cols-2 gap-3 text-sm mt-4">
-              <div className="rounded-md border p-2 bg-muted/30">
-                <div className="text-xs text-muted-foreground">Total cobros</div>
-                <div className="font-mono">{totalPaymentsUsd.toFixed(2)} USD</div>
-              </div>
-              <div className="rounded-md border p-2 bg-muted/30">
-                <div className="text-xs text-muted-foreground">Tasa USD</div>
-                <div className="font-mono">
-                  1 USD = {Number(usdRate.amountBs).toFixed(2)} Bs.
-                </div>
-              </div>
-            </div>
-          )}
-          <div className="flex justify-end mt-4">
-            <Button
-              type="button"
-              onClick={onRegister}
-              disabled={saving || payments.length === 0 || !usdRate}
-            >
-              {saving ? 'Guardando…' : 'Registrar cobro'}
-            </Button>
-          </div>
-        </>
-      )}
-    </FormSection>
   );
 }
