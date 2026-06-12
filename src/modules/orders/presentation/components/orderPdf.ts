@@ -88,17 +88,21 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
   const stsRaw = (order.orderServiceTypes ?? []).filter(
     (row) => !!row.serviceTypeId,
   );
-  const detailRowsList: Array<{ name: string; priceBs: number }> =
+  const detailRowsList: Array<{ name: string; qty: number; unitBs: number; totalRowBs: number }> =
     stsRaw.length > 0
       ? stsRaw.map((row) => {
           const fx = priceFxForSt(row.serviceTypeId);
+          const unitBs = rateBs > 0 ? fx * rateBs : fx;
+          const qty = Math.max(1, Math.trunc(row.quantity ?? 1));
           return {
             name: row.serviceType?.name ?? '',
-            priceBs: rateBs > 0 ? fx * rateBs : fx,
+            qty,
+            unitBs,
+            totalRowBs: unitBs * qty,
           };
         })
-      : [{ name: '', priceBs }];
-  const sumStsBs = detailRowsList.reduce((acc, r) => acc + r.priceBs, 0);
+      : [{ name: '', qty: 1, unitBs: priceBs, totalRowBs: priceBs }];
+  const sumStsBs = detailRowsList.reduce((acc, r) => acc + r.totalRowBs, 0);
   const totalBs = sumStsBs > 0 ? sumStsBs : priceBs;
   const totalFx = rateBs > 0 ? totalBs / rateBs : priceFx;
 
@@ -230,11 +234,11 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
   const detailStartIdx = HEADER_ROW_IDX();
   detailRowsList.forEach((row) => {
     body.push([
-      { content: '01', styles: { halign: 'center' } },
+      { content: String(row.qty).padStart(2, '0'), styles: { halign: 'center' } },
       { content: order.orderNumber, styles: { halign: 'center' } },
       { content: row.name, styles: { halign: 'center' } },
-      { content: fmtMoney(row.priceBs), styles: { halign: 'center' } },
-      { content: fmtMoney(row.priceBs), styles: { halign: 'center' } },
+      { content: fmtMoney(row.unitBs), styles: { halign: 'center' } },
+      { content: fmtMoney(row.totalRowBs), styles: { halign: 'center' } },
     ]);
   });
   const detailEndIdx = HEADER_ROW_IDX();

@@ -322,28 +322,32 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
   const stsRaw = (order.orderServiceTypes ?? []).filter(
     (row) => !!row.serviceTypeId,
   );
-  const detailRows: Array<{ name: string; priceBs: number }> =
+  const detailRows: Array<{ name: string; qty: number; unitBs: number; totalRowBs: number }> =
     stsRaw.length > 0
       ? stsRaw.map((row) => {
           const fx = priceFxForSt(row.serviceTypeId);
+          const unitBs = rateBs > 0 ? fx * rateBs : fx;
+          const qty = Math.max(1, Math.trunc(row.quantity ?? 1));
           return {
             name: row.serviceType?.name ?? '',
-            priceBs: rateBs > 0 ? fx * rateBs : fx,
+            qty,
+            unitBs,
+            totalRowBs: unitBs * qty,
           };
         })
-      : [{ name: '', priceBs }];
-  const sumStsBs = detailRows.reduce((acc, r) => acc + r.priceBs, 0);
+      : [{ name: '', qty: 1, unitBs: priceBs, totalRowBs: priceBs }];
+  const sumStsBs = detailRows.reduce((acc, r) => acc + r.totalRowBs, 0);
   const totalBs = sumStsBs > 0 ? sumStsBs : priceBs;
   const totalFx = rateBs > 0 ? totalBs / rateBs : priceFx;
   const detailStart = 13;
   detailRows.forEach((row, i) => {
     const r = ws.getRow(detailStart + i);
-    r.getCell(1).value = '01';
+    r.getCell(1).value = String(row.qty).padStart(2, '0');
     r.getCell(2).value = order.orderNumber;
     r.getCell(3).value = row.name;
-    r.getCell(4).value = row.priceBs;
+    r.getCell(4).value = row.unitBs;
     r.getCell(4).numFmt = '#,##0.00';
-    r.getCell(5).value = row.priceBs;
+    r.getCell(5).value = row.totalRowBs;
     r.getCell(5).numFmt = '#,##0.00';
     for (let c = 1; c <= 5; c++) {
       const cell = r.getCell(c);
