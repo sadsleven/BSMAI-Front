@@ -46,18 +46,25 @@ export function FileDropzone({
   const [opening, setOpening] = useState<Record<string, boolean>>({});
   const inputRef = useRef<HTMLInputElement | null>(null);
 
+  // `onChange` en ref: así un callback inline del padre no recrea `refresh` ni
+  // dispara un refetch en bucle. Se mantiene siempre apuntando al último.
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  });
+
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
       const list = await filesGateway.list(ownerType, ownerId, kind);
       setFiles(list);
-      onChange?.(list);
+      onChangeRef.current?.(list);
     } catch (err) {
       notify.error(getHttpErrorMessage(err, 'No se pudieron cargar los archivos'));
     } finally {
       setLoading(false);
     }
-  }, [ownerType, ownerId, kind, onChange]);
+  }, [ownerType, ownerId, kind]);
 
   useEffect(() => {
     void refresh();

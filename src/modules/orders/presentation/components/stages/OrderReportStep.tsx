@@ -90,7 +90,19 @@ export function OrderReportStep({
   const [obs, setObs] = useState<Record<string, string>>(() =>
     deriveObservations(order),
   );
+  // Conteo de archivos por proveedor (keyed igual que `providers`), alimentado
+  // por el `onChange` de cada FileDropzone. Habilita guardar si hay archivo.
+  const [fileCounts, setFileCounts] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState(false);
+
+  // Proveedor: requiere al menos una observación con texto O un archivo subido
+  // en alguno de sus segmentos para poder guardar el informe. Staff sin tope.
+  const canSubmit = useMemo(() => {
+    if (!isProvider) return true;
+    return providers.some(
+      (p) => (obs[p.key] ?? '').trim() !== '' || (fileCounts[p.key] ?? 0) > 0,
+    );
+  }, [isProvider, providers, obs, fileCounts]);
 
   const onSubmit = async () => {
     setSaving(true);
@@ -217,6 +229,9 @@ export function OrderReportStep({
                   kind={orderReportProviderKind(p.type, p.id)}
                   accept={ACCEPT}
                   readOnly={!isProvider}
+                  onChange={(files) =>
+                    setFileCounts((prev) => ({ ...prev, [p.key]: files.length }))
+                  }
                 />
               </div>
             </div>
@@ -224,14 +239,21 @@ export function OrderReportStep({
         </div>
       )}
 
-      <div className="flex justify-end gap-2 flex-wrap">
-        <Button type="button" onClick={onSubmit} disabled={saving}>
-          {saving
-            ? 'Guardando…'
-            : onAdvance
-              ? 'Guardar informe y continuar a facturación'
-              : 'Guardar informe'}
-        </Button>
+      <div className="flex flex-col items-end gap-1.5">
+        {isProvider && !canSubmit ? (
+          <p className="text-xs text-muted-foreground">
+            Ingresá una observación o subí un archivo para guardar.
+          </p>
+        ) : null}
+        <div className="flex justify-end gap-2 flex-wrap">
+          <Button type="button" onClick={onSubmit} disabled={saving || !canSubmit}>
+            {saving
+              ? 'Guardando…'
+              : onAdvance
+                ? 'Guardar informe y continuar a facturación'
+                : 'Guardar informe'}
+          </Button>
+        </div>
       </div>
     </div>
   );

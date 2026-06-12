@@ -2,6 +2,7 @@ import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import type { Order, OrderServiceTypeRow } from '../../domain/models/order';
 import { holderDisplayName } from '../../domain/models/order';
+import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
 
 const COMPANY = {
   name: 'ATENCIÓN MÉDICA AFMI',
@@ -53,6 +54,38 @@ async function loadLogoBuffer(): Promise<ArrayBuffer | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Tasa USD/Bs para la factura: la más reciente vigente al momento de CREAR la
+ * orden, indiferente de la tasa al facturar/cobrar/pagar proveedores. Órdenes
+ * con tasa fija usan su snapshot. Fallback: tasa de facturación legada, sino 0
+ * (los montos quedan sin convertir, comportamiento previo).
+ */
+export async function resolveCreationRateBs(order: Order): Promise<number> {
+  if (order.useFixedRate && order.fixedExchangeRate) {
+    const fixed = Number(order.fixedExchangeRate.amountBs) || 0;
+    if (fixed > 0) return fixed;
+  }
+  const at = order.createdAt ?? order.orderDate;
+  try {
+    const { data } = await exchangeRateGateway.list({
+      currency: 'USD',
+      effectiveDateTo: at,
+      isActive: true,
+      sortBy: 'effectiveDate',
+      sortDir: 'DESC',
+      page: 1,
+      limit: 1,
+    });
+    const rate = Number(data[0]?.amountBs) || 0;
+    if (rate > 0) return rate;
+  } catch {
+    // sin acceso a tasas — cae al fallback
+  }
+  return order.billingExchangeRate
+    ? Number(order.billingExchangeRate.amountBs) || 0
+    : 0;
 }
 
 export interface OrderProviderGroup {
@@ -119,10 +152,8 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
   const condicionesPago =
     order.type === 'cash' ? 'CONTADO' : 'CREDITO';
 
-  // Conversión a Bs vía tasa registrada al facturar
-  const rateBs = order.billingExchangeRate
-    ? Number(order.billingExchangeRate.amountBs) || 0
-    : 0;
+  // Conversión a Bs vía tasa más reciente vigente al crear la orden
+  const rateBs = await resolveCreationRateBs(order);
   const priceFx = Number(order.priceAmount) || 0;
   const priceBs = rateBs > 0 ? priceFx * rateBs : priceFx;
   const currencySymbol = '$';
@@ -163,19 +194,25 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
     c4c.alignment = wrapLeft;
   }
 
-  // R5 — Dirección fiscal (solo seguro)
+  // R5 — Dirección fiscal (solo seguro) — valor mergeado C:E
   if (isInsurance) {
+    const fiscalAddress = order.insurance?.fiscalAddress ?? '';
     const c5a = ws.getCell('A5');
     c5a.value = 'Dirección Fiscal :';
     c5a.font = DEFAULT_FONT;
     c5a.alignment = { horizontal: 'left', vertical: 'top' };
+    ws.mergeCells('C5:E5');
     const c5c = ws.getCell('C5');
-    c5c.value = order.insurance?.fiscalAddress ?? '';
+    c5c.value = fiscalAddress;
     c5c.font = DEFAULT_FONT;
     c5c.alignment = wrapLeftTop;
+    // Excel no auto-ajusta filas con celdas mergeadas: altura explícita.
+    // Merge C:E ≈ 62 unidades de ancho ≈ 78 chars en Calibri 10.
+    const addressLines = Math.max(1, Math.ceil(fiscalAddress.length / 78));
+    ws.getRow(5).height = 2.25 + addressLines * 13.5;
   }
 
-  // R6 — RIF + Teléfono (solo seguro)
+  // R6 — RIF + Teléfono (solo seguro) — teléfono mergeado D:E
   if (isInsurance) {
     const c6a = ws.getCell('A6');
     c6a.value = 'Rif ó CI:';
@@ -185,20 +222,22 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
     c6c.value = order.insurance?.rif ?? '';
     c6c.font = DEFAULT_FONT;
     c6c.alignment = wrapLeft;
+    ws.mergeCells('D6:E6');
     const c6d = ws.getCell('D6');
     c6d.value = insurancePhone ? `Teléfono:(${insurancePhone})` : 'Teléfono:';
     c6d.font = SMALL_FONT;
     c6d.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
   }
 
-  // R7 — Contratante (solo seguro)
+  // R7 — Contratante (solo seguro). Seguro directo al paciente → el titular.
   if (isInsurance) {
     const c7a = ws.getCell('A7');
     c7a.value = 'Contratante:';
     c7a.font = DEFAULT_FONT;
     c7a.alignment = { horizontal: 'left', vertical: 'top' };
     const c7c = ws.getCell('C7');
-    c7c.value = order.contractor?.name ?? '';
+    c7c.value =
+      order.insuranceSource === 'direct' ? holder : order.contractor?.name ?? '';
     c7c.font = SMALL_FONT;
     c7c.alignment = wrapLeftTop;
   }
@@ -212,6 +251,7 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
   c8c.value = holder;
   c8c.font = SMALL_FONT;
   c8c.alignment = wrapLeftTop;
+  ws.mergeCells('D8:E8');
   const c8d = ws.getCell('D8');
   c8d.value = `Rif ó CI: ${holderCi}`;
   c8d.font = DEFAULT_FONT;
@@ -226,6 +266,7 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
   c9c.value = patient;
   c9c.font = SMALL_FONT;
   c9c.alignment = wrapLeftTop;
+  ws.mergeCells('D9:E9');
   const c9d = ws.getCell('D9');
   c9d.value = `Rif ó CI: ${patientCi}`;
   c9d.font = DEFAULT_FONT;

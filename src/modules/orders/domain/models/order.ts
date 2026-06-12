@@ -148,6 +148,12 @@ export interface Order {
   otherStudies?: string | null;
   /** Observaciones del informe segmentadas por proveedor (Paso 3). */
   providerReports?: OrderProviderReportRow[];
+  /**
+   * Sólo presente en la lista para usuarios proveedor: indica si SU propia
+   * observación (Paso 3) ya está completa. El estado mostrado al proveedor se
+   * deriva de este flag, no del `status` global de la orden.
+   */
+  providerObservationComplete?: boolean;
   doctorAmount?: string | number | null;
   billingExchangeRateId?: string | null;
   billingExchangeRate?: {
@@ -236,6 +242,7 @@ export interface OrderPaymentInput {
   bankCode?: string;
   exchangeRateId?: string;
   accountNumber?: string;
+  paymentAccountId?: string;
   amountCurrency: PaymentCurrency;
   amountValue: number;
 }

@@ -19,7 +19,7 @@ import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import { formatMoney } from '@/lib/format/money';
+import { formatMoney, formatBs } from '@/lib/format/money';
 import { orderGateway } from '@/modules/orders/infrastructure/orderGateway';
 import { dashboardGateway } from '@/modules/dashboard/infrastructure/dashboardGateway';
 import {
@@ -300,7 +300,7 @@ export function DashboardPage() {
   const collected = useAmountUsd(canListAr, dashboardGateway.collectedMonthUsd);
   const arTotal = useAmountUsd(canListAr, dashboardGateway.receivableTotalUsd);
   const apTotal = useAmountUsd(canListAp, dashboardGateway.payableTotalUsd);
-  const tpTotal = useAmountUsd(canListTp, dashboardGateway.taxesPayableTotalUsd);
+  const tpTotal = useAmountUsd(canListTp, dashboardGateway.taxesPayableTotalBs);
   const recent = useRecentOrders(canListOrders);
   const upcoming = useUpcomingAppointments(canListOrders);
 
@@ -389,7 +389,7 @@ export function DashboardPage() {
         {canListTp ? (
           <KpiCard
             label="Retenciones por pagar"
-            value={tpTotal.value === null ? null : `$ ${formatUsd(tpTotal.value)}`}
+            value={tpTotal.value === null ? null : formatBs(tpTotal.value)}
             icon={Landmark}
             tone="amber"
             loading={tpTotal.loading}

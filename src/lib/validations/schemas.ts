@@ -738,8 +738,16 @@ const PAYMENT_TYPES_ORDER = [
  * de AFMI (`paymentAccountId`) para los tipos mobile_payment/bank_transfer/other.
  * Aplica a pagos ENTRANTES (órdenes, cuentas por cobrar). Los flujos de EGRESO
  * (cuentas por pagar, retenciones) no usan cuenta propia → `false`.
+ *
+ * `requireBsRate` (def true) exige `exchangeRateId` en pagos BS
+ * (mobile_payment/bank_transfer/cash_bs y `other` en BS) para snapshotear la
+ * tasa USD/Bs. Las retenciones se pagan al SENIAT en Bs fijos sin conversión →
+ * `false` (no se pide tasa).
  */
-function makeOrderPaymentSchema(requirePaymentAccount: boolean) {
+function makeOrderPaymentSchema(
+  requirePaymentAccount: boolean,
+  requireBsRate = true,
+) {
   return z
     .object({
       id: z.string().uuid().optional(),
@@ -776,7 +784,7 @@ function makeOrderPaymentSchema(requirePaymentAccount: boolean) {
             path: ['referenceNumber'],
             message: 'Referencia requerida',
           });
-        if (!trim(val.exchangeRateId))
+        if (requireBsRate && !trim(val.exchangeRateId))
           ctx.addIssue({
             code: 'custom',
             path: ['exchangeRateId'],
@@ -789,7 +797,7 @@ function makeOrderPaymentSchema(requirePaymentAccount: boolean) {
             message: 'Debe ser BS',
           });
       } else if (val.type === 'cash_bs') {
-        if (!trim(val.exchangeRateId))
+        if (requireBsRate && !trim(val.exchangeRateId))
           ctx.addIssue({
             code: 'custom',
             path: ['exchangeRateId'],
@@ -829,7 +837,8 @@ function makeOrderPaymentSchema(requirePaymentAccount: boolean) {
             message: 'Referencia requerida',
           });
         if (
-          (val.amountCurrency === 'BS' || val.amountCurrency === 'EUR') &&
+          ((val.amountCurrency === 'BS' && requireBsRate) ||
+            val.amountCurrency === 'EUR') &&
           !trim(val.exchangeRateId)
         ) {
           ctx.addIssue({
@@ -844,8 +853,13 @@ function makeOrderPaymentSchema(requirePaymentAccount: boolean) {
 
 /** Pagos ENTRANTES (órdenes, cuentas por cobrar): requieren cuenta propia. */
 export const orderPaymentSchema = makeOrderPaymentSchema(true);
-/** Pagos de EGRESO (cuentas por pagar, retenciones): sin cuenta propia. */
+/** Pagos de EGRESO a proveedores (cuentas por pagar): sin cuenta propia, con tasa. */
 export const egressPaymentSchema = makeOrderPaymentSchema(false);
+/**
+ * Pagos de RETENCIONES al SENIAT: Bs fijos, sin cuenta propia y sin tasa
+ * (el monto ya está denominado en Bs por la retención).
+ */
+export const taxPaymentSchema = makeOrderPaymentSchema(false, false);
 export type OrderPaymentValues = z.infer<typeof orderPaymentSchema>;
 
 export const orderSchema = z

@@ -90,6 +90,16 @@ export type OrderPaymentFormProps = {
    * de bancos del beneficiario en lugar de cuentas propias.
    */
   usePaymentAccount?: boolean;
+  /**
+   * Restringe los tipos de pago seleccionables por fila y en los botones
+   * internos. Default: todos. Retenciones (Bs fijos) pasan solo tipos en BS.
+   */
+  allowedTypes?: OrderPaymentType[];
+  /**
+   * Oculta el campo de solo lectura "Tasa de cambio". Útil cuando el pago es
+   * en Bs fijos sin conversión (retenciones al SENIAT).
+   */
+  hideExchangeRate?: boolean;
 };
 
 function defaultsForType(
@@ -133,6 +143,8 @@ export function OrderPaymentForm({
   methodInfo,
   onRemovePayment,
   usePaymentAccount = true,
+  allowedTypes = ALL_TYPES,
+  hideExchangeRate = false,
 }: OrderPaymentFormProps) {
   const [banks, setBanks] = useState<Bank[]>([]);
   const [eurRate, setEurRate] = useState<ExchangeRate | null>(null);
@@ -258,7 +270,7 @@ export function OrderPaymentForm({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {ALL_TYPES.map((t) => (
+                        {allowedTypes.map((t) => (
                           <SelectItem key={t} value={t}>
                             {PAYMENT_TYPE_LABEL[t]}
                           </SelectItem>
@@ -291,7 +303,7 @@ export function OrderPaymentForm({
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {!isUsd && !isOther ? (
+                  {!isUsd && !isOther && !hideExchangeRate ? (
                     <div className="space-y-1">
                       <Label className="text-xs">Tasa de cambio</Label>
                       <Input
@@ -531,7 +543,7 @@ export function OrderPaymentForm({
 
       {hideAddButtons ? null : (
         <div className="flex flex-wrap gap-2">
-          {ALL_TYPES.map((t) => (
+          {allowedTypes.map((t) => (
             <Button
               key={t}
               type="button"

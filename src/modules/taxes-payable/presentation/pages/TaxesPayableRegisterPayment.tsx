@@ -14,14 +14,11 @@ import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { getHttpErrorMessage } from '@/lib/api';
 import { formatMoney } from '@/lib/format/money';
-import { egressPaymentSchema, type OrderPaymentValues } from '@/lib/validations/schemas';
+import { taxPaymentSchema, type OrderPaymentValues } from '@/lib/validations/schemas';
 import {
   OrderPaymentForm,
-  paymentInBs,
   type PaymentItemErrors,
 } from '@/modules/orders/presentation/components/OrderPaymentForm';
-import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchangeRate';
-import { UsdRateSelect } from '@/modules/exchange-rates/presentation/components/UsdRateSelect';
 import { taxesPayableGateway } from '../../infrastructure/taxesPayableGateway';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -38,19 +35,17 @@ import {
 } from '@/modules/orders/domain/models/order';
 
 const registerPaymentSchema = z.object({
-  payments: z.array(egressPaymentSchema).min(1, 'Registrá al menos un pago'),
+  payments: z.array(taxPaymentSchema).min(1, 'Registrá al menos un pago'),
 });
 type RegisterPaymentValues = z.infer<typeof registerPaymentSchema>;
 
 type LocationState = { taxPayableIds?: string[] } | null;
 
+// La retención se entrega al SENIAT en Bs fijos → solo métodos en Bs, sin tasa.
 const STANDARD_TYPES: OrderPaymentType[] = [
   'mobile_payment',
   'bank_transfer',
-  'cash_usd',
-  'cash_eur',
   'cash_bs',
-  'other',
 ];
 
 export function TaxesPayableRegisterPayment() {
@@ -65,7 +60,6 @@ export function TaxesPayableRegisterPayment() {
 
   const [accounts, setAccounts] = useState<TaxPayable[]>([]);
   const [loading, setLoading] = useState(true);
-  const [eurRatesById, setEurRatesById] = useState<Record<string, ExchangeRate>>({});
 
   const methods = useForm<RegisterPaymentValues>({
     resolver: zodResolver(registerPaymentSchema),
@@ -73,20 +67,6 @@ export function TaxesPayableRegisterPayment() {
     defaultValues: { payments: [] },
   });
   const { handleSubmit, formState, control, setValue, getValues } = methods;
-
-  // La conversión USD→Bs usa la tasa de facturación de la orden (igual que el
-  // backend). El impuesto está denominado en Bs; la tasa no es editable.
-  const usdRate = useMemo<ExchangeRate | null>(() => {
-    const fr = accounts[0]?.orders?.[0]?.billingExchangeRate;
-    if (!fr) return null;
-    return {
-      id: fr.id,
-      currency: fr.currency,
-      amountBs: String(fr.amountBs),
-      effectiveDate: fr.effectiveDate,
-      isActive: true,
-    };
-  }, [accounts]);
 
   const load = useCallback(async () => {
     if (taxPayableIds.length === 0) {
@@ -206,23 +186,17 @@ export function TaxesPayableRegisterPayment() {
 
   const todayIso = new Date().toISOString().slice(0, 10);
 
-  const paymentDefaults = (type: OrderPaymentType): OrderPaymentValues => {
-    const base = {
-      type,
-      paymentDate: todayIso,
-      referenceNumber: '',
-      bankCode: '',
-      exchangeRateId: '',
-      accountNumber: '',
-      amountValue: 0,
-    };
-    if (type === 'mobile_payment' || type === 'bank_transfer' || type === 'cash_bs') {
-      return { ...base, exchangeRateId: usdRate?.id ?? '', amountCurrency: 'BS' };
-    }
-    if (type === 'cash_usd') return { ...base, amountCurrency: 'USD' };
-    if (type === 'cash_eur') return { ...base, amountCurrency: 'EUR' };
-    return { ...base, amountCurrency: 'USD' };
-  };
+  // Solo métodos en Bs: la retención se paga al SENIAT en bolívares fijos.
+  const paymentDefaults = (type: OrderPaymentType): OrderPaymentValues => ({
+    type,
+    paymentDate: todayIso,
+    referenceNumber: '',
+    bankCode: '',
+    exchangeRateId: '',
+    accountNumber: '',
+    amountValue: 0,
+    amountCurrency: 'BS',
+  });
 
   const addStandardPayment = (type: OrderPaymentType) => {
     const next = [...(getValues('payments') ?? []), paymentDefaults(type)];
@@ -239,17 +213,12 @@ export function TaxesPayableRegisterPayment() {
   };
 
   const watchedPayments = methods.watch('payments') ?? [];
-  const lookupRate = (id: string): ExchangeRate | null =>
-    eurRatesById[id] ?? (usdRate && usdRate.id === id ? usdRate : null);
-  const totalPaymentsBs = useMemo(() => {
-    return watchedPayments.reduce(
-      (sum, p) => sum + paymentInBs(p, usdRate, lookupRate),
-      0,
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [watchedPayments, usdRate, eurRatesById]);
-  // Diferencia en vivo: el target es Bs y cada pago se convierte a Bs con su
-  // propia tasa, así que el faltante en Bs es exacto aunque mezclen tasas.
+  // Todos los pagos son en Bs fijos → el total es la suma directa de montos.
+  const totalPaymentsBs = useMemo(
+    () => watchedPayments.reduce((sum, p) => sum + Number(p.amountValue || 0), 0),
+    [watchedPayments],
+  );
+  // Diferencia en vivo: target y pagos están en Bs, el faltante es exacto.
   const liveRemainingBs = totals.totalPending - totalPaymentsBs;
 
   const onSubmit = async (values: RegisterPaymentValues) => {
@@ -527,16 +496,13 @@ export function TaxesPayableRegisterPayment() {
                   <OrderPaymentForm
                     payments={(field.value ?? []) as OrderPaymentValues[]}
                     onChange={(next) => field.onChange(next)}
-                    usdRate={usdRate}
-                    onEurRateLoaded={(r) =>
-                      setEurRatesById((prev) =>
-                        prev[r.id] ? prev : { ...prev, [r.id]: r },
-                      )
-                    }
+                    usdRate={null}
                     errors={paymentsErrors}
                     hideAddButtons
                     onRemovePayment={removePaymentAt}
                     usePaymentAccount={false}
+                    allowedTypes={STANDARD_TYPES}
+                    hideExchangeRate
                   />
                 );
               }}
@@ -556,26 +522,10 @@ export function TaxesPayableRegisterPayment() {
               ))}
             </div>
 
-            {usdRate ? (
-              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                <div className="rounded-md border p-2 bg-muted/30">
-                  <div className="text-xs text-muted-foreground">Total pagos</div>
-                  <div className="font-mono">{formatMoney(totalPaymentsBs)} Bs.</div>
-                </div>
-                <UsdRateSelect
-                  rates={usdRate ? [usdRate] : []}
-                  selectedId={usdRate?.id ?? ''}
-                  onSelect={() => {}}
-                  disabled
-                  label="Tasa de facturación"
-                  lockNote="Tasa de la orden — el impuesto está en Bs."
-                />
-              </div>
-            ) : (
-              <p className="mt-4 text-xs italic text-muted-foreground">
-                Sin tasa USD activa: registrá una en /exchange-rates antes de continuar.
-              </p>
-            )}
+            <div className="mt-4 rounded-md border p-2 bg-muted/30 text-sm w-fit">
+              <div className="text-xs text-muted-foreground">Total pagos</div>
+              <div className="font-mono">{formatMoney(totalPaymentsBs)} Bs.</div>
+            </div>
           </FormSection>
 
           <div className="flex items-center justify-between gap-3 pt-2 flex-wrap">
@@ -595,7 +545,6 @@ export function TaxesPayableRegisterPayment() {
                 disabled={
                   formState.isSubmitting ||
                   !grouping.ok ||
-                  !usdRate ||
                   watchedPayments.length === 0
                 }
               >

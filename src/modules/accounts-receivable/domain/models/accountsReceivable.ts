@@ -69,6 +69,7 @@ export interface RegisterCollectionInput {
   bankCode?: string;
   accountNumber?: string;
   exchangeRateId?: string;
+  paymentAccountId?: string;
   amountCurrency: PaymentCurrency;
   amountValue: number;
 }

@@ -300,6 +300,7 @@ export function AccountsReceivableRegisterCollection() {
           bankCode: p.bankCode || undefined,
           accountNumber: p.accountNumber || undefined,
           exchangeRateId: p.exchangeRateId || undefined,
+          paymentAccountId: p.paymentAccountId || undefined,
           amountCurrency: p.amountCurrency,
           amountValue: p.amountValue,
         })),

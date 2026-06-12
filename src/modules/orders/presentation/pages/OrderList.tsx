@@ -92,6 +92,21 @@ function StatusBadge({ status }: { status: OrderStatus }) {
   );
 }
 
+// Estado visto por el usuario proveedor: su propia observación (Paso 3), no el
+// estado global de la orden. Completa = campo libre lleno (archivos opcionales).
+function ProviderObservationBadge({ complete }: { complete: boolean }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium',
+        complete ? 'bg-success-soft text-success' : 'bg-warning-soft text-warning',
+      )}
+    >
+      {complete ? 'Observación completada' : 'Observación pendiente'}
+    </span>
+  );
+}
+
 export function OrderList() {
   const { orders, metadata, isLoading, error, setQuery, fetch, remove } = useOrderStore();
   const { has } = usePermissions();
@@ -488,7 +503,13 @@ export function OrderList() {
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm">{providerOf(order)}</TableCell>
                     <TableCell className="py-3.5 px-4">
-                      <StatusBadge status={order.status} />
+                      {isProvider ? (
+                        <ProviderObservationBadge
+                          complete={!!order.providerObservationComplete}
+                        />
+                      ) : (
+                        <StatusBadge status={order.status} />
+                      )}
                     </TableCell>
                     {!isProvider ? (
                       <TableCell className="py-3.5 px-4 text-sm font-mono">

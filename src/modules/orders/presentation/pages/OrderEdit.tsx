@@ -75,6 +75,7 @@ function buildDto(values: OrderValues): CreateOrderDto {
       bankCode: p.bankCode || undefined,
       exchangeRateId: p.exchangeRateId || undefined,
       accountNumber: p.accountNumber || undefined,
+      paymentAccountId: p.paymentAccountId || undefined,
       amountCurrency: p.amountCurrency,
       amountValue: p.amountValue,
     })),
@@ -154,6 +155,10 @@ export function OrderEdit() {
       try {
         const order = await fetchOrder();
         if (!order) return;
+        // Usuario proveedor: vista mínima (sólo su informe). No carga holder/
+        // paciente ni resetea el form — esas consultas requieren permisos de
+        // pacientes/STs que el proveedor no tiene ("Permisos insuficientes").
+        if (providerLink) return;
         const [h, p] = await Promise.all([
           patientGateway.getById(order.holderId),
           order.patientId === order.holderId

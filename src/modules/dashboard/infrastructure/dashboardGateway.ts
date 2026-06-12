@@ -9,6 +9,11 @@ export interface AmountUsdResponse {
   currency: 'USD';
 }
 
+export interface AmountBsResponse {
+  amount: number;
+  currency: 'BS';
+}
+
 export const dashboardGateway = {
   async patientsActiveCount(): Promise<CountResponse> {
     const { data } = await api.get<CountResponse>('/dashboard/patients-active-count');
@@ -38,8 +43,8 @@ export const dashboardGateway = {
     const { data } = await api.get<AmountUsdResponse>('/dashboard/payable-total-usd');
     return data;
   },
-  async taxesPayableTotalUsd(): Promise<AmountUsdResponse> {
-    const { data } = await api.get<AmountUsdResponse>('/dashboard/taxes-payable-total-usd');
+  async taxesPayableTotalBs(): Promise<AmountBsResponse> {
+    const { data } = await api.get<AmountBsResponse>('/dashboard/taxes-payable-total-bs');
     return data;
   },
 };

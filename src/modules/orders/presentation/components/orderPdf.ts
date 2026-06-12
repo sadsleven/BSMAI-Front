@@ -3,7 +3,7 @@ import autoTable from 'jspdf-autotable';
 import { saveAs } from 'file-saver';
 import type { Order } from '../../domain/models/order';
 import { holderDisplayName } from '../../domain/models/order';
-import type { OrderProviderGroup } from './orderExcel';
+import { resolveCreationRateBs, type OrderProviderGroup } from './orderExcel';
 import { formatMoney } from '@/lib/format/money';
 
 const COMPANY = {
@@ -70,9 +70,8 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
   const patientCi = holderId(order.patient);
   const condicionesPago = order.type === 'cash' ? 'CONTADO' : 'CREDITO';
 
-  const rateBs = order.billingExchangeRate
-    ? Number(order.billingExchangeRate.amountBs) || 0
-    : 0;
+  // Conversión a Bs vía tasa más reciente vigente al crear la orden
+  const rateBs = await resolveCreationRateBs(order);
   const priceFx = Number(order.priceAmount) || 0;
   const priceBs = rateBs > 0 ? priceFx * rateBs : priceFx;
   const currencySymbol = '$';
@@ -144,50 +143,50 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
       '',
       '',
     ]);
-    // R5 — Dirección fiscal
+    // R5 — Dirección fiscal (valor abarca C:E)
     body.push([
       'Dirección Fiscal :',
       '',
-      order.insurance?.fiscalAddress ?? '',
-      '',
-      '',
+      { content: order.insurance?.fiscalAddress ?? '', colSpan: 3 },
     ]);
-    // R6 — RIF + Teléfono
+    // R6 — RIF + Teléfono (teléfono abarca D:E)
     body.push([
       'Rif ó CI:',
       '',
       order.insurance?.rif ?? '',
       {
         content: insurancePhone ? `Teléfono:(${insurancePhone})` : 'Teléfono:',
+        colSpan: 2,
         styles: { fontSize: 8 },
       },
-      '',
     ]);
-    // R7 — Contratante
+    // R7 — Contratante. Seguro directo al paciente → el titular.
     body.push([
       'Contratante:',
       '',
-      { content: order.contractor?.name ?? '', styles: { fontSize: 8 } },
+      {
+        content:
+          order.insuranceSource === 'direct' ? holder : order.contractor?.name ?? '',
+        styles: { fontSize: 8 },
+      },
       '',
       '',
     ]);
   }
 
-  // R8 — Titular
+  // R8 — Titular (Rif abarca D:E)
   body.push([
     { content: 'Nombre del Titular:', styles: { fontSize: 8 } },
     '',
     { content: holder, styles: { fontSize: 8 } },
-    `Rif ó CI: ${holderCi}`,
-    '',
+    { content: `Rif ó CI: ${holderCi}`, colSpan: 2 },
   ]);
-  // R9 — Paciente
+  // R9 — Paciente (Rif abarca D:E)
   body.push([
     { content: 'Nombre del Paciente:', styles: { fontSize: 8 } },
     '',
     { content: patient, styles: { fontSize: 8 } },
-    `Rif ó CI: ${patientCi}`,
-    '',
+    { content: `Rif ó CI: ${patientCi}`, colSpan: 2 },
   ]);
 
   if (isInsurance) {

@@ -60,6 +60,7 @@ function buildDto(values: OrderValues): CreateOrderDto {
       bankCode: p.bankCode || undefined,
       exchangeRateId: p.exchangeRateId || undefined,
       accountNumber: p.accountNumber || undefined,
+      paymentAccountId: p.paymentAccountId || undefined,
       amountCurrency: p.amountCurrency,
       amountValue: p.amountValue,
     })),
