@@ -26,10 +26,10 @@ import {
   targetUsd as arTargetUsd,
 } from '@/modules/accounts-receivable/domain/models/accountsReceivable';
 import {
-  paidUsd as apPaidUsd,
+  pendingUsd as apPendingUsd,
   recipientName,
-  amountToReceiveUsd as apTargetUsd,
 } from '@/modules/accounts-payable/domain/models/accountsPayable';
+import { useTaxUnit } from '@/lib/taxes/useTaxUnit';
 import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { formatUsd, formatNumber, daysBetween } from '../../domain/format';
@@ -74,6 +74,8 @@ export function ReportAging() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [overCap, setOverCap] = useState(false);
+  const { taxUnit } = useTaxUnit();
+  const taxUnitBs = taxUnit ? Number(taxUnit.amountBs) : null;
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -153,9 +155,8 @@ export function ReportAging() {
       });
     } else {
       apRows.forEach((ap) => {
-        const tgt = apTargetUsd(ap) ?? 0;
-        const paid = apPaidUsd(ap);
-        const pending = Math.max(0, tgt - paid);
+        // Pendiente contra el NETO (bruto − retención SENIAT); paid → 0.
+        const pending = apPendingUsd(ap, taxUnitBs) ?? 0;
         if (pending <= 0.01) return;
         const days = daysBetween(ap.createdAt ?? new Date().toISOString());
         const b = bucketize(days);
@@ -183,7 +184,7 @@ export function ReportAging() {
     const s = filters.search.toLowerCase().trim();
     const filtered = s ? result.filter((r) => r.name.toLowerCase().includes(s)) : result;
     return filtered.sort((a, b) => b.total - a.total);
-  }, [arRows, apRows, filters.mode, filters.search]);
+  }, [arRows, apRows, filters.mode, filters.search, taxUnitBs]);
 
   const totals = useMemo(() => {
     let b0_30 = 0;

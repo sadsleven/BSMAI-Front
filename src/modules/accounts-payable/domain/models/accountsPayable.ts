@@ -3,6 +3,10 @@ import type {
   OrderPaymentType,
   PaymentCurrency,
 } from '@/modules/orders/domain/models/order';
+import {
+  calcRetention,
+  type SeniatPersonType,
+} from '@/lib/taxes/seniatRetention';
 
 export type AccountsPayableStatus = 'paid' | 'unpaid' | 'partially_paid';
 /** Status derivado en FE: incluye `undefined` cuando la orden aún no tiene providerAmount. */
@@ -146,9 +150,51 @@ export function groupPaidBs(accounts: AccountsPayable[]): number {
   return Math.round(total * 100) / 100;
 }
 
-/** Pendiente USD bruto. Nunca negativo. */
-export function pendingUsd(a: AccountsPayable): number | null {
-  const t = amountToReceiveUsd(a);
-  if (t === null) return null;
-  return Math.max(0, t - paidUsd(a));
+/** Régimen fiscal SENIAT del destinatario (espejo de BE `resolvePersonType`). */
+export function personTypeOf(a: AccountsPayable): SeniatPersonType {
+  if (a.recipientType === 'care_center') return 'legal_entity';
+  return a.doctor?.isLegalEntity ? 'legal_entity' : 'natural';
+}
+
+/** Tasa USD/Bs de facturación de la orden. Null si aún no está facturada. */
+export function billingRateBs(a: AccountsPayable): number | null {
+  const r = Number(a.order?.billingExchangeRate?.amountBs);
+  return Number.isFinite(r) && r > 0 ? r : null;
+}
+
+/**
+ * Neto USD estimado a entregar al proveedor (= bruto − retención SENIAT),
+ * espejo del cálculo BE al registrar el pago. Exacto para pagos de una sola
+ * cuenta; en lotes PNR el sustraendo aplica una vez por lote (acá se estima
+ * por cuenta). Null sin providerAmount, tasa de facturación o UT.
+ */
+export function estimatedNetUsd(
+  a: AccountsPayable,
+  taxUnitBs: number | null | undefined,
+): number | null {
+  const gross = amountToReceiveUsd(a);
+  if (gross === null) return null;
+  const rate = billingRateBs(a);
+  const ut = Number(taxUnitBs ?? 0);
+  if (!rate || !Number.isFinite(ut) || ut <= 0) return null;
+  const grossBs = Math.round(gross * rate * 100) / 100;
+  const r = calcRetention({ grossBs, personType: personTypeOf(a), taxUnitBs: ut });
+  const netBs = Math.round((grossBs - r.taxAmountBs) * 100) / 100;
+  return Math.round((netBs / rate) * 100) / 100;
+}
+
+/**
+ * Falta por pagar USD. El proveedor recibe el NETO (bruto − retención SENIAT),
+ * por eso el pendiente se mide contra el neto estimado cuando hay UT y tasa;
+ * sin esos datos cae al bruto. Cuenta `paid` → 0 (BE ya cuadró contra el neto).
+ * Nunca negativo.
+ */
+export function pendingUsd(
+  a: AccountsPayable,
+  taxUnitBs?: number | null,
+): number | null {
+  if (a.status === 'paid') return 0;
+  const target = estimatedNetUsd(a, taxUnitBs) ?? amountToReceiveUsd(a);
+  if (target === null) return null;
+  return Math.max(0, target - paidUsd(a));
 }

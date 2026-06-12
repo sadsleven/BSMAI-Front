@@ -46,6 +46,7 @@ import { formatMoney } from '@/lib/format/money';
 import { useUsdRate, usdToBs } from '../../domain/useUsdRate';
 import { REPORT_PAGE_SIZE } from '../../infrastructure/fetchAll';
 import { getHttpErrorMessage } from '@/lib/api';
+import { useTaxUnit } from '@/lib/taxes/useTaxUnit';
 
 const STATUS_TONE: Record<string, string> = {
   paid: 'bg-success-soft text-success',
@@ -80,6 +81,9 @@ export function ReportPayablesList() {
   const [error, setError] = useState<string | null>(null);
   const [overCap, setOverCap] = useState(false);
   const usdRate = useUsdRate();
+  // UT vigente: pendiente medido contra el neto (bruto − retención SENIAT).
+  const { taxUnit } = useTaxUnit();
+  const taxUnitBs = taxUnit ? Number(taxUnit.amountBs) : null;
 
   useEffect(() => {
     (async () => {
@@ -202,13 +206,13 @@ export function ReportPayablesList() {
     enriched.forEach(({ ap }) => {
       const t = amountToReceiveUsd(ap) ?? 0;
       const p = paidUsd(ap);
-      const pen = pendingUsd(ap) ?? Math.max(0, t - p);
+      const pen = pendingUsd(ap, taxUnitBs) ?? Math.max(0, t - p);
       target += t;
       paid += p;
       pending += pen;
     });
     return { target, paid, pending, count: enriched.length };
-  }, [enriched]);
+  }, [enriched, taxUnitBs]);
 
   const paged = useMemo(() => {
     const start = (filters.page - 1) * filters.limit;
@@ -386,7 +390,7 @@ export function ReportPayablesList() {
               paged.map(({ ap, order }) => {
                 const ar = amountToReceiveUsd(ap);
                 const paid = paidUsd(ap);
-                const pend = pendingUsd(ap);
+                const pend = pendingUsd(ap, taxUnitBs);
                 const eff = effectiveStatus(ap);
                 const lastPayment = (ap.payments ?? []).slice().sort((a, b) => {
                   return (

@@ -43,6 +43,7 @@ import {
   type AccountsPayable,
   type AccountsPayableStatus,
 } from '../../domain/models/accountsPayable';
+import { useTaxUnit } from '@/lib/taxes/useTaxUnit';
 import { doctorGateway } from '@/modules/doctors/infrastructure/doctorGateway';
 import { careCenterGateway } from '@/modules/care-centers/infrastructure/careCenterGateway';
 import {
@@ -80,6 +81,9 @@ export function AccountsPayableList() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [careCenters, setCareCenters] = useState<CareCenter[]>([]);
+  // UT vigente: el pendiente se mide contra el neto (bruto − retención SENIAT).
+  const { taxUnit } = useTaxUnit();
+  const taxUnitBs = taxUnit ? Number(taxUnit.amountBs) : null;
 
   useEffect(() => {
     (async () => {
@@ -353,7 +357,7 @@ export function AccountsPayableList() {
             ) : (
               data.map((a) => {
                 const ar = amountToReceiveUsd(a);
-                const pUsd = pendingUsd(a);
+                const pUsd = pendingUsd(a, taxUnitBs);
                 const paid = paidUsd(a);
                 const eff = effectiveStatus(a);
                 const selectable = canSelectForPayment(a);
