@@ -174,6 +174,11 @@ export function OrderDetailBody({
                 {order.orderServiceTypes.map((row) => (
                   <li key={row.serviceTypeId}>
                     {row.serviceType?.name ?? row.serviceTypeId}
+                    {(row.quantity ?? 1) > 1 && (
+                      <span className="ml-1 text-xs text-muted-foreground">
+                        (x{row.quantity})
+                      </span>
+                    )}
                     <span className="ml-2 text-xs text-muted-foreground">
                       {row.providerType === 'doctor'
                         ? holderDisplayName(row.doctor ?? undefined)

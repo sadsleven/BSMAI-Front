@@ -44,8 +44,16 @@ type ProviderRow = {
   providerName: string;
   serviceTypeIds: string[];
   serviceTypeNames: string[];
-  breakdown: Array<{ stName: string; amount: number | null }>;
-  /** Suma sugerida USD. */
+  breakdown: Array<{
+    stName: string;
+    /** Cantidad del ST en la orden (≥1). */
+    qty: number;
+    /** Precio unitario USD del proveedor, o null si no tiene precio. */
+    unit: number | null;
+    /** unit × qty, o null si no hay precio definido. */
+    amount: number | null;
+  }>;
+  /** Suma sugerida USD (unit × qty por ST). */
   suggested: number;
   amount: number | undefined;
   manuallyEdited: boolean;
@@ -79,7 +87,7 @@ export function OrderBillingStep({
         providerType: 'doctor' | 'care_center';
         providerId: string;
         providerName: string;
-        rows: { serviceTypeId: string; serviceTypeName: string }[];
+        rows: { serviceTypeId: string; serviceTypeName: string; qty: number }[];
       };
       const groups = new Map<string, Group>();
       for (const ost of order.orderServiceTypes ?? []) {
@@ -104,6 +112,7 @@ export function OrderBillingStep({
         groups.get(k)!.rows.push({
           serviceTypeId: ost.serviceTypeId,
           serviceTypeName: ost.serviceType?.name ?? ost.serviceTypeId,
+          qty: Math.max(1, Math.trunc(ost.quantity ?? 1)),
         });
       }
 
@@ -120,9 +129,12 @@ export function OrderBillingStep({
           const breakdown = g.rows.map((r) => {
             const sp = byST.get(r.serviceTypeId);
             const v = sp ? Number(sp.priceUsd) : NaN;
+            const unit = Number.isFinite(v) && v > 0 ? v : null;
             return {
               stName: r.serviceTypeName,
-              amount: Number.isFinite(v) && v > 0 ? v : null,
+              qty: r.qty,
+              unit,
+              amount: unit !== null ? +(unit * r.qty).toFixed(2) : null,
             };
           });
           const suggested = +breakdown
@@ -155,7 +167,9 @@ export function OrderBillingStep({
             providerId: g.providerId,
             providerName: g.providerName,
             serviceTypeIds: g.rows.map((r) => r.serviceTypeId),
-            serviceTypeNames: g.rows.map((r) => r.serviceTypeName),
+            serviceTypeNames: g.rows.map((r) =>
+              r.qty > 1 ? `${r.serviceTypeName} (x${r.qty})` : r.serviceTypeName,
+            ),
             breakdown,
             suggested,
             amount,
@@ -168,8 +182,15 @@ export function OrderBillingStep({
             providerId: g.providerId,
             providerName: g.providerName,
             serviceTypeIds: g.rows.map((r) => r.serviceTypeId),
-            serviceTypeNames: g.rows.map((r) => r.serviceTypeName),
-            breakdown: g.rows.map((r) => ({ stName: r.serviceTypeName, amount: null })),
+            serviceTypeNames: g.rows.map((r) =>
+              r.qty > 1 ? `${r.serviceTypeName} (x${r.qty})` : r.serviceTypeName,
+            ),
+            breakdown: g.rows.map((r) => ({
+              stName: r.serviceTypeName,
+              qty: r.qty,
+              unit: null,
+              amount: null,
+            })),
             suggested: 0,
             amount: undefined,
             manuallyEdited: false,
@@ -386,7 +407,17 @@ export function OrderBillingStep({
                               key={l.stName}
                               className="flex items-center justify-between px-3 py-2 text-xs gap-2"
                             >
-                              <span className="truncate">{l.stName}</span>
+                              <span className="truncate">
+                                {l.stName}
+                                {l.qty > 1 && (
+                                  <span className="ml-1.5 text-[11px] text-muted-foreground">
+                                    x{l.qty}
+                                    {l.unit !== null && (
+                                      <> · {formatMoney(l.unit)} USD c/u</>
+                                    )}
+                                  </span>
+                                )}
+                              </span>
                               {l.amount !== null ? (
                                 <span className="font-mono shrink-0">
                                   {formatMoney(l.amount)} USD
