@@ -36,10 +36,10 @@ import { SortableHeader, type SortDir } from '@/components/ui/sortable-header';
 import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
+import { formatCreated } from '@/lib/dates';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { Plus, Pencil, Trash2, Power, Undo2, Hospital, Eye } from 'lucide-react';
-import { CareCenterDetail } from '../components/CareCenterDetail';
 import { Can } from '@/modules/auth/presentation/components/Can';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
@@ -97,7 +97,6 @@ export function CareCenterList() {
   const [actionLoading, setActionLoading] = useState(false);
   const [toggleTarget, setToggleTarget] = useState<CareCenter | null>(null);
   const [restoreTarget, setRestoreTarget] = useState<CareCenter | null>(null);
-  const [viewTargetId, setViewTargetId] = useState<string | null>(null);
 
   const canSeeDeleted =
     has(PERMISSIONS.CARE_CENTERS.HARD_DELETE) || has(PERMISSIONS.CARE_CENTERS.RESTORE);
@@ -296,9 +295,10 @@ export function CareCenterList() {
           </div>
         ) : null}
 
+        <div className="m-4 rounded-lg border overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-[oklch(0.985_0.003_250)] hover:bg-[oklch(0.985_0.003_250)]">
+            <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 <SortableHeader<SortBy>
                   column="businessName"
@@ -325,17 +325,20 @@ export function CareCenterList() {
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Estado
               </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                Creación
+              </TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-center">
                 Acciones
               </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <SkeletonTableRows rows={5} columns={5} />
+              <SkeletonTableRows rows={5} columns={6} />
             ) : centers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="p-0">
+                <TableCell colSpan={6} className="p-0">
                   <EmptyState
                     icon={Hospital}
                     title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay centros'}
@@ -399,18 +402,22 @@ export function CareCenterList() {
                   <TableCell className="py-3.5 px-4">
                     <StatusBadge c={c} />
                   </TableCell>
+                  <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                    {formatCreated(c.createdAt)}
+                  </TableCell>
                   <TableCell className="py-3.5 px-4 text-right">
-                    <div className="inline-flex items-center gap-0.5">
-                      <Can permission={PERMISSIONS.CARE_CENTERS.VIEW}>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Ver detalle"
-                          onClick={() => setViewTargetId(c.id)}
-                          className="w-8 h-8"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </Button>
+                    <div className="flex items-center justify-center gap-0.5">
+                      <Can permission={PERMISSIONS.CARE_CENTERS.LIST}>
+                        <Link to={`/care-centers/${c.id}`}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Ver detalle"
+                            className="w-8 h-8"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                        </Link>
                       </Can>
                       {c.deletedAt ? (
                         <Can permission={PERMISSIONS.CARE_CENTERS.RESTORE}>
@@ -489,6 +496,7 @@ export function CareCenterList() {
           onPageSizeChange={(limit) => updateParam({ limit: String(limit) })}
           itemLabel="centros"
         />
+        </div>
       </div>
 
       <ConfirmDialog
@@ -607,13 +615,6 @@ export function CareCenterList() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <CareCenterDetail
-        centerId={viewTargetId}
-        open={!!viewTargetId}
-        onOpenChange={(o) => {
-          if (!o) setViewTargetId(null);
-        }}
-      />
     </div>
   );
 }

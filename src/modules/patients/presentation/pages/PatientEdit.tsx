@@ -56,7 +56,7 @@ export function PatientEdit() {
           lastName: p.lastName ?? '',
           businessName: p.businessName ?? '',
           rif: p.rif ?? '',
-          birthDate: p.birthDate,
+          birthDate: p.birthDate ?? '',
           address: p.address,
           phones:
             p.phones?.length > 0
@@ -84,7 +84,7 @@ export function PatientEdit() {
       const dto: UpdatePatientDto = {
         personType: values.personType,
         email: values.email?.trim() || '',
-        birthDate: values.birthDate,
+        birthDate: values.birthDate || '',
         address: values.address,
         phones: values.phones.map((p) => ({
           number: p.number,

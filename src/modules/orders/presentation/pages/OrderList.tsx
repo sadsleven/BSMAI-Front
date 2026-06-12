@@ -29,12 +29,13 @@ import { SortableHeader, type SortDir } from '@/components/ui/sortable-header';
 import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
+import { formatCreatedDateTime } from '@/lib/dates';
+import { formatMoney } from '@/lib/format/money';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
-import { Plus, Pencil, Trash2, Eye, Undo2, ListChecks } from 'lucide-react';
+import { Plus, Trash2, Eye, Undo2, ListChecks, FileText } from 'lucide-react';
 import { useOrderStore } from '../../domain/store/orderStore';
 import { orderGateway } from '../../infrastructure/orderGateway';
-import { OrderDetail } from '../components/OrderDetail';
 import {
   ORDER_STATUS_LABEL,
   ORDER_TYPE_LABEL,
@@ -50,6 +51,7 @@ import { notify } from '@/lib/notifications/toast';
 import { useAuthStore } from '@/modules/auth/domain/store/authStore';
 import { getUserBranches } from '@/lib/auth/branches';
 import { cn } from '@/lib/utils';
+import { lastAccessibleStep } from '../../domain/wizardStep';
 
 type SortBy = 'orderNumber' | 'orderDate' | 'appointmentDate' | 'priceAmount' | 'createdAt' | 'updatedAt';
 type DeletionFilter = 'active' | 'deleted' | 'all';
@@ -90,6 +92,21 @@ function StatusBadge({ status }: { status: OrderStatus }) {
   );
 }
 
+// Estado visto por el usuario proveedor: su propia observación (Paso 3), no el
+// estado global de la orden. Completa = campo libre lleno (archivos opcionales).
+function ProviderObservationBadge({ complete }: { complete: boolean }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium',
+        complete ? 'bg-success-soft text-success' : 'bg-warning-soft text-warning',
+      )}
+    >
+      {complete ? 'Observación completada' : 'Observación pendiente'}
+    </span>
+  );
+}
+
 export function OrderList() {
   const { orders, metadata, isLoading, error, setQuery, fetch, remove } = useOrderStore();
   const { has } = usePermissions();
@@ -101,6 +118,9 @@ export function OrderList() {
 
   const branches = useMemo(() => getUserBranches(me), [me]);
   const canSeeDeleted = has(PERMISSIONS.ORDERS.HARD_DELETE) || has(PERMISSIONS.ORDERS.RESTORE);
+  // Usuario proveedor: oculta montos/sucursal y muestra sólo el acceso al informe.
+  const isProvider = !!me?.providerLink;
+  const colCount = isProvider ? 8 : 10;
 
   useEffect(() => {
     setQuery({
@@ -174,7 +194,6 @@ export function OrderList() {
   const [hardConfirmStep, setHardConfirmStep] = useState(0);
   const [restoreTarget, setRestoreTarget] = useState<Order | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
-  const [detailId, setDetailId] = useState<string | null>(null);
 
   const handleSoftDelete = async () => {
     if (!deleteTarget) return;
@@ -316,22 +335,24 @@ export function OrderList() {
                 </SelectContent>
               </Select>
 
-              <Select
-                value={filters.branchId || 'all'}
-                onValueChange={(v) => updateParam({ branchId: v === 'all' ? undefined : v })}
-              >
-                <SelectTrigger className="h-9 w-48">
-                  <SelectValue placeholder="Sucursal" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Sucursal: todas</SelectItem>
-                  {branches.map((b) => (
-                    <SelectItem key={b.id} value={b.id}>
-                      {b.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {!isProvider ? (
+                <Select
+                  value={filters.branchId || 'all'}
+                  onValueChange={(v) => updateParam({ branchId: v === 'all' ? undefined : v })}
+                >
+                  <SelectTrigger className="h-9 w-48">
+                    <SelectValue placeholder="Sucursal" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Sucursal: todas</SelectItem>
+                    {branches.map((b) => (
+                      <SelectItem key={b.id} value={b.id}>
+                        {b.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : null}
 
               {canSeeDeleted ? (
                 <Select
@@ -358,9 +379,10 @@ export function OrderList() {
           </div>
         ) : null}
 
+        <div className="m-4 rounded-lg border overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-[oklch(0.985_0.003_250)] hover:bg-[oklch(0.985_0.003_250)]">
+            <TableRow className="bg-brand-blue-soft hover:bg-brand-blue-soft">
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 <SortableHeader<SortBy>
                   column="orderNumber"
@@ -381,9 +403,11 @@ export function OrderList() {
                   Fecha
                 </SortableHeader>
               </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                Sucursal
-              </TableHead>
+              {!isProvider ? (
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                  Sucursal
+                </TableHead>
+              ) : null}
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Tipo
               </TableHead>
@@ -396,27 +420,39 @@ export function OrderList() {
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Estado
               </TableHead>
+              {!isProvider ? (
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                  <SortableHeader<SortBy>
+                    column="priceAmount"
+                    activeColumn={filters.sortBy}
+                    direction={filters.sortDir}
+                    onSort={onSort}
+                  >
+                    Monto
+                  </SortableHeader>
+                </TableHead>
+              ) : null}
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 <SortableHeader<SortBy>
-                  column="priceAmount"
+                  column="createdAt"
                   activeColumn={filters.sortBy}
                   direction={filters.sortDir}
                   onSort={onSort}
                 >
-                  Monto
+                  Creación
                 </SortableHeader>
               </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-center">
                 Acciones
               </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <SkeletonTableRows rows={5} columns={9} />
+              <SkeletonTableRows rows={5} columns={colCount} />
             ) : orders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="p-0">
+                <TableCell colSpan={colCount} className="p-0">
                   <EmptyState
                     title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay órdenes'}
                     description={
@@ -436,7 +472,6 @@ export function OrderList() {
               </TableRow>
             ) : (
               orders.map((order) => {
-                const isDraft = order.status === 'draft';
                 const isDeleted = !!order.deletedAt;
                 return (
                   <TableRow key={order.id} className="hover:bg-[oklch(0.985_0.003_250)]">
@@ -446,9 +481,11 @@ export function OrderList() {
                     <TableCell className="py-3.5 px-4 text-sm">
                       {order.orderDate.slice(0, 10)}
                     </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm">
-                      {order.branch?.name ?? '—'}
-                    </TableCell>
+                    {!isProvider ? (
+                      <TableCell className="py-3.5 px-4 text-sm">
+                        {order.branch?.name ?? '—'}
+                      </TableCell>
+                    ) : null}
                     <TableCell className="py-3.5 px-4">
                       <Badge variant="secondary">
                         {ORDER_TYPE_LABEL[order.type]}
@@ -466,26 +503,57 @@ export function OrderList() {
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm">{providerOf(order)}</TableCell>
                     <TableCell className="py-3.5 px-4">
-                      <StatusBadge status={order.status} />
+                      {isProvider ? (
+                        <ProviderObservationBadge
+                          complete={!!order.providerObservationComplete}
+                        />
+                      ) : (
+                        <StatusBadge status={order.status} />
+                      )}
                     </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm font-mono">
-                      {Number(order.priceAmount).toFixed(2)} {order.priceCurrency}
+                    {!isProvider ? (
+                      <TableCell className="py-3.5 px-4 text-sm font-mono">
+                        {formatMoney(order.priceAmount)} USD
+                      </TableCell>
+                    ) : null}
+                    <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                      {formatCreatedDateTime(order.createdAt)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-right">
-                      <div className="inline-flex items-center gap-0.5">
-                        <Can permission={PERMISSIONS.ORDERS.VIEW}>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            title="Ver detalle"
-                            className="w-8 h-8"
-                            onClick={() => setDetailId(order.id)}
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Button>
+                      <div className="flex items-center justify-center gap-0.5">
+                        {isProvider ? (
+                          <Link to={`/orders/edit/${order.id}`}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Cargar informe"
+                              className="w-8 h-8"
+                            >
+                              <FileText className="w-4 h-4" />
+                            </Button>
+                          </Link>
+                        ) : (
+                          <>
+                        <Can permission={PERMISSIONS.ORDERS.LIST}>
+                          <Link to={`/orders/${order.id}`}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Ver detalle"
+                              className="w-8 h-8"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                          </Link>
                         </Can>
                         <Can permission={PERMISSIONS.ORDERS.UPDATE}>
-                          <Link to={`/orders/edit/${order.id}`}>
+                          <Link
+                            to={`/orders/edit/${order.id}?step=${lastAccessibleStep(order, {
+                              attention: has(PERMISSIONS.ORDERS.STAGE_ATTENTION),
+                              report: has(PERMISSIONS.ORDERS.STAGE_REPORT),
+                              billing: has(PERMISSIONS.ORDERS.STAGE_BILLING),
+                            })}`}
+                          >
                             <Button
                               variant="ghost"
                               size="icon"
@@ -511,30 +579,6 @@ export function OrderList() {
                           </Can>
                         ) : (
                           <>
-                            <Can permission={PERMISSIONS.ORDERS.UPDATE}>
-                              {isDraft ? (
-                                <Link to={`/orders/edit/${order.id}`}>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    title="Editar"
-                                    className="w-8 h-8"
-                                  >
-                                    <Pencil className="w-4 h-4" />
-                                  </Button>
-                                </Link>
-                              ) : (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  title="Solo se puede editar en borrador"
-                                  disabled
-                                  className="w-8 h-8 opacity-50 cursor-not-allowed"
-                                >
-                                  <Pencil className="w-4 h-4" />
-                                </Button>
-                              )}
-                            </Can>
                             <Can
                               anyOf={[
                                 PERMISSIONS.ORDERS.SOFT_DELETE,
@@ -556,6 +600,8 @@ export function OrderList() {
                             </Can>
                           </>
                         )}
+                          </>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -574,13 +620,8 @@ export function OrderList() {
           onPageSizeChange={(limit) => updateParam({ limit: String(limit) })}
           itemLabel="órdenes"
         />
+        </div>
       </div>
-
-      <OrderDetail
-        orderId={detailId}
-        open={!!detailId}
-        onOpenChange={(o) => !o && setDetailId(null)}
-      />
 
       <ConfirmDialog
         open={!!restoreTarget}

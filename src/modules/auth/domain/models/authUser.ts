@@ -8,6 +8,13 @@ export interface AuthBranch {
   name: string;
 }
 
+/** Vínculo del usuario con un proveedor (doctor/centro). null para staff. */
+export interface ProviderLink {
+  type: 'doctor' | 'care_center';
+  id: string;
+  name: string;
+}
+
 export interface AuthUser {
   id: string;
   email: string;
@@ -29,6 +36,11 @@ export interface AuthUser {
    * `isSuperAdmin` en componentes — usar `getUserBranches()`.
    */
   branches: AuthBranch[];
+  /**
+   * Vínculo con un proveedor (doctor/centro) si la cuenta pertenece a uno.
+   * Activa la vista mínima de proveedor (solo su informe). null para staff.
+   */
+  providerLink?: ProviderLink | null;
 }
 
 export function getFullName(user: AuthUser | null | undefined): string {

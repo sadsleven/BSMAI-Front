@@ -7,8 +7,8 @@ import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { accountsReceivableGateway } from '@/modules/accounts-receivable/infrastructure/accountsReceivableGateway';
 import {
   STATUS_LABEL,
-  collectedBs,
-  targetBs,
+  collectedUsd,
+  targetUsd,
   type AccountsReceivable,
   type AccountsReceivableStatus,
 } from '@/modules/accounts-receivable/domain/models/accountsReceivable';
@@ -17,16 +17,16 @@ import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { ChartCard } from '../components/ChartCard';
 import { CHART_COLORS, baseDoughnutOptions, withAlpha } from '../components/chartSetup';
-import { formatBs, formatBsCompact, formatPercent, inDateRange } from '../../domain/format';
+import { formatUsd, formatPercent, inDateRange } from '../../domain/format';
 import { REPORT_PAGE_SIZE } from '../../infrastructure/fetchAll';
 import { getHttpErrorMessage } from '@/lib/api';
 
 type InsurerRow = {
   insuranceId: string;
   name: string;
-  billedBs: number;
-  collectedBs: number;
-  pendingBs: number;
+  billedUsd: number;
+  collectedUsd: number;
+  pendingUsd: number;
 };
 
 const STATUS_COLOR: Record<AccountsReceivableStatus, string> = {
@@ -84,24 +84,26 @@ export function ReportInsurerCollections() {
   const byInsurer = useMemo<InsurerRow[]>(() => {
     const map = new Map<string, InsurerRow>();
     inRange.forEach((ar) => {
-      let row = map.get(ar.insuranceId);
+      const id = ar.insuranceId;
+      if (!id) return;
+      let row = map.get(id);
       if (!row) {
         row = {
-          insuranceId: ar.insuranceId,
+          insuranceId: id,
           name: ar.insurance?.name ?? '—',
-          billedBs: 0,
-          collectedBs: 0,
-          pendingBs: 0,
+          billedUsd: 0,
+          collectedUsd: 0,
+          pendingUsd: 0,
         };
-        map.set(ar.insuranceId, row);
+        map.set(id, row);
       }
-      const billed = targetBs(ar) ?? 0;
-      const collected = collectedBs(ar);
-      row.billedBs += billed;
-      row.collectedBs += collected;
-      row.pendingBs += Math.max(0, billed - collected);
+      const billed = targetUsd(ar) ?? 0;
+      const collected = collectedUsd(ar);
+      row.billedUsd += billed;
+      row.collectedUsd += collected;
+      row.pendingUsd += Math.max(0, billed - collected);
     });
-    return Array.from(map.values()).sort((a, b) => b.billedBs - a.billedBs);
+    return Array.from(map.values()).sort((a, b) => b.billedUsd - a.billedUsd);
   }, [inRange]);
 
   const byStatus = useMemo(() => {
@@ -115,9 +117,9 @@ export function ReportInsurerCollections() {
     let collected = 0;
     let pending = 0;
     byInsurer.forEach((r) => {
-      billed += r.billedBs;
-      collected += r.collectedBs;
-      pending += r.pendingBs;
+      billed += r.billedUsd;
+      collected += r.collectedUsd;
+      pending += r.pendingUsd;
     });
     const rate = billed > 0 ? (collected / billed) * 100 : 0;
     return { billed, collected, pending, rate };
@@ -131,13 +133,13 @@ export function ReportInsurerCollections() {
     datasets: [
       {
         label: 'Facturado',
-        data: top.map((r) => r.billedBs),
+        data: top.map((r) => r.billedUsd),
         backgroundColor: withAlpha(CHART_COLORS.blue, 0.85),
         borderRadius: 5,
       },
       {
         label: 'Cobrado',
-        data: top.map((r) => r.collectedBs),
+        data: top.map((r) => r.collectedUsd),
         backgroundColor: withAlpha(CHART_COLORS.success, 0.85),
         borderRadius: 5,
       },
@@ -154,11 +156,11 @@ export function ReportInsurerCollections() {
         backgroundColor: '#0f172a',
         cornerRadius: 8,
         padding: 10,
-        callbacks: { label: (ctx) => `${ctx.dataset.label}: ${formatBs(Number(ctx.parsed.x))}` },
+        callbacks: { label: (ctx) => `${ctx.dataset.label}: ${formatUsd(Number(ctx.parsed.x))}` },
       },
     },
     scales: {
-      x: { beginAtZero: true, grid: { color: 'rgba(100, 116, 139, 0.12)' }, border: { display: false }, ticks: { callback: (v) => formatBsCompact(Number(v)) } },
+      x: { beginAtZero: true, grid: { color: 'rgba(100, 116, 139, 0.12)' }, border: { display: false }, ticks: { callback: (v) => formatUsd(Number(v)) } },
       y: { grid: { display: false } },
     },
   };
@@ -168,9 +170,9 @@ export function ReportInsurerCollections() {
     datasets: [
       {
         label: '% cobranza',
-        data: top.map((r) => (r.billedBs > 0 ? (r.collectedBs / r.billedBs) * 100 : 0)),
+        data: top.map((r) => (r.billedUsd > 0 ? (r.collectedUsd / r.billedUsd) * 100 : 0)),
         backgroundColor: top.map((r) => {
-          const pct = r.billedBs > 0 ? (r.collectedBs / r.billedBs) * 100 : 0;
+          const pct = r.billedUsd > 0 ? (r.collectedUsd / r.billedUsd) * 100 : 0;
           if (pct >= 90) return withAlpha(CHART_COLORS.success, 0.85);
           if (pct >= 50) return withAlpha(CHART_COLORS.warning, 0.85);
           return withAlpha(CHART_COLORS.destructive, 0.85);
@@ -235,19 +237,19 @@ export function ReportInsurerCollections() {
               icon: Wallet,
               tone: 'blue',
               label: 'Total facturado',
-              value: formatBs(totals.billed),
+              value: formatUsd(totals.billed),
             },
             {
               icon: TrendingUp,
               tone: 'success',
               label: 'Cobrado',
-              value: formatBs(totals.collected),
+              value: formatUsd(totals.collected),
             },
             {
               icon: Clock4,
               tone: 'warning',
               label: 'Pendiente',
-              value: formatBs(totals.pending),
+              value: formatUsd(totals.pending),
             },
             {
               icon: PercentCircle,
@@ -288,7 +290,7 @@ export function ReportInsurerCollections() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <ChartCard
           title="Facturado vs Cobrado por aseguradora"
-          description="Top 10 por monto facturado (Bs)"
+          description="Top 10 por monto facturado (USD)"
           icon={BarChart3}
           height={380}
           className="lg:col-span-2"

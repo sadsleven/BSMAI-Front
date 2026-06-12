@@ -224,14 +224,12 @@ export function InsuranceCreate() {
                     | {
                         serviceTypeId?: { message?: string };
                         priceUsd?: { message?: string };
-                        priceEur?: { message?: string };
                       }
                     | undefined
                   >
                 )?.map?.((e) => ({
                   serviceTypeId: e?.serviceTypeId?.message,
                   priceUsd: e?.priceUsd?.message,
-                  priceEur: e?.priceEur?.message,
                 }));
                 return (
                   <ServicePricesTable

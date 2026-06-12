@@ -16,6 +16,8 @@ import {
 import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { servicePricesToPayload } from '@/components/ui/service-prices-table';
+import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
+import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { ChevronLeft } from 'lucide-react';
 
 function cleanPaymentMethod(m: PaymentMethodValues): CareCenterPaymentMethod {
@@ -42,9 +44,11 @@ function cleanPaymentMethod(m: PaymentMethodValues): CareCenterPaymentMethod {
 export function CareCenterEdit() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { has } = usePermissions();
   const [fetching, setFetching] = useState(true);
   const [displayName, setDisplayName] = useState('');
   const [existingSpecialties, setExistingSpecialties] = useState<Specialty[]>([]);
+  const [accountExists, setAccountExists] = useState(false);
 
   const methods = useForm<CareCenterValues>({
     resolver: zodResolver(careCenterSchema),
@@ -58,6 +62,8 @@ export function CareCenterEdit() {
       paymentMethods: [],
       servicePrices: [],
       isActive: true,
+      password: '',
+      confirmPassword: '',
     },
   });
 
@@ -92,12 +98,14 @@ export function CareCenterEdit() {
               ? { id: sp.serviceType.id, name: sp.serviceType.name }
               : undefined,
             priceUsd: Number(sp.priceUsd) || 0,
-            priceEur: Number(sp.priceEur) || 0,
           })),
           isActive: c.isActive,
+          password: '',
+          confirmPassword: '',
         });
         setDisplayName(c.businessName);
         setExistingSpecialties(c.specialties ?? []);
+        setAccountExists(!!c.userId);
       } catch (e) {
         notify.fromError(e, 'No se pudo cargar el centro.');
       } finally {
@@ -112,7 +120,7 @@ export function CareCenterEdit() {
     try {
       await careCenterGateway.update(id, {
         businessName: values.businessName,
-        email: values.email?.trim() || '',
+        email: values.email.trim(),
         rif: values.rif?.trim() || '',
         phones: values.phones.map((p) => ({
           number: p.number,
@@ -155,7 +163,13 @@ export function CareCenterEdit() {
             </button>
           </div>
 
-          <CareCenterForm existingSpecialties={existingSpecialties} />
+          <CareCenterForm
+            existingSpecialties={existingSpecialties}
+            mode="edit"
+            accountExists={accountExists}
+            canChangePassword={has(PERMISSIONS.CARE_CENTERS.CHANGE_PASSWORD)}
+            onChangePassword={() => navigate(`/care-centers/${id}/change-password`)}
+          />
 
           <div className="flex items-center justify-between gap-3 pt-2">
             <p className="text-xs text-muted-foreground">

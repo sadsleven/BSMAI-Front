@@ -1,4 +1,5 @@
 import { api } from '@/lib/api';
+import type { ChangePasswordDto } from '@/modules/users/domain/models/user';
 import type {
   CreateDoctorDto,
   Doctor,
@@ -44,6 +45,9 @@ export const doctorGateway = {
   async update(id: string, dto: UpdateDoctorDto): Promise<Doctor> {
     const { data } = await api.patch<Doctor>(`/doctors/${id}`, dto);
     return data;
+  },
+  async changePassword(id: string, dto: ChangePasswordDto): Promise<void> {
+    await api.patch(`/doctors/${id}/change-password`, dto);
   },
   async toggleActive(id: string): Promise<Doctor> {
     const { data } = await api.patch<Doctor>(`/doctors/${id}/toggle-active`);

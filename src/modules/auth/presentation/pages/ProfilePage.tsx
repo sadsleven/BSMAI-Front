@@ -29,6 +29,9 @@ import { notifyFormErrors } from '@/lib/notifications/formErrors';
 export function ProfilePage() {
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
+  // Teléfono, grado académico y cargo son campos internos AFMI — los
+  // proveedores (doctor/centro) no los ven ni los modifican.
+  const isProvider = !!user?.providerLink;
 
   const profileForm = useForm<ProfileValues>({
     resolver: zodResolver(profileSchema),
@@ -61,9 +64,13 @@ export function ProfilePage() {
         firstName: values.firstName,
         lastName: values.lastName,
         email: values.email,
-        phoneNumber: values.phoneNumber ?? null,
-        academicDegree: values.academicDegree?.trim() || null,
-        jobTitle: values.jobTitle?.trim() || null,
+        ...(isProvider
+          ? {}
+          : {
+              phoneNumber: values.phoneNumber ?? null,
+              academicDegree: values.academicDegree?.trim() || null,
+              jobTitle: values.jobTitle?.trim() || null,
+            }),
       });
       setUser(updated);
       notify.success('Perfil actualizado correctamente');
@@ -135,6 +142,8 @@ export function ProfilePage() {
                 </p>
               ) : null}
             </div>
+            {!isProvider && (
+            <>
             <div className="space-y-2">
               <Label htmlFor="phoneNumber">Teléfono (11 dígitos)</Label>
               <Input id="phoneNumber" inputMode="numeric" {...profileForm.register('phoneNumber')} />
@@ -194,6 +203,8 @@ export function ProfilePage() {
                 ) : null}
               </div>
             </div>
+            </>
+            )}
             <div className="flex justify-end">
               <Button
                 type="submit"

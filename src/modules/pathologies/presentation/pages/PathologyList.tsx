@@ -4,6 +4,7 @@ import { usePathologyStore } from '../../domain/store/pathologyStore';
 import { pathologyGateway } from '../../infrastructure/pathologyGateway';
 import type { Pathology } from '../../domain/models/pathology';
 import { Button } from '@/components/ui/button';
+import { formatCreated } from '@/lib/dates';
 import {
   Table,
   TableBody,
@@ -292,9 +293,10 @@ export function PathologyList() {
           </div>
         ) : null}
 
+        <div className="m-4 rounded-lg border overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-[oklch(0.985_0.003_250)] hover:bg-[oklch(0.985_0.003_250)]">
+            <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 <SortableHeader<SortBy>
                   column="name"
@@ -311,17 +313,20 @@ export function PathologyList() {
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Estado
               </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                Creación
+              </TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-center">
                 Acciones
               </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <SkeletonTableRows rows={5} columns={4} />
+              <SkeletonTableRows rows={5} columns={5} />
             ) : pathologies.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="p-0">
+                <TableCell colSpan={5} className="p-0">
                   <EmptyState
                     icon={Activity}
                     title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay patologías'}
@@ -357,9 +362,12 @@ export function PathologyList() {
                   <TableCell className="py-3.5 px-4">
                     <StatusBadge p={p} />
                   </TableCell>
+                  <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                    {formatCreated(p.createdAt)}
+                  </TableCell>
                   <TableCell className="py-3.5 px-4 text-right">
-                    <div className="inline-flex items-center gap-0.5">
-                      <Can permission={PERMISSIONS.PATHOLOGIES.VIEW}>
+                    <div className="flex items-center justify-center gap-0.5">
+                      <Can permission={PERMISSIONS.PATHOLOGIES.LIST}>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -444,6 +452,7 @@ export function PathologyList() {
           onPageSizeChange={(limit) => updateParam({ limit: String(limit) })}
           itemLabel="patologías"
         />
+        </div>
       </div>
 
       <ConfirmDialog

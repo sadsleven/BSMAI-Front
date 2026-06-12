@@ -24,11 +24,11 @@ const PATH_LABELS: Record<string, string> = {
   'care-centers': 'Centros de atención',
   contractors: 'Contratistas',
   'exchange-rates': 'Tasas de cambio',
+  'tax-units': 'Unidades tributarias',
   branches: 'Sucursales',
   'accounts-payable': 'Cuentas por pagar',
   'accounts-receivable': 'Cuentas por cobrar',
-  'credits-receivable': 'Créditos por cobrar',
-  'taxes-payable': 'Impuestos por pagar',
+  'taxes-payable': 'Retenciones por pagar',
   'register-payment': 'Registrar pago',
   'register-collection': 'Registrar cobro',
   stages: 'Flujo',
@@ -47,6 +47,8 @@ const PATH_LABELS: Record<string, string> = {
   'executive-panel': 'Panel ejecutivo',
   'orders-analytics': 'Análisis de órdenes',
   'insurer-collections': 'Cobranzas por aseguradora',
+  config: 'Configuración',
+  guide: 'Guía del sistema',
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

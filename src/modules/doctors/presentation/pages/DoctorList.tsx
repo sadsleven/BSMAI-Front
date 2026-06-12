@@ -36,10 +36,10 @@ import { SortableHeader, type SortDir } from '@/components/ui/sortable-header';
 import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
+import { formatCreated } from '@/lib/dates';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { Plus, Pencil, Trash2, Power, Undo2, Stethoscope, Eye } from 'lucide-react';
-import { DoctorDetail } from '../components/DoctorDetail';
 import { Can } from '@/modules/auth/presentation/components/Can';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
@@ -99,7 +99,6 @@ export function DoctorList() {
   const [actionLoading, setActionLoading] = useState(false);
   const [toggleTarget, setToggleTarget] = useState<Doctor | null>(null);
   const [restoreTarget, setRestoreTarget] = useState<Doctor | null>(null);
-  const [viewTargetId, setViewTargetId] = useState<string | null>(null);
 
   const canSeeDeleted =
     has(PERMISSIONS.DOCTORS.HARD_DELETE) || has(PERMISSIONS.DOCTORS.RESTORE);
@@ -314,9 +313,10 @@ export function DoctorList() {
           </div>
         ) : null}
 
+        <div className="m-4 rounded-lg border overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-[oklch(0.985_0.003_250)] hover:bg-[oklch(0.985_0.003_250)]">
+            <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 <SortableHeader<SortBy>
                   column="firstName"
@@ -343,17 +343,20 @@ export function DoctorList() {
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Estado
               </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                Creación
+              </TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-center">
                 Acciones
               </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <SkeletonTableRows rows={5} columns={5} />
+              <SkeletonTableRows rows={5} columns={6} />
             ) : doctors.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="p-0">
+                <TableCell colSpan={6} className="p-0">
                   <EmptyState
                     icon={Stethoscope}
                     title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay doctores'}
@@ -423,18 +426,22 @@ export function DoctorList() {
                   <TableCell className="py-3.5 px-4">
                     <StatusBadge d={d} />
                   </TableCell>
+                  <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                    {formatCreated(d.createdAt)}
+                  </TableCell>
                   <TableCell className="py-3.5 px-4 text-right">
-                    <div className="inline-flex items-center gap-0.5">
-                      <Can permission={PERMISSIONS.DOCTORS.VIEW}>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Ver detalle"
-                          onClick={() => setViewTargetId(d.id)}
-                          className="w-8 h-8"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </Button>
+                    <div className="flex items-center justify-center gap-0.5">
+                      <Can permission={PERMISSIONS.DOCTORS.LIST}>
+                        <Link to={`/doctors/${d.id}`}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Ver detalle"
+                            className="w-8 h-8"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                        </Link>
                       </Can>
                       {d.deletedAt ? (
                         <Can permission={PERMISSIONS.DOCTORS.RESTORE}>
@@ -513,6 +520,7 @@ export function DoctorList() {
           onPageSizeChange={(limit) => updateParam({ limit: String(limit) })}
           itemLabel="doctores"
         />
+        </div>
       </div>
 
       <ConfirmDialog
@@ -631,13 +639,6 @@ export function DoctorList() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <DoctorDetail
-        doctorId={viewTargetId}
-        open={!!viewTargetId}
-        onOpenChange={(o) => {
-          if (!o) setViewTargetId(null);
-        }}
-      />
     </div>
   );
 }

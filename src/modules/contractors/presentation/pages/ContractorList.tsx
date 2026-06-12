@@ -35,6 +35,7 @@ import { SortableHeader, type SortDir } from '@/components/ui/sortable-header';
 import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
+import { formatCreated } from '@/lib/dates';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { Plus, Pencil, Trash2, Power, Briefcase, Undo2, Eye } from 'lucide-react';
@@ -292,9 +293,10 @@ export function ContractorList() {
           </div>
         ) : null}
 
+        <div className="m-4 rounded-lg border overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-[oklch(0.985_0.003_250)] hover:bg-[oklch(0.985_0.003_250)]">
+            <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 <SortableHeader<SortBy>
                   column="name"
@@ -311,17 +313,20 @@ export function ContractorList() {
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Estado
               </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                Creación
+              </TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-center">
                 Acciones
               </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <SkeletonTableRows rows={5} columns={4} />
+              <SkeletonTableRows rows={5} columns={5} />
             ) : contractors.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="p-0">
+                <TableCell colSpan={5} className="p-0">
                   <EmptyState
                     icon={Briefcase}
                     title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay contratistas'}
@@ -357,9 +362,12 @@ export function ContractorList() {
                   <TableCell className="py-3.5 px-4">
                     <StatusBadge c={c} />
                   </TableCell>
+                  <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                    {formatCreated(c.createdAt)}
+                  </TableCell>
                   <TableCell className="py-3.5 px-4 text-right">
-                    <div className="inline-flex items-center gap-0.5">
-                      <Can permission={PERMISSIONS.CONTRACTORS.VIEW}>
+                    <div className="flex items-center justify-center gap-0.5">
+                      <Can permission={PERMISSIONS.CONTRACTORS.LIST}>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -444,6 +452,7 @@ export function ContractorList() {
           onPageSizeChange={(limit) => updateParam({ limit: String(limit) })}
           itemLabel="contratistas"
         />
+        </div>
       </div>
 
       <ConfirmDialog

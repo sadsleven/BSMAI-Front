@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { FormProvider, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@/components/ui/button';
@@ -21,7 +21,14 @@ import type { Patient } from '@/modules/patients/domain/models/patient';
 import type { ProviderSelectValue } from '../components/ProviderSearchSelect';
 import { patientGateway } from '@/modules/patients/infrastructure/patientGateway';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
+import { useAuthStore } from '@/modules/auth/domain/store/authStore';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
+import { OrderReportStep } from '../components/stages/OrderReportStep';
+import {
+  isWizardStep,
+  lastAccessibleStep,
+  type OrderWizardStep,
+} from '../../domain/wizardStep';
 
 function buildDto(values: OrderValues): CreateOrderDto {
   return {
@@ -46,12 +53,21 @@ function buildDto(values: OrderValues): CreateOrderDto {
       doctorId: r.providerType === 'doctor' ? r.doctorId || undefined : undefined,
       careCenterId:
         r.providerType === 'care_center' ? r.careCenterId || undefined : undefined,
+      quantity: r.quantity ?? undefined,
     })),
     pathologyIds: values.pathologyIds ?? [],
     orderDate: values.orderDate,
     appointmentDate: values.appointmentDate,
-    priceCurrency: values.priceCurrency,
     priceAmount: values.priceAmount,
+    casheaFirstInstallmentAmount:
+      values.type === 'cashea'
+        ? values.casheaFirstInstallmentAmount ?? 0
+        : undefined,
+    useFixedRate: values.type === 'insurance' && !!values.useFixedRate,
+    fixedExchangeRateId:
+      values.type === 'insurance' && values.useFixedRate && values.fixedExchangeRateId
+        ? values.fixedExchangeRateId
+        : undefined,
     payments: (values.payments ?? []).map<OrderPaymentInput>((p) => ({
       type: p.type,
       paymentDate: p.paymentDate,
@@ -59,6 +75,7 @@ function buildDto(values: OrderValues): CreateOrderDto {
       bankCode: p.bankCode || undefined,
       exchangeRateId: p.exchangeRateId || undefined,
       accountNumber: p.accountNumber || undefined,
+      paymentAccountId: p.paymentAccountId || undefined,
       amountCurrency: p.amountCurrency,
       amountValue: p.amountValue,
     })),
@@ -68,15 +85,37 @@ function buildDto(values: OrderValues): CreateOrderDto {
 export function OrderEdit() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { has } = usePermissions();
+  const me = useAuthStore((s) => s.user);
+  const providerLink = me?.providerLink ?? null;
   const canAttention = has(PERMISSIONS.ORDERS.STAGE_ATTENTION);
+  const canReport = has(PERMISSIONS.ORDERS.STAGE_REPORT);
+  const canBilling = has(PERMISSIONS.ORDERS.STAGE_BILLING);
   const [fetching, setFetching] = useState(true);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [initialOrder, setInitialOrder] = useState<Order | null>(null);
   const [holder, setHolder] = useState<Patient | null>(null);
   const [patient, setPatient] = useState<Patient | null>(null);
   const [provider, setProvider] = useState<ProviderSelectValue | null>(null);
-  const [currentStep, setCurrentStep] = useState<string>('register');
+
+  const urlStep = searchParams.get('step');
+  const currentStep: OrderWizardStep = isWizardStep(urlStep)
+    ? urlStep
+    : initialOrder
+      ? lastAccessibleStep(initialOrder, {
+          attention: canAttention,
+          report: canReport,
+          billing: canBilling,
+        })
+      : 'register';
+
+  const setCurrentStep = (id: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (isWizardStep(id)) next.set('step', id);
+    else next.delete('step');
+    setSearchParams(next, { replace: true });
+  };
 
   const methods = useForm<OrderValues>({
     resolver: zodResolver(orderSchema),
@@ -95,8 +134,10 @@ export function OrderEdit() {
       pathologyIds: [],
       orderDate: '',
       appointmentDate: '',
-      priceCurrency: 'USD',
       priceAmount: 0,
+      casheaFirstInstallmentAmount: 0,
+      useFixedRate: false,
+      fixedExchangeRateId: '',
       payments: [],
     },
   });
@@ -114,6 +155,10 @@ export function OrderEdit() {
       try {
         const order = await fetchOrder();
         if (!order) return;
+        // Usuario proveedor: vista mínima (sólo su informe). No carga holder/
+        // paciente ni resetea el form — esas consultas requieren permisos de
+        // pacientes/STs que el proveedor no tiene ("Permisos insuficientes").
+        if (providerLink) return;
         const [h, p] = await Promise.all([
           patientGateway.getById(order.holderId),
           order.patientId === order.holderId
@@ -139,12 +184,18 @@ export function OrderEdit() {
             providerType: row.providerType,
             doctorId: row.doctorId ?? '',
             careCenterId: row.careCenterId ?? '',
+            quantity: row.quantity ?? undefined,
           })),
           pathologyIds: (order.pathologies ?? []).map((p) => p.id),
           orderDate: order.orderDate.slice(0, 10),
           appointmentDate: order.appointmentDate.slice(0, 16),
-          priceCurrency: order.priceCurrency,
           priceAmount: Number(order.priceAmount),
+          casheaFirstInstallmentAmount:
+            order.casheaFirstInstallmentAmount != null
+              ? Number(order.casheaFirstInstallmentAmount)
+              : 0,
+          useFixedRate: !!order.useFixedRate,
+          fixedExchangeRateId: order.fixedExchangeRateId ?? '',
           payments: (order.payments ?? []).map((pay) => ({
             id: pay.id,
             type: pay.type,
@@ -184,6 +235,40 @@ export function OrderEdit() {
 
   if (fetching) {
     return <div className="text-sm text-muted-foreground">Cargando orden…</div>;
+  }
+
+  // Vista mínima de proveedor: sólo su informe (Paso 3), sin stepper ni form.
+  if (providerLink && initialOrder) {
+    return (
+      <div className="max-w-3xl mx-auto">
+        <PageBreadcrumbs />
+        <div className="flex items-start justify-between gap-4 flex-wrap mb-6">
+          <div className="space-y-1">
+            <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">
+              Informe de la orden
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {initialOrder.orderNumber} · {ORDER_STATUS_LABEL[initialOrder.status]}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate('/orders')}
+            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" /> Volver a órdenes
+          </button>
+        </div>
+        <OrderReportStep
+          key={initialOrder.id}
+          order={initialOrder}
+          scopeProvider={{ type: providerLink.type, id: providerLink.id }}
+          onSaved={() => {
+            void fetchOrder();
+          }}
+        />
+      </div>
+    );
   }
 
   return (
@@ -228,9 +313,6 @@ export function OrderEdit() {
               <span className="text-destructive">*</span> Campos obligatorios
             </p>
             <div className="flex items-center gap-2 flex-wrap">
-              <Button type="button" variant="outline" onClick={tryCancel}>
-                Cancelar
-              </Button>
               {currentStep === 'register' && initialOrder?.status === 'draft' ? (
                 <Button type="submit" disabled={methods.formState.isSubmitting}>
                   {methods.formState.isSubmitting ? 'Guardando…' : 'Guardar cambios'}

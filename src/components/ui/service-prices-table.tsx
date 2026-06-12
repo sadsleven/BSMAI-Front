@@ -22,7 +22,6 @@ export type ServicePricesTableProps = {
   errors?: Array<{
     serviceTypeId?: string;
     priceUsd?: string;
-    priceEur?: string;
   }>;
   /** Texto descriptivo bajo el título. */
   description?: string;
@@ -32,9 +31,9 @@ export type ServicePricesTableProps = {
 
 /**
  * Sub-tabla reutilizable de precios por Tipo de Servicio. Se usa en formularios
- * de Seguro, Doctor y Centro de Atención. Cada fila: ST + precio USD + precio
- * EUR + eliminar. Botón "+ Agregar" añade fila vacía; el selector de ST
- * excluye los ya elegidos en la propia tabla.
+ * de Seguro, Doctor y Centro de Atención. Cada fila: ST + precio USD + eliminar.
+ * Botón "+ Agregar" añade fila vacía; el selector de ST excluye los ya elegidos
+ * en la propia tabla.
  */
 export function ServicePricesTable({
   value,
@@ -71,8 +70,7 @@ export function ServicePricesTable({
           id: row.serviceType.id,
           name: row.serviceType.name,
           isActive: false,
-          particularPriceUsd: 0,
-          particularPriceEur: 0,
+          particularPriceUsd: null,
         });
       }
     }
@@ -82,7 +80,7 @@ export function ServicePricesTable({
   const usedIds = useMemo(() => new Set(value.map((r) => r.serviceTypeId).filter(Boolean)), [value]);
 
   const addRow = () => {
-    onChange([...value, { serviceTypeId: '', priceUsd: 0, priceEur: 0 }]);
+    onChange([...value, { serviceTypeId: '', priceUsd: 0 }]);
   };
 
   const removeRow = (idx: number) => {
@@ -113,9 +111,6 @@ export function ServicePricesTable({
                 </th>
                 <th className="px-4 py-2 font-semibold text-[11px] uppercase tracking-[0.06em] text-muted-foreground w-[180px]">
                   Precio USD
-                </th>
-                <th className="px-4 py-2 font-semibold text-[11px] uppercase tracking-[0.06em] text-muted-foreground w-[180px]">
-                  Precio EUR
                 </th>
                 <th className="px-2 py-2 w-10" />
               </tr>
@@ -184,17 +179,6 @@ export function ServicePricesTable({
                         <p className="text-xs text-destructive mt-1">{rowError.priceUsd}</p>
                       )}
                     </td>
-                    <td className="px-4 py-2">
-                      <CurrencyAmountInput
-                        value={Number(row.priceEur) || undefined}
-                        onChange={(v) => updateRow(idx, { priceEur: v ?? 0 })}
-                        currencyPrefix="€"
-                        invalid={!!rowError?.priceEur}
-                      />
-                      {rowError?.priceEur && (
-                        <p className="text-xs text-destructive mt-1">{rowError.priceEur}</p>
-                      )}
-                    </td>
                     <td className="px-2 py-2 text-right">
                       <button
                         type="button"
@@ -229,6 +213,5 @@ export function servicePricesToPayload(rows: ServicePriceRow[]) {
     .map((r) => ({
       serviceTypeId: r.serviceTypeId,
       priceUsd: Number(r.priceUsd) || 0,
-      priceEur: Number(r.priceEur) || 0,
     }));
 }

@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import {
   Activity,
   CalendarClock,
+  Coins,
   FileText,
+  HandCoins,
+  Landmark,
   Receipt,
   TrendingDown,
   TrendingUp,
   UserRound,
+  Wallet,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/modules/auth/domain/store/authStore';
@@ -15,6 +19,7 @@ import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import { formatMoney, formatBs } from '@/lib/format/money';
 import { orderGateway } from '@/modules/orders/infrastructure/orderGateway';
 import { dashboardGateway } from '@/modules/dashboard/infrastructure/dashboardGateway';
 import {
@@ -152,15 +157,17 @@ function useCount(
   return { value, loading };
 }
 
-function useBilledMonthUsd(enabled: boolean) {
+function useAmountUsd(
+  enabled: boolean,
+  fetcher: () => Promise<{ amount: number }>,
+) {
   const [value, setValue] = useState<number | null>(null);
   const [loading, setLoading] = useState(enabled);
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
     setLoading(true);
-    dashboardGateway
-      .billedMonthUsd()
+    fetcher()
       .then((r) => {
         if (!cancelled) setValue(r.amount);
       })
@@ -170,15 +177,16 @@ function useBilledMonthUsd(enabled: boolean) {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled]);
   return { value, loading };
 }
 
 function formatUsd(amount: number): string {
-  return new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
+  return formatMoney(amount);
 }
 
 function useRecentOrders(enabled: boolean) {
@@ -268,10 +276,17 @@ export function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const { has } = usePermissions();
 
-  const canListPatients = has(PERMISSIONS.PATIENTS.LIST);
-  const canListOrders = has(PERMISSIONS.ORDERS.LIST);
-  const canSeeBilled =
-    has(PERMISSIONS.ACCOUNTS_PAYABLE.LIST) && has(PERMISSIONS.ACCOUNTS_RECEIVABLE.LIST);
+  // Usuario proveedor (doctor/centro): su única tarea es el informe de sus
+  // órdenes. Las métricas del dashboard quedan deshabilitadas y se redirige
+  // al listado de órdenes (tras correr los hooks, por reglas de hooks).
+  const isProvider = !!user?.providerLink;
+
+  const canListPatients = has(PERMISSIONS.PATIENTS.LIST) && !isProvider;
+  const canListOrders = has(PERMISSIONS.ORDERS.LIST) && !isProvider;
+  const canListAr = has(PERMISSIONS.ACCOUNTS_RECEIVABLE.LIST) && !isProvider;
+  const canListAp = has(PERMISSIONS.ACCOUNTS_PAYABLE.LIST) && !isProvider;
+  const canListTp = has(PERMISSIONS.TAXES_PAYABLE.LIST) && !isProvider;
+  const canSeeBilled = canListAp && canListAr;
 
   const now = new Date();
   const firstName = user?.firstName ?? '';
@@ -281,9 +296,17 @@ export function DashboardPage() {
   const patients = useCount(canListPatients, dashboardGateway.patientsActiveCount);
   const todayAppts = useCount(canListOrders, dashboardGateway.ordersTodayCount);
   const pending = useCount(canListOrders, dashboardGateway.ordersPendingCount);
-  const billed = useBilledMonthUsd(canSeeBilled);
+  const billed = useAmountUsd(canSeeBilled, dashboardGateway.billedMonthUsd);
+  const collected = useAmountUsd(canListAr, dashboardGateway.collectedMonthUsd);
+  const arTotal = useAmountUsd(canListAr, dashboardGateway.receivableTotalUsd);
+  const apTotal = useAmountUsd(canListAp, dashboardGateway.payableTotalUsd);
+  const tpTotal = useAmountUsd(canListTp, dashboardGateway.taxesPayableTotalBs);
   const recent = useRecentOrders(canListOrders);
   const upcoming = useUpcomingAppointments(canListOrders);
+
+  if (isProvider) {
+    return <Navigate to="/orders" replace />;
+  }
 
   return (
     <div className="space-y-6">
@@ -303,7 +326,7 @@ export function DashboardPage() {
         {canListPatients ? (
           <KpiCard
             label="Pacientes activos"
-            value={patients.value === null ? null : patients.value.toLocaleString('es-VE')}
+            value={patients.value === null ? null : formatMoney(patients.value, { decimals: 0 })}
             icon={UserRound}
             tone="blue"
             loading={patients.loading}
@@ -312,7 +335,7 @@ export function DashboardPage() {
         {canListOrders ? (
           <KpiCard
             label="Citas hoy"
-            value={todayAppts.value === null ? null : todayAppts.value.toLocaleString('es-VE')}
+            value={todayAppts.value === null ? null : formatMoney(todayAppts.value, { decimals: 0 })}
             icon={CalendarClock}
             tone="cyan"
             loading={todayAppts.loading}
@@ -321,7 +344,7 @@ export function DashboardPage() {
         {canListOrders ? (
           <KpiCard
             label="Órdenes pendientes"
-            value={pending.value === null ? null : pending.value.toLocaleString('es-VE')}
+            value={pending.value === null ? null : formatMoney(pending.value, { decimals: 0 })}
             icon={FileText}
             tone="amber"
             loading={pending.loading}
@@ -334,6 +357,42 @@ export function DashboardPage() {
             icon={Receipt}
             tone="green"
             loading={billed.loading}
+          />
+        ) : null}
+        {canListAr ? (
+          <KpiCard
+            label="Cobrado mes"
+            value={collected.value === null ? null : `$ ${formatUsd(collected.value)}`}
+            icon={Coins}
+            tone="green"
+            loading={collected.loading}
+          />
+        ) : null}
+        {canListAr ? (
+          <KpiCard
+            label="Por cobrar"
+            value={arTotal.value === null ? null : `$ ${formatUsd(arTotal.value)}`}
+            icon={HandCoins}
+            tone="cyan"
+            loading={arTotal.loading}
+          />
+        ) : null}
+        {canListAp ? (
+          <KpiCard
+            label="Por pagar"
+            value={apTotal.value === null ? null : `$ ${formatUsd(apTotal.value)}`}
+            icon={Wallet}
+            tone="amber"
+            loading={apTotal.loading}
+          />
+        ) : null}
+        {canListTp ? (
+          <KpiCard
+            label="Retenciones por pagar"
+            value={tpTotal.value === null ? null : formatBs(tpTotal.value)}
+            icon={Landmark}
+            tone="amber"
+            loading={tpTotal.loading}
           />
         ) : null}
       </div>
@@ -413,7 +472,7 @@ export function DashboardPage() {
                             <OrderStatusPill status={o.status} />
                           </td>
                           <td className="px-5 py-3 text-right font-semibold font-mono text-xs">
-                            {Number(o.priceAmount).toFixed(2)} {o.priceCurrency}
+                            {formatMoney(o.priceAmount)} USD
                           </td>
                         </tr>
                       ))}

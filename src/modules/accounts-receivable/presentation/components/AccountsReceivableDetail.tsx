@@ -10,15 +10,24 @@ import { notify } from '@/lib/notifications/toast';
 import { accountsReceivableGateway } from '../../infrastructure/accountsReceivableGateway';
 import { Badge } from '@/components/ui/badge';
 import {
-  billingRateBs,
+  casheaCommissionOf,
   collectedBs,
-  collectedOriginal,
+  collectedUsd,
+  debtorDisplayName,
+  debtorTypeOf,
+  isCasheaAccount,
+  isFixedRateAccount,
   pendingBs,
-  pendingOriginal,
+  pendingUsd,
   STATUS_LABEL,
+  targetBs,
+  targetUsd,
   type AccountsReceivable,
 } from '../../domain/models/accountsReceivable';
+import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
+import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchangeRate';
 import { PaymentHistoryList } from '@/modules/accounts-payable/presentation/components/PaymentHistoryList';
+import { formatMoney } from '@/lib/format/money';
 
 export type AccountsReceivableDetailProps = {
   accountId: string | null;
@@ -33,6 +42,19 @@ export function AccountsReceivableDetail({
 }: AccountsReceivableDetailProps) {
   const [account, setAccount] = useState<AccountsReceivable | null>(null);
   const [loading, setLoading] = useState(false);
+  const [usdRate, setUsdRate] = useState<ExchangeRate | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    exchangeRateGateway
+      .getCurrent('USD')
+      .then((r) => !cancelled && setUsdRate(r))
+      .catch(() => !cancelled && setUsdRate(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open || !accountId) {
@@ -81,12 +103,49 @@ export function AccountsReceivableDetail({
           <DetailSection title="Información">
             <DetailRow label="N° cuenta" value={account.receivableNumber} mono />
             <DetailRow label="N° orden" value={account.order.orderNumber} mono />
-            <DetailRow label="Seguro" value={account.insurance?.name ?? null} />
             <DetailRow
-              label="Monto orden"
-              value={`${Number(account.order.priceAmount).toFixed(2)} ${account.order.priceCurrency}`}
+              label={
+                isCasheaAccount(account)
+                  ? 'Titular (Cashea)'
+                  : debtorTypeOf(account) === 'holder'
+                    ? 'Titular (crédito)'
+                    : 'Seguro'
+              }
+              value={debtorDisplayName(account)}
+            />
+            <DetailRow
+              label="Precio orden"
+              value={`${formatMoney(account.order.priceAmount)} USD`}
               mono
             />
+            {isCasheaAccount(account) ? (
+              <>
+                <DetailRow
+                  label="Comisión Cashea"
+                  value={`-${formatMoney(casheaCommissionOf(account))} USD`}
+                  mono
+                />
+                <DetailRow
+                  label="Neto a cobrar"
+                  value={`${formatMoney(targetUsd(account) ?? 0)} USD`}
+                  mono
+                />
+              </>
+            ) : null}
+            {isFixedRateAccount(account) ? (
+              <>
+                <DetailRow
+                  label="Tasa fija USD/Bs"
+                  value={`Bs. ${formatMoney(account.order.fixedExchangeRate?.amountBs ?? 0)} · ${new Date(account.order.fixedExchangeRate?.effectiveDate ?? '').toLocaleDateString('es-VE')}`}
+                  mono
+                />
+                <DetailRow
+                  label="Total a cobrar (Bs)"
+                  value={`${formatMoney(targetBs(account) ?? 0)} Bs`}
+                  mono
+                />
+              </>
+            ) : null}
             <DetailRow
               label="Estado"
               value={
@@ -106,12 +165,12 @@ export function AccountsReceivableDetail({
           </DetailSection>
 
           {(() => {
-            const cBs = collectedBs(account);
-            const cOrig = collectedOriginal(account);
-            const pBs = pendingBs(account);
-            const pOrig = pendingOriginal(account);
-            const rateBs = billingRateBs(account);
-            const cur = account.order.priceCurrency;
+            const fixed = isFixedRateAccount(account);
+            const unit = fixed ? 'Bs' : 'USD';
+            const target = fixed ? targetBs(account) ?? 0 : targetUsd(account) ?? 0;
+            const collected = fixed ? collectedBs(account) : collectedUsd(account);
+            const pending = fixed ? pendingBs(account) : pendingUsd(account);
+            const fmt = (n: number) => formatMoney(n);
             return (
               <DetailSection title="Saldo">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
@@ -120,7 +179,7 @@ export function AccountsReceivableDetail({
                       Total a cobrar
                     </div>
                     <div className="text-lg font-semibold">
-                      {Number(account.order.priceAmount).toFixed(2)} {cur}
+                      {fmt(target)} {unit}
                     </div>
                   </div>
                   <div className="space-y-1">
@@ -128,9 +187,7 @@ export function AccountsReceivableDetail({
                       Total cobrado
                     </div>
                     <div className="text-lg font-semibold">
-                      {cOrig !== null
-                        ? `${cOrig.toFixed(2)} ${cur}`
-                        : `${cBs.toFixed(2)} Bs.`}
+                      {fmt(collected)} {unit}
                     </div>
                   </div>
                   <div className="space-y-1">
@@ -138,45 +195,31 @@ export function AccountsReceivableDetail({
                       Diferencia
                     </div>
                     <div className="text-lg font-semibold flex items-center gap-2">
-                      {pBs === null ? (
+                      {pending === null ? (
                         <span className="text-muted-foreground">—</span>
-                      ) : Math.abs(pBs) <= 0.01 ? (
+                      ) : Math.abs(pending) <= 0.01 ? (
                         <Badge variant="default" className="bg-success text-white">
                           Cuadrado
                         </Badge>
-                      ) : pBs < 0 ? (
+                      ) : pending < 0 ? (
                         <Badge variant="default" className="bg-brand-blue text-white">
-                          Excede{' '}
-                          {pOrig !== null
-                            ? `${Math.abs(pOrig).toFixed(2)} ${cur}`
-                            : `${Math.abs(pBs).toFixed(2)} Bs.`}
+                          Excede {fmt(Math.abs(pending))} {unit}
                         </Badge>
                       ) : (
                         <Badge variant="default" className="bg-warning text-white">
-                          Faltan{' '}
-                          {pOrig !== null
-                            ? `${pOrig.toFixed(2)} ${cur}`
-                            : `${pBs.toFixed(2)} Bs.`}
+                          Faltan {fmt(pending)} {unit}
                         </Badge>
                       )}
                     </div>
-                    {pBs !== null && Math.abs(pBs) >= 0.01 && (
+                    {pending !== null && Math.abs(pending) > 0.01 && !fixed && usdRate ? (
                       <div className="text-xs text-muted-foreground">
-                        {pBs > 0 ? 'Faltan' : 'Excede'}{' '}
+                        {pending < 0 ? 'Excede' : 'Faltan'}{' '}
                         <span className="font-mono">
-                          Bs.{' '}
-                          {Math.abs(pBs).toLocaleString('es-VE', {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}
+                          Bs{' '}
+                          {formatMoney(Math.abs(pending) * Number(usdRate.amountBs))}
                         </span>
-                        {rateBs !== null && (
-                          <span className="ml-1 text-[10px]">
-                            (tasa {rateBs.toFixed(2)} Bs/{cur})
-                          </span>
-                        )}
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </DetailSection>

@@ -29,11 +29,13 @@ import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import {
-  formatBs,
+  formatUsd,
   formatNumber,
   formatPercent,
   inDateRange,
 } from '../../domain/format';
+import { formatBs } from '../../domain/format';
+import { useUsdRate, usdToBs } from '../../domain/useUsdRate';
 import { REPORT_PAGE_SIZE } from '../../infrastructure/fetchAll';
 import { getHttpErrorMessage } from '@/lib/api';
 
@@ -42,7 +44,7 @@ type Row = {
   name: string;
   uses: number;
   ordersCount: number;
-  estimatedBs: number;
+  estimatedUsd: number;
 };
 
 export function ReportServicesBilled() {
@@ -61,6 +63,7 @@ export function ReportServicesBilled() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [overCap, setOverCap] = useState(false);
+  const usdRate = useUsdRate();
 
   useEffect(() => {
     let cancelled = false;
@@ -112,19 +115,17 @@ export function ReportServicesBilled() {
       if (filters.type && o.type !== filters.type) return;
       const sts = o.orderServiceTypes ?? [];
       if (sts.length === 0) return;
-      const rate = o.billingExchangeRate ? Number(o.billingExchangeRate.amountBs) : 0;
-      const totalBs = rate > 0 ? Number(o.priceAmount) * rate : 0;
-      const perSt = totalBs / sts.length;
+      const perSt = Number(o.priceAmount) / sts.length;
       sts.forEach((row) => {
         const id = row.serviceTypeId;
         const name = row.serviceType?.name ?? '—';
         let r = map.get(id);
         if (!r) {
-          r = { serviceTypeId: id, name, uses: 0, ordersCount: 0, estimatedBs: 0 };
+          r = { serviceTypeId: id, name, uses: 0, ordersCount: 0, estimatedUsd: 0 };
           map.set(id, r);
         }
         r.uses += 1;
-        r.estimatedBs += perSt;
+        r.estimatedUsd += perSt;
         if (!orderSet.has(id)) orderSet.set(id, new Set());
         orderSet.get(id)!.add(o.id);
       });
@@ -143,7 +144,7 @@ export function ReportServicesBilled() {
     let est = 0;
     aggregated.forEach((r) => {
       uses += r.uses;
-      est += r.estimatedBs;
+      est += r.estimatedUsd;
     });
     return { uses, est, top: aggregated[0] };
   }, [aggregated]);
@@ -178,7 +179,7 @@ export function ReportServicesBilled() {
               icon: Sigma,
               tone: 'success',
               label: 'Revenue estimado',
-              value: formatBs(totals.est),
+              value: formatUsd(totals.est),
             },
             {
               icon: TrendingUp,
@@ -239,23 +240,25 @@ export function ReportServicesBilled() {
           </div>
         ) : null}
 
+        <div className="m-4 rounded-lg border overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-[oklch(0.985_0.003_250)] hover:bg-[oklch(0.985_0.003_250)]">
+            <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">#</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Servicio</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Realizaciones</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Órdenes distintas</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">% del volumen</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Revenue estimado Bs.</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Realizaciones</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Órdenes distintas</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">% del volumen</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Revenue USD</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Revenue Bs.</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <SkeletonTableRows rows={6} columns={6} />
+              <SkeletonTableRows rows={6} columns={7} />
             ) : aggregated.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="p-0">
+                <TableCell colSpan={7} className="p-0">
                   <EmptyState
                     icon={PieChart}
                     title={hasActiveFilters ? 'Sin resultados' : 'Sin servicios registrados'}
@@ -286,7 +289,10 @@ export function ReportServicesBilled() {
                       {formatPercent(pct)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                      {formatBs(r.estimatedBs)}
+                      {formatUsd(r.estimatedUsd)}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
+                      {formatBs(usdToBs(r.estimatedUsd, usdRate))}
                     </TableCell>
                   </TableRow>
                 );
@@ -294,6 +300,7 @@ export function ReportServicesBilled() {
             )}
           </TableBody>
         </Table>
+        </div>
       </div>
     </ReportShell>
   );

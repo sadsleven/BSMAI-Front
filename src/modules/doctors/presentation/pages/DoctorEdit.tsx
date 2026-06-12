@@ -16,6 +16,8 @@ import {
 import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { servicePricesToPayload } from '@/components/ui/service-prices-table';
+import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
+import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { ChevronLeft } from 'lucide-react';
 
 function cleanPaymentMethod(m: PaymentMethodValues): DoctorPaymentMethod {
@@ -42,9 +44,11 @@ function cleanPaymentMethod(m: PaymentMethodValues): DoctorPaymentMethod {
 export function DoctorEdit() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { has } = usePermissions();
   const [fetching, setFetching] = useState(true);
   const [displayName, setDisplayName] = useState('');
   const [existingSpecialties, setExistingSpecialties] = useState<Specialty[]>([]);
+  const [accountExists, setAccountExists] = useState(false);
 
   const methods = useForm<DoctorValues>({
     resolver: zodResolver(doctorSchema),
@@ -61,6 +65,8 @@ export function DoctorEdit() {
       paymentMethods: [],
       servicePrices: [],
       isActive: true,
+      password: '',
+      confirmPassword: '',
     },
   });
 
@@ -98,12 +104,14 @@ export function DoctorEdit() {
               ? { id: sp.serviceType.id, name: sp.serviceType.name }
               : undefined,
             priceUsd: Number(sp.priceUsd) || 0,
-            priceEur: Number(sp.priceEur) || 0,
           })),
           isActive: d.isActive,
+          password: '',
+          confirmPassword: '',
         });
         setDisplayName(fullName(d));
         setExistingSpecialties(d.specialties ?? []);
+        setAccountExists(!!d.userId);
       } catch (e) {
         notify.fromError(e, 'No se pudo cargar el doctor.');
       } finally {
@@ -118,7 +126,7 @@ export function DoctorEdit() {
     try {
       await doctorGateway.update(id, {
         cedula: values.cedula,
-        email: values.email?.trim() || '',
+        email: values.email.trim(),
         firstName: values.firstName,
         lastName: values.lastName,
         isLegalEntity: values.isLegalEntity,
@@ -164,7 +172,13 @@ export function DoctorEdit() {
             </button>
           </div>
 
-          <DoctorForm existingSpecialties={existingSpecialties} />
+          <DoctorForm
+            existingSpecialties={existingSpecialties}
+            mode="edit"
+            accountExists={accountExists}
+            canChangePassword={has(PERMISSIONS.DOCTORS.CHANGE_PASSWORD)}
+            onChangePassword={() => navigate(`/doctors/${id}/change-password`)}
+          />
 
           <div className="flex items-center justify-between gap-3 pt-2">
             <p className="text-xs text-muted-foreground">

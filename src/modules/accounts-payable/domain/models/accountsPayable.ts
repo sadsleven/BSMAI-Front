@@ -1,12 +1,11 @@
 import type {
-  DoctorAmountCurrency,
   Order,
   OrderPaymentType,
   PaymentCurrency,
 } from '@/modules/orders/domain/models/order';
 
 export type AccountsPayableStatus = 'paid' | 'unpaid' | 'partially_paid';
-/** Status derivado en FE: incluye `undefined` cuando la orden aún no tiene doctorAmount. */
+/** Status derivado en FE: incluye `undefined` cuando la orden aún no tiene providerAmount. */
 export type EffectiveAccountsPayableStatus = AccountsPayableStatus | 'undefined';
 export type RecipientType = 'doctor' | 'care_center';
 
@@ -20,6 +19,7 @@ export interface AccountsPayablePayment {
   exchangeRateId?: string | null;
   amountCurrency: PaymentCurrency;
   amountValue: string | number;
+  amountInUsd: string | number;
   amountInBs: string | number;
   createdAt?: string;
 }
@@ -34,9 +34,8 @@ export interface AccountsPayable {
   doctor?: { id: string; firstName?: string | null; lastName?: string | null; isLegalEntity?: boolean } | null;
   careCenterId?: string | null;
   careCenter?: { id: string; businessName?: string | null } | null;
-  /** Monto a pagar a este proveedor (en moneda original). Null mientras no se facture. */
+  /** Monto USD a pagar al proveedor. Null mientras no se factura. */
   providerAmount?: string | number | null;
-  providerAmountCurrency?: DoctorAmountCurrency | null;
   status: AccountsPayableStatus;
   paidAt?: string | null;
   payments?: AccountsPayablePayment[];
@@ -89,10 +88,6 @@ export const EFFECTIVE_STATUS_LABEL: Record<EffectiveAccountsPayableStatus, stri
   undefined: 'Sin definir',
 };
 
-/**
- * Status derivado: si la orden aún no tiene `doctorAmount` (null o 0), retorna `'undefined'`.
- * No se persiste; sólo display + bloqueo de selección.
- */
 export function effectiveStatus(
   a: AccountsPayable,
 ): EffectiveAccountsPayableStatus {
@@ -103,7 +98,6 @@ export function effectiveStatus(
   return a.status;
 }
 
-/** Selección/pago habilitado: no pagada y con monto definido. */
 export function canSelectForPayment(a: AccountsPayable): boolean {
   const s = effectiveStatus(a);
   return s !== 'paid' && s !== 'undefined';
@@ -118,79 +112,43 @@ export function recipientName(a: AccountsPayable): string {
 }
 
 /**
- * Calcula `amountToReceive` en moneda original del `doctorAmount`, restando tax si recipient = doctor.
- *
- * Las tasas pueden inyectarse desde `useTaxRates()` (`{ doctorNaturalTaxRate, doctorLegalTaxRate }`).
- * Si no se pasa `rates`, usa los defaults 0.03 / 0.05 (alineados con BE fallback).
+ * Monto USD bruto a pagar al proveedor (= providerAmount). La retención
+ * SENIAT se aplica al lote al registrar el pago — ya no se descuenta acá.
  */
-export function amountToReceive(
-  a: AccountsPayable,
-  rates?: { doctorNaturalTaxRate: number; doctorLegalTaxRate: number } | null,
-): number | null {
+export function amountToReceiveUsd(a: AccountsPayable): number | null {
   if (!a.providerAmount) return null;
   const amount = Number(a.providerAmount);
-  if (a.recipientType === 'doctor') {
-    const r = rates ?? { doctorNaturalTaxRate: 0.03, doctorLegalTaxRate: 0.05 };
-    const taxRate = a.doctor?.isLegalEntity ? r.doctorLegalTaxRate : r.doctorNaturalTaxRate;
-    return amount * (1 - taxRate);
-  }
+  if (!Number.isFinite(amount)) return null;
   return amount;
 }
 
-/** Suma en Bs de los pagos asociados a la cuenta. */
+/** Suma USD de los pagos asociados a la cuenta. */
+export function paidUsd(a: AccountsPayable): number {
+  return (a.payments ?? []).reduce((s, p) => s + Number(p.amountInUsd || 0), 0);
+}
+
+/** Suma Bs de los pagos asociados a la cuenta. */
 export function paidBs(a: AccountsPayable): number {
   return (a.payments ?? []).reduce((s, p) => s + Number(p.amountInBs || 0), 0);
 }
 
-/** Tasa de facturación de la orden (Bs por unidad de moneda extranjera). */
-export function billingRateBs(a: AccountsPayable): number | null {
-  const r = a.order.billingExchangeRate;
-  if (!r) return null;
-  const n = Number(r.amountBs);
-  return Number.isFinite(n) && n > 0 ? n : null;
+/**
+ * Bs ya pagado (parcial) en un grupo de cuentas, deduplicando pagos que estén
+ * ligados a varias cuentas del grupo (un mismo pago aparece en cada cuenta).
+ */
+export function groupPaidBs(accounts: AccountsPayable[]): number {
+  const byId = new Map<string, number>();
+  for (const a of accounts) {
+    for (const p of a.payments ?? []) byId.set(p.id, Number(p.amountInBs || 0));
+  }
+  let total = 0;
+  for (const v of byId.values()) total += v;
+  return Math.round(total * 100) / 100;
 }
 
-/** Pagado convertido a moneda original del providerAmount. */
-export function paidOriginal(a: AccountsPayable): number | null {
-  const pBs = paidBs(a);
-  if (a.providerAmountCurrency === 'BS') return pBs;
-  const r = billingRateBs(a);
-  if (r === null) return null;
-  return pBs / r;
-}
-
-/** Monto objetivo en Bs (a recibir × tasa de facturación). */
-export function targetBs(
-  a: AccountsPayable,
-  rates?: { doctorNaturalTaxRate: number; doctorLegalTaxRate: number } | null,
-): number | null {
-  const ar = amountToReceive(a, rates);
-  if (ar === null) return null;
-  if (a.providerAmountCurrency === 'BS') return ar;
-  const r = billingRateBs(a);
-  if (r === null) return null;
-  return ar * r;
-}
-
-/** Pendiente en Bs. Nunca negativo (cap superior). */
-export function pendingBs(
-  a: AccountsPayable,
-  rates?: { doctorNaturalTaxRate: number; doctorLegalTaxRate: number } | null,
-): number | null {
-  const t = targetBs(a, rates);
+/** Pendiente USD bruto. Nunca negativo. */
+export function pendingUsd(a: AccountsPayable): number | null {
+  const t = amountToReceiveUsd(a);
   if (t === null) return null;
-  return Math.max(0, t - paidBs(a));
-}
-
-/** Pendiente en la moneda original del doctorAmount. */
-export function pendingOriginal(
-  a: AccountsPayable,
-  rates?: { doctorNaturalTaxRate: number; doctorLegalTaxRate: number } | null,
-): number | null {
-  const p = pendingBs(a, rates);
-  if (p === null) return null;
-  if (a.providerAmountCurrency === 'BS') return p;
-  const r = billingRateBs(a);
-  if (r === null) return null;
-  return p / r;
+  return Math.max(0, t - paidUsd(a));
 }

@@ -24,22 +24,20 @@ import { SortableHeader, type SortDir } from '@/components/ui/sortable-header';
 import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
+import { formatCreated } from '@/lib/dates';
+import { formatMoney } from '@/lib/format/money';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { Can } from '@/modules/auth/presentation/components/Can';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
-import { notify } from '@/lib/notifications/toast';
 import { getHttpErrorMessage } from '@/lib/api';
 import { taxesPayableGateway } from '../../infrastructure/taxesPayableGateway';
 import {
   canSelectForPayment,
-  effectiveStatus,
-  EFFECTIVE_STATUS_LABEL,
-  paidBs,
   pendingBs,
-  pendingOriginal,
   recipientName,
-  taxAmount,
+  STATUS_LABEL,
+  taxAmountBs,
   type TaxPayable,
   type TaxPayableStatus,
 } from '../../domain/models/taxesPayable';
@@ -51,7 +49,7 @@ import {
 } from '@/modules/doctors/domain/models/doctor';
 import type { CareCenter } from '@/modules/care-centers/domain/models/careCenter';
 
-type SortBy = 'orderNumber' | 'createdAt' | 'updatedAt';
+type SortBy = 'taxPayableNumber' | 'taxAmountBs' | 'grossAmountBs' | 'createdAt' | 'updatedAt';
 
 function readQuery(sp: URLSearchParams) {
   return {
@@ -64,6 +62,10 @@ function readQuery(sp: URLSearchParams) {
     sortBy: (sp.get('sortBy') ?? 'createdAt') as SortBy,
     sortDir: (sp.get('sortDir') ?? 'DESC') as SortDir,
   };
+}
+
+function formatBs(n: number): string {
+  return formatMoney(n);
 }
 
 export function TaxesPayableList() {
@@ -175,10 +177,6 @@ export function TaxesPayableList() {
   );
 
   const goRegister = () => {
-    if (selectedAccounts.length === 0) {
-      notify.warning('Seleccioná al menos una cuenta');
-      return;
-    }
     navigate('/taxes-payable/register-payment', {
       state: { taxPayableIds: selectedAccounts.map((a) => a.id) },
     });
@@ -190,16 +188,16 @@ export function TaxesPayableList() {
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div className="space-y-1">
           <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">
-            Impuestos por pagar
+            Retenciones por pagar
           </h1>
           <p className="text-sm text-muted-foreground">
             {metadata.total.toLocaleString()} cuenta{metadata.total === 1 ? '' : 's'} en total
           </p>
         </div>
         <Can permission={PERMISSIONS.TAXES_PAYABLE.UPDATE}>
-          <Button onClick={goRegister} disabled={selectedAccounts.length === 0}>
+          <Button onClick={goRegister}>
             <Plus className="w-4 h-4 mr-1.5" />
-            Registrar pago
+            Registrar pago al SENIAT
             {selectedAccounts.length > 0 && (
               <span className="ml-1 text-[11px] opacity-80">
                 ({selectedAccounts.length})
@@ -213,7 +211,7 @@ export function TaxesPayableList() {
         <DataTableToolbar
           searchValue={searchInput}
           onSearchChange={setSearchInput}
-          searchPlaceholder="Buscar por N° orden o cuenta…"
+          searchPlaceholder="Buscar por N° comprobante u orden…"
           hasActiveFilters={hasActiveFilters}
           onClear={clearFilters}
           filters={
@@ -229,9 +227,9 @@ export function TaxesPayableList() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Estado: todos</SelectItem>
-                  <SelectItem value="unpaid">No pagada</SelectItem>
-                  <SelectItem value="partially_paid">Pagada parcialmente</SelectItem>
-                  <SelectItem value="paid">Pagada</SelectItem>
+                  <SelectItem value="unpaid">No pagado</SelectItem>
+                  <SelectItem value="partially_paid">Pagado parcialmente</SelectItem>
+                  <SelectItem value="paid">Pagado</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -282,37 +280,52 @@ export function TaxesPayableList() {
           </div>
         ) : null}
 
+        <div className="m-4 rounded-lg border overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-[oklch(0.985_0.003_250)] hover:bg-[oklch(0.985_0.003_250)]">
+            <TableRow>
               <TableHead className="w-10"></TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                N° cuenta
-              </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 <SortableHeader<SortBy>
-                  column="orderNumber"
+                  column="taxPayableNumber"
                   activeColumn={filters.sortBy}
                   direction={filters.sortDir}
                   onSort={onSort}
                 >
-                  N° orden
+                  N° comprobante
                 </SortableHeader>
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                Destinatario
+                Órdenes
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                Tipo
+                Proveedor
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                Tasa
+                Régimen
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                Monto al fisco
+                <SortableHeader<SortBy>
+                  column="grossAmountBs"
+                  activeColumn={filters.sortBy}
+                  direction={filters.sortDir}
+                  onSort={onSort}
+                >
+                  Bruto (Bs.)
+                </SortableHeader>
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                Falta por pagar
+                <SortableHeader<SortBy>
+                  column="taxAmountBs"
+                  activeColumn={filters.sortBy}
+                  direction={filters.sortDir}
+                  onSort={onSort}
+                >
+                  Retención (Bs.)
+                </SortableHeader>
+              </TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                Falta (Bs.)
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Estado
@@ -327,7 +340,7 @@ export function TaxesPayableList() {
                   Creación
                 </SortableHeader>
               </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-center">
                 Acciones
               </TableHead>
             </TableRow>
@@ -343,25 +356,24 @@ export function TaxesPayableList() {
                     title={
                       hasActiveFilters
                         ? 'Sin resultados con esos filtros'
-                        : 'Sin impuestos por pagar'
+                        : 'Sin Retenciones por pagar'
                     }
                     description={
                       hasActiveFilters
                         ? 'Limpiá los filtros para ver todas las cuentas.'
-                        : 'Las cuentas se generan al facturar órdenes (Paso 4).'
+                        : 'Los comprobantes se generan al registrar un pago a doctor/centro en Cuentas por pagar.'
                     }
                   />
                 </TableCell>
               </TableRow>
             ) : (
               data.map((a) => {
-                const amt = taxAmount(a);
+                const taxBs = taxAmountBs(a);
+                const grossBs = Number(a.grossAmountBs) || 0;
                 const pBs = pendingBs(a);
-                const pOrig = pendingOriginal(a);
-                const paid = paidBs(a);
-                const eff = effectiveStatus(a);
                 const selectable = canSelectForPayment(a);
-                const ratePct = a.taxRate ? (Number(a.taxRate) * 100).toFixed(2) : null;
+                const ratePct = a.taxRate ? (Number(a.taxRate) * 100).toFixed(0) : null;
+                const orders = a.orders ?? [];
                 return (
                   <TableRow key={a.id} className="hover:bg-muted/30">
                     <TableCell className="py-3.5 px-4">
@@ -375,90 +387,85 @@ export function TaxesPayableList() {
                     <TableCell className="py-3.5 px-4 font-mono text-sm font-semibold">
                       {a.taxPayableNumber}
                     </TableCell>
-                    <TableCell className="py-3.5 px-4 font-mono text-sm">
-                      <Link
-                        to={`/orders/edit/${a.orderId}`}
-                        className="text-brand-blue hover:underline"
-                      >
-                        {a.order.orderNumber}
-                      </Link>
+                    <TableCell className="py-3.5 px-4 text-xs">
+                      {orders.length === 0 ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : orders.length <= 3 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {orders.map((o) => (
+                            <Link
+                              key={o.id}
+                              to={`/orders/edit/${o.id}`}
+                              className="font-mono text-brand-blue hover:underline"
+                            >
+                              {o.orderNumber}
+                            </Link>
+                          ))}
+                        </div>
+                      ) : (
+                        <span>
+                          <span className="font-mono">{orders[0].orderNumber}</span>{' '}
+                          <span className="text-muted-foreground">
+                            +{orders.length - 1} más
+                          </span>
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm">
-                      {recipientName(a)}
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm">
-                      <Badge variant="outline" className="font-normal">
+                      <div>{recipientName(a)}</div>
+                      <div className="text-[11px] text-muted-foreground">
                         {a.recipientType === 'doctor' ? 'Doctor' : 'Centro'}
+                      </div>
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4">
+                      <Badge variant="outline" className="font-normal text-[10px]">
+                        {a.personType === 'legal_entity' ? 'PJD' : 'PNR'}
+                        {ratePct ? ` · ${ratePct}%` : ''}
                       </Badge>
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono">
-                      {ratePct ? `${ratePct}%` : '—'}
+                      {formatBs(grossBs)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono">
-                      {amt !== null
-                        ? `${amt.toFixed(2)} ${a.taxAmountCurrency ?? ''}`
-                        : '—'}
+                      {formatBs(taxBs)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono">
-                      {pBs !== null ? (
-                        <div
-                          className={
-                            pBs <= 0.01
-                              ? 'text-success'
-                              : paid > 0
-                                ? 'text-warning'
-                                : 'text-foreground'
-                          }
-                        >
-                          {pOrig !== null &&
-                          a.taxAmountCurrency &&
-                          a.taxAmountCurrency !== 'BS' ? (
-                            <>
-                              <div>
-                                {pOrig.toFixed(2)} {a.taxAmountCurrency}
-                              </div>
-                              <div className="text-xs text-muted-foreground">
-                                Bs. {pBs.toFixed(2)}
-                              </div>
-                            </>
-                          ) : (
-                            <div>{pBs.toFixed(2)} Bs.</div>
-                          )}
-                        </div>
-                      ) : (
-                        '—'
-                      )}
+                      <span
+                        className={
+                          pBs <= 0.01
+                            ? 'text-success'
+                            : pBs < taxBs
+                              ? 'text-warning'
+                              : 'text-foreground'
+                        }
+                      >
+                        {formatBs(pBs)}
+                      </span>
                     </TableCell>
                     <TableCell className="py-3.5 px-4">
                       <span
                         className={
-                          eff === 'paid'
+                          a.status === 'paid'
                             ? 'inline-flex items-center gap-1.5 rounded-full bg-success-soft text-success px-2 py-0.5 text-xs font-medium'
-                            : eff === 'partially_paid'
+                            : a.status === 'partially_paid'
                               ? 'inline-flex items-center gap-1.5 rounded-full bg-brand-cyan-soft text-brand-blue-strong px-2 py-0.5 text-xs font-medium'
-                              : eff === 'undefined'
-                                ? 'inline-flex items-center gap-1.5 rounded-full bg-muted text-muted-foreground px-2 py-0.5 text-xs font-medium'
-                                : 'inline-flex items-center gap-1.5 rounded-full bg-warning-soft text-warning px-2 py-0.5 text-xs font-medium'
+                              : 'inline-flex items-center gap-1.5 rounded-full bg-warning-soft text-warning px-2 py-0.5 text-xs font-medium'
                         }
                       >
                         <span
                           className={
-                            eff === 'paid'
+                            a.status === 'paid'
                               ? 'w-1.5 h-1.5 rounded-full bg-success'
-                              : eff === 'partially_paid'
+                              : a.status === 'partially_paid'
                                 ? 'w-1.5 h-1.5 rounded-full bg-brand-cyan'
-                                : eff === 'undefined'
-                                  ? 'w-1.5 h-1.5 rounded-full bg-muted-foreground'
-                                  : 'w-1.5 h-1.5 rounded-full bg-warning'
+                                : 'w-1.5 h-1.5 rounded-full bg-warning'
                           }
                         />
-                        {EFFECTIVE_STATUS_LABEL[eff]}
+                        {STATUS_LABEL[a.status]}
                       </span>
                     </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm text-muted-foreground">
-                      {a.createdAt
-                        ? new Date(a.createdAt).toLocaleDateString('es-VE')
-                        : '—'}
+                    <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                      {formatCreated(a.createdAt)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-right">
                       <Button
@@ -493,6 +500,7 @@ export function TaxesPayableList() {
           onPageSizeChange={(limit) => updateParam({ limit })}
           itemLabel="cuentas"
         />
+        </div>
       </div>
     </div>
   );

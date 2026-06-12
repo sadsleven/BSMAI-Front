@@ -16,9 +16,12 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { DateTimePicker } from '@/components/ui/date-time-picker';
 import { Stepper, type StepDef } from '@/components/ui/stepper';
 import { Badge } from '@/components/ui/badge';
+import { ChipMultiSelect } from '@/components/ui/chip-multi-select';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { AlertTriangle, Building, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatMoney } from '@/lib/format/money';
+import { casheaCommissionCents } from '@/lib/money/cashea';
 import { useAuthStore } from '@/modules/auth/domain/store/authStore';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
@@ -27,10 +30,7 @@ import {
   getUserBranches,
   setLastBranchId,
 } from '@/lib/auth/branches';
-import type {
-  OrderCurrency,
-  OrderType,
-} from '../../domain/models/order';
+import type { OrderType } from '../../domain/models/order';
 import { ORDER_TYPE_LABEL } from '../../domain/models/order';
 import type { OrderValues } from '@/lib/validations/schemas';
 import type { Patient } from '@/modules/patients/domain/models/patient';
@@ -42,6 +42,7 @@ import { serviceTypeGateway } from '@/modules/service-types/infrastructure/servi
 import { pathologyGateway } from '@/modules/pathologies/infrastructure/pathologyGateway';
 import { specialtyGateway } from '@/modules/specialties/infrastructure/specialtyGateway';
 import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
+import { appConfigGateway } from '@/modules/app-config/infrastructure/appConfigGateway';
 import { PatientSearchSelect } from './PatientSearchSelect';
 import { PatientCreateModal } from './PatientCreateModal';
 import { AuthorizeAmountModal } from './AuthorizeAmountModal';
@@ -55,7 +56,7 @@ import type { Doctor } from '@/modules/doctors/domain/models/doctor';
 import type { CareCenter } from '@/modules/care-centers/domain/models/careCenter';
 import {
   OrderPaymentForm,
-  paymentInOrderCurrency,
+  paymentInUsd,
   type PaymentItemErrors,
 } from './OrderPaymentForm';
 import type { Order } from '../../domain/models/order';
@@ -83,7 +84,7 @@ function buildOrderSteps(
     {
       id: 'attention',
       label: '2. Atención del paciente',
-      description: 'Marcar atendido + órdenes internas',
+      description: 'Descargar e imprimir órdenes internas',
       available: savedOrderId && perms.attention,
       lockedReason: !perms.attention ? NO_STAGE_PERM : 'Guardá la orden primero',
     },
@@ -92,7 +93,7 @@ function buildOrderSteps(
       label: '3. Informe médico y estudios',
       description: 'Estudios y observaciones',
       available: savedOrderId && isAttendedOrLater && perms.report,
-      lockedReason: !perms.report ? NO_STAGE_PERM : 'Marcá atendido primero',
+      lockedReason: !perms.report ? NO_STAGE_PERM : 'Confirmá las órdenes internas primero',
     },
     {
       id: 'billing',
@@ -185,6 +186,7 @@ export function OrderForm({
   const [confirmTypeChange, setConfirmTypeChange] = useState<OrderType | null>(null);
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]);
   const [pathologies, setPathologies] = useState<Pathology[]>([]);
+  const [pathologiesLoading, setPathologiesLoading] = useState(true);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [currentRate, setCurrentRate] = useState<ExchangeRate | null>(null);
   void initialProvider;
@@ -222,29 +224,46 @@ export function OrderForm({
 
   useEffect(() => {
     serviceTypeGateway.listAssignable().then(setServiceTypes).catch(() => setServiceTypes([]));
-    pathologyGateway.listAssignable().then(setPathologies).catch(() => setPathologies([]));
+    pathologyGateway
+      .listAssignable()
+      .then(setPathologies)
+      .catch(() => setPathologies([]))
+      .finally(() => setPathologiesLoading(false));
     specialtyGateway.listAssignable().then(setSpecialties).catch(() => setSpecialties([]));
   }, []);
 
-  const priceCurrency = useWatch({ control, name: 'priceCurrency' }) as
-    | 'USD'
-    | 'EUR'
-    | undefined;
-
+  // Plataforma USD-only: monto en USD; tasa USD/Bs usada solo para convertir
+  // pagos en BS/EUR (vía rate snapshot del propio pago).
   useEffect(() => {
-    if (!priceCurrency) return;
     let cancelled = false;
     exchangeRateGateway
-      .getCurrent(priceCurrency)
+      .getCurrent('USD')
       .then((r) => !cancelled && setCurrentRate(r))
       .catch(() => !cancelled && setCurrentRate(null));
     return () => {
       cancelled = true;
     };
-  }, [priceCurrency]);
+  }, []);
 
-  const lookupRate = (id: string) =>
-    currentRate && currentRate.id === id ? currentRate : null;
+  // Lista USD para selector "Tasa fija" en órdenes seguro.
+  const [usdRates, setUsdRates] = useState<ExchangeRate[]>([]);
+  useEffect(() => {
+    exchangeRateGateway
+      .list({
+        limit: 100,
+        currency: 'USD',
+        sortBy: 'effectiveDate',
+        sortDir: 'DESC',
+      })
+      .then((res) => setUsdRates(res.data))
+      .catch(() => setUsdRates([]));
+  }, []);
+
+  // Cache EUR rates por id (necesarias para convertir cash_eur → USD).
+  const [eurRatesById, setEurRatesById] = useState<Record<string, ExchangeRate>>({});
+  const lookupRate = (id: string): ExchangeRate | null =>
+    eurRatesById[id] ??
+    (currentRate && currentRate.id === id ? currentRate : null);
 
   // Holder/patient sync
   const onHolderChange = (next: Patient | null) => {
@@ -371,23 +390,111 @@ export function OrderForm({
     );
   })();
 
-  // Payments totals
+  // Payments totals (USD).
   const totalPaid = useMemo(() => {
     if (!payments) return 0;
     return payments.reduce(
-      (acc, p) => acc + paymentInOrderCurrency(p, (priceCurrency as OrderCurrency) ?? 'USD', lookupRate),
+      (acc, p) => acc + paymentInUsd(p, currentRate, lookupRate),
       0,
     );
-  }, [payments, priceCurrency, currentRate]);
+  }, [payments, currentRate, eurRatesById]);
 
   const priceAmount = useWatch({ control, name: 'priceAmount' }) as number | undefined;
   const diff = (priceAmount ?? 0) - totalPaid;
-  const diffBs =
-    currentRate && currentRate.amountBs ? diff * Number(currentRate.amountBs) : null;
 
   const showPayments = type === 'cash';
   const isCashea = type === 'cashea';
-  const casheaNet = isCashea ? +(((priceAmount ?? 0) * 0.9).toFixed(2)) : 0;
+
+  // Tasa fija — solo aplica a seguro. Limpia campos cuando type cambia fuera de insurance.
+  const useFixedRateVal = useWatch({ control, name: 'useFixedRate' }) as
+    | boolean
+    | undefined;
+  const fixedExchangeRateIdVal = useWatch({
+    control,
+    name: 'fixedExchangeRateId',
+  }) as string | '' | undefined;
+  useEffect(() => {
+    if (type !== 'insurance') {
+      if (useFixedRateVal)
+        setValue('useFixedRate', false, { shouldDirty: true, shouldValidate: true });
+      if (fixedExchangeRateIdVal)
+        setValue('fixedExchangeRateId', '', { shouldDirty: true });
+      return;
+    }
+    // Auto-seleccionar la tasa más reciente cuando se activa el checkbox sin tasa.
+    if (useFixedRateVal && !fixedExchangeRateIdVal && usdRates.length > 0) {
+      setValue('fixedExchangeRateId', usdRates[0].id, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    }
+  }, [type, useFixedRateVal, fixedExchangeRateIdVal, usdRates, setValue]);
+  const fixedRateObj = useMemo(
+    () =>
+      fixedExchangeRateIdVal
+        ? usdRates.find((r) => r.id === fixedExchangeRateIdVal) ?? null
+        : null,
+    [fixedExchangeRateIdVal, usdRates],
+  );
+
+  // Comisión Cashea (dos tramos): tasas snapshot si la orden ya tiene snapshot,
+  // sino la config global cargada on-demand. El monto de la primera cuota es un
+  // campo del form (editable en borrador).
+  const casheaFirstInstallmentAmount = useWatch({
+    control,
+    name: 'casheaFirstInstallmentAmount',
+  }) as number | undefined;
+  const [globalCasheaConfig, setGlobalCasheaConfig] = useState<{
+    firstInstallmentRate: number;
+    totalRate: number;
+  } | null>(null);
+  useEffect(() => {
+    if (!isCashea) return;
+    // Sólo necesitamos la config global cuando la orden aún no tiene snapshot.
+    if (savedOrder?.casheaTotalRate != null) return;
+    let cancelled = false;
+    appConfigGateway
+      .getCasheaCommission()
+      .then(
+        (cfg) =>
+          !cancelled &&
+          setGlobalCasheaConfig({
+            firstInstallmentRate: cfg.firstInstallmentRate,
+            totalRate: cfg.totalRate,
+          }),
+      )
+      .catch(() => !cancelled && setGlobalCasheaConfig(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [isCashea, savedOrder]);
+  const casheaFirstRate = isCashea
+    ? savedOrder?.casheaFirstInstallmentRate != null
+      ? Number(savedOrder.casheaFirstInstallmentRate)
+      : globalCasheaConfig?.firstInstallmentRate ?? 0.04
+    : 0;
+  const casheaTotalRate = isCashea
+    ? savedOrder?.casheaTotalRate != null
+      ? Number(savedOrder.casheaTotalRate)
+      : globalCasheaConfig?.totalRate ?? 0.06
+    : 0;
+  const casheaFirstAmount = isCashea ? casheaFirstInstallmentAmount ?? 0 : 0;
+  // Comisión exacta en centavos enteros (espeja el backend) → sin drift toFixed.
+  const casheaCommissionAmount = isCashea
+    ? casheaCommissionCents(
+        casheaFirstAmount,
+        priceAmount ?? 0,
+        casheaFirstRate,
+        casheaTotalRate,
+      ) / 100
+    : 0;
+  const casheaNet = isCashea
+    ? (Math.round((priceAmount ?? 0) * 100) -
+        Math.round(casheaCommissionAmount * 100)) /
+      100
+    : 0;
+  const casheaFirstRatePct = +(casheaFirstRate * 100).toFixed(2);
+  const casheaTotalRatePct = +(casheaTotalRate * 100).toFixed(2);
 
   // Price breakdown derived from selected service types + insurance/Particular.
   const orderServiceTypeRows = (useWatch({ control, name: 'serviceTypes' }) ?? []) as Array<{
@@ -395,11 +502,19 @@ export function OrderForm({
     providerType: 'doctor' | 'care_center';
     doctorId?: string;
     careCenterId?: string;
+    quantity?: number;
   }>;
   const serviceTypeIds = orderServiceTypeRows.map((r) => r.serviceTypeId).filter(Boolean);
+  // Cantidad por ST (sólo > 1 si el ST permite cantidad). Default 1.
+  const qtyByST = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of orderServiceTypeRows) {
+      if (r.serviceTypeId) m.set(r.serviceTypeId, Math.max(1, Math.trunc(r.quantity ?? 1)));
+    }
+    return m;
+  }, [orderServiceTypeRows]);
   const insuranceId = useWatch({ control, name: 'insuranceId' }) as string | '' | undefined;
   const isInsuranceOrder = type === 'insurance';
-  const specialtyId = useWatch({ control, name: 'specialtyId' }) as string | '' | undefined;
 
   // Carga los servicePrices del seguro elegido (kind: 'insurance').
   // Particular se lee directo de `serviceTypes[].particularPrice*`.
@@ -426,39 +541,36 @@ export function OrderForm({
   type PriceLine = {
     id: string;
     name: string;
-    /** null si el ST no tiene precio definido para esta combinación. */
+    /** Cantidad del ST (≥1). */
+    qty: number;
+    /** Precio unitario USD, o null si no hay precio definido. */
+    unit: number | null;
+    /** unit × qty, o null si no hay precio definido. */
     amount: number | null;
   };
 
   const priceLines: PriceLine[] = useMemo(() => {
-    const ccy = (priceCurrency as 'USD' | 'EUR' | undefined) ?? 'USD';
     const ispByST = new Map(
       insuranceServicePrices.map((r) => [r.serviceTypeId, r]),
     );
     return serviceTypeIds.map((id) => {
       const st = serviceTypes.find((s) => s.id === id);
-      if (!st) return { id, name: '—', amount: null };
-      if (isInsuranceOrder) {
-        const row = ispByST.get(id);
-        if (!row) return { id, name: st.name, amount: null };
-        const raw = ccy === 'USD' ? row.priceUsd : row.priceEur;
-        const num = raw === null || raw === undefined ? null : Number(raw);
-        return {
-          id,
-          name: st.name,
-          amount: num !== null && Number.isFinite(num) && num > 0 ? num : null,
-        };
-      }
-      // Particular: lee `particularPrice*` del ST.
-      const raw = ccy === 'USD' ? st.particularPriceUsd : st.particularPriceEur;
+      const qty = qtyByST.get(id) ?? 1;
+      if (!st) return { id, name: '—', qty, unit: null, amount: null };
+      const raw = isInsuranceOrder
+        ? ispByST.get(id)?.priceUsd
+        : st.particularPriceUsd;
       const num = raw === null || raw === undefined ? null : Number(raw);
+      const unit = num !== null && Number.isFinite(num) && num > 0 ? num : null;
       return {
         id,
         name: st.name,
-        amount: num !== null && Number.isFinite(num) && num > 0 ? num : null,
+        qty,
+        unit,
+        amount: unit !== null ? +(unit * qty).toFixed(2) : null,
       };
     });
-  }, [serviceTypeIds, serviceTypes, insuranceServicePrices, isInsuranceOrder, priceCurrency]);
+  }, [serviceTypeIds, serviceTypes, insuranceServicePrices, isInsuranceOrder, qtyByST]);
 
   const computedPriceSum = useMemo(
     () => priceLines.reduce((acc, l) => acc + (l.amount ?? 0), 0),
@@ -503,7 +615,7 @@ export function OrderForm({
     }
     lastAppliedSumRef.current = rounded;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [computedPriceSum, amountLocked, hasAuthorization, insuranceId, priceCurrency, serviceTypeIds.join(',')]);
+  }, [computedPriceSum, amountLocked, hasAuthorization, insuranceId, serviceTypeIds.join(',')]);
 
   const orderSteps = buildOrderSteps(
     !!savedOrder,
@@ -526,6 +638,7 @@ export function OrderForm({
 
       {!renderStep1 && currentStep === 'report' && savedOrder ? (
         <OrderReportStep
+          key={savedOrder.id}
           order={savedOrder}
           onSaved={() => onOrderRefresh?.()}
           onAdvance={canBilling ? () => setCurrentStep('billing') : undefined}
@@ -541,36 +654,42 @@ export function OrderForm({
 
       {!renderStep1 ? null : (
       <>
-      <FormSection title="Sucursal" description="Sucursal donde se emite la orden.">
-        <div className="space-y-1.5">
-          <RequiredLabel required>
-            <Building className="w-4 h-4 inline mr-1.5 text-muted-foreground" />
-            Sucursal
-          </RequiredLabel>
-          {branchSelect}
-          <FieldError message={errors.branchId?.message} />
-        </div>
-      </FormSection>
+      <FormSection
+        title="Sucursal y tipo de orden"
+        description="Sucursal donde se emite la orden y su modalidad."
+      >
+        <div className="space-y-5">
+          <div className="space-y-1.5">
+            <RequiredLabel required>
+              <Building className="w-4 h-4 inline mr-1.5 text-muted-foreground" />
+              Sucursal
+            </RequiredLabel>
+            {branchSelect}
+            <FieldError message={errors.branchId?.message} />
+          </div>
 
-      <FormSection title="Tipo de orden" description="Define la modalidad y los datos requeridos.">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {(['cash', 'credit', 'insurance', 'cashea'] as OrderType[]).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => requestTypeChange(t)}
-              className={cn(
-                'rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors',
-                type === t
-                  ? 'border-brand-blue bg-brand-blue-soft'
-                  : 'border-border hover:bg-accent',
-              )}
-            >
-              {ORDER_TYPE_LABEL[t]}
-            </button>
-          ))}
+          <div className="space-y-2">
+            <RequiredLabel required>Tipo de orden</RequiredLabel>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {(['cash', 'credit', 'insurance', 'cashea'] as OrderType[]).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => requestTypeChange(t)}
+                  className={cn(
+                    'rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors',
+                    type === t
+                      ? 'border-brand-blue bg-brand-blue-soft'
+                      : 'border-border hover:bg-accent',
+                  )}
+                >
+                  {ORDER_TYPE_LABEL[t]}
+                </button>
+              ))}
+            </div>
+            <FieldError message={errors.type?.message} />
+          </div>
         </div>
-        <FieldError message={errors.type?.message} />
       </FormSection>
 
       <FormSection
@@ -724,12 +843,98 @@ export function OrderForm({
                 />
                 <FieldError message={errors.serviceKey?.message} />
               </div>
+
+              <div className="space-y-2 pt-3 border-t border-dashed">
+                <div className="flex items-start gap-2">
+                  <input
+                    id="useFixedRate"
+                    type="checkbox"
+                    checked={!!useFixedRateVal}
+                    onChange={(e) =>
+                      setValue('useFixedRate', e.target.checked, {
+                        shouldDirty: true,
+                        shouldValidate: true,
+                      })
+                    }
+                    className="h-4 w-4 mt-0.5"
+                  />
+                  <div className="space-y-0.5">
+                    <Label htmlFor="useFixedRate" className="text-sm font-medium">
+                      Tasa fija para esta orden
+                    </Label>
+                    <p className="text-[11px] text-muted-foreground">
+                      La cuenta por cobrar del seguro quedará fija en bolívares a
+                      la tasa seleccionada. Los cobros se descuentan en Bs sin
+                      importar la tasa del día del pago.
+                    </p>
+                  </div>
+                </div>
+                {useFixedRateVal ? (
+                  <div className="space-y-1.5 pl-6">
+                    <RequiredLabel required>Tasa fija USD/Bs</RequiredLabel>
+                    <Controller
+                      control={control}
+                      name="fixedExchangeRateId"
+                      render={({ field }) => (
+                        <Select
+                          value={(field.value as string) || ''}
+                          onValueChange={(v) =>
+                            field.onChange(v === '__none__' ? '' : v)
+                          }
+                          disabled={usdRates.length === 0}
+                        >
+                          <SelectTrigger
+                            className={cn(
+                              'h-9',
+                              errors.fixedExchangeRateId?.message &&
+                                'border-destructive',
+                            )}
+                          >
+                            <SelectValue
+                              placeholder={
+                                usdRates.length === 0
+                                  ? 'No hay tasas USD cargadas'
+                                  : 'Seleccioná tasa USD/Bs'
+                              }
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {usdRates.map((r) => (
+                              <SelectItem key={r.id} value={r.id}>
+                                {`Bs. ${formatMoney(r.amountBs)} · ${new Date(
+                                  r.effectiveDate,
+                                ).toLocaleDateString('es-VE')}`}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                    <FieldError
+                      message={errors.fixedExchangeRateId?.message}
+                    />
+                    {fixedRateObj && priceAmount ? (
+                      <p className="text-[11px] text-muted-foreground">
+                        Total a cobrar al seguro:{' '}
+                        <span className="font-mono font-semibold text-foreground">
+                          {formatMoney(priceAmount * Number(fixedRateObj.amountBs))}{' '}
+                          Bs
+                        </span>
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
             </div>
           ) : null}
         </div>
       </FormSection>
 
-      <FormSection title="Servicio" description="Especialidad y patologías de la orden.">
+      <FormSection
+        title="Servicio y proveedores"
+        description="Especialidad, patologías y el proveedor que atiende cada tipo de servicio."
+        allowOverflow
+      >
         <FormGrid>
           <div className="space-y-1.5">
             <RequiredLabel required>Especialidad</RequiredLabel>
@@ -739,16 +944,7 @@ export function OrderForm({
               render={({ field }) => (
                 <Select
                   value={field.value || ''}
-                  onValueChange={(v) => {
-                    field.onChange(v);
-                    // Al cambiar especialidad, limpiar proveedores en cada fila ST.
-                    const rows = (orderServiceTypeRows ?? []).map((r) => ({
-                      ...r,
-                      doctorId: undefined,
-                      careCenterId: undefined,
-                    }));
-                    setValue('serviceTypes', rows, { shouldDirty: true });
-                  }}
+                  onValueChange={(v) => field.onChange(v)}
                 >
                   <SelectTrigger
                     className={cn('h-9', errors.specialtyId?.message && 'border-destructive')}
@@ -769,69 +965,39 @@ export function OrderForm({
           </div>
 
           <div className="space-y-1.5 sm:col-span-2">
-            <RequiredLabel>Patologías (opcional)</RequiredLabel>
             <Controller
               control={control}
               name="pathologyIds"
               render={({ field }) => {
                 const selected: string[] = Array.isArray(field.value) ? field.value : [];
-                const toggle = (id: string) =>
-                  field.onChange(
-                    selected.includes(id)
-                      ? selected.filter((v) => v !== id)
-                      : [...selected, id],
-                  );
                 return (
-                  <div
-                    className={cn(
-                      'flex flex-wrap gap-2 p-3 border rounded-lg bg-muted/20 min-h-[44px]',
-                      errors.pathologyIds?.message && 'border-destructive',
-                    )}
-                  >
-                    {pathologies.length === 0 ? (
-                      <span className="text-xs text-muted-foreground">
-                        No hay patologías activas.
-                      </span>
-                    ) : (
-                      pathologies.map((p) => {
-                        const active = selected.includes(p.id);
-                        return (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => toggle(p.id)}
-                            className={cn(
-                              'inline-flex items-center rounded-md border px-2 py-1 text-xs font-medium transition-colors',
-                              active
-                                ? 'bg-primary text-primary-foreground border-primary'
-                                : 'bg-background hover:bg-accent',
-                            )}
-                          >
-                            {p.name}
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
+                  <ChipMultiSelect
+                    label="Patologías (opcional)"
+                    value={selected}
+                    onChange={(next) => field.onChange(next)}
+                    options={pathologies.map((p) => ({ id: p.id, label: p.name }))}
+                    loading={pathologiesLoading}
+                    searchPlaceholder="Buscar patología…"
+                    emptyLabel="No hay patologías activas."
+                    counterSuffix={{ singular: 'seleccionada', plural: 'seleccionadas' }}
+                    error={
+                      typeof errors.pathologyIds?.message === 'string'
+                        ? errors.pathologyIds.message
+                        : undefined
+                    }
+                  />
                 );
               }}
             />
-            <FieldError
-              message={
-                typeof errors.pathologyIds?.message === 'string'
-                  ? errors.pathologyIds.message
-                  : undefined
-              }
-            />
           </div>
         </FormGrid>
-      </FormSection>
 
-      <FormSection
-        title="Tipos de Servicio y Proveedores"
-        description="Cada Tipo de Servicio se atiende por su propio proveedor (doctor o centro). Los proveedores se filtran por la especialidad seleccionada."
-        allowOverflow
-      >
+        <div className="mt-5 pt-5 border-t border-dashed space-y-1">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+            Tipos de servicio y proveedores
+          </p>
+        </div>
+        <div className="mt-3">
         <Controller
           control={control}
           name="serviceTypes"
@@ -843,6 +1009,7 @@ export function OrderForm({
                     providerType?: { message?: string };
                     doctorId?: { message?: string };
                     careCenterId?: { message?: string };
+                    quantity?: { message?: string };
                   }
                 | undefined
               >
@@ -851,6 +1018,7 @@ export function OrderForm({
               providerType: e?.providerType?.message,
               doctorId: e?.doctorId?.message,
               careCenterId: e?.careCenterId?.message,
+              quantity: e?.quantity?.message,
             }));
             return (
               <ServiceProviderTable
@@ -859,10 +1027,10 @@ export function OrderForm({
                   providerType: 'doctor' | 'care_center';
                   doctorId?: string;
                   careCenterId?: string;
+                  quantity?: number;
                 }>}
                 onChange={field.onChange}
                 serviceTypes={serviceTypes}
-                specialtyId={specialtyId || undefined}
                 errors={rowErrors}
                 initialProviders={initialProvidersMap}
               />
@@ -875,6 +1043,7 @@ export function OrderForm({
             {errors.serviceTypes.message}
           </p>
         )}
+        </div>
       </FormSection>
 
       <FormSection title="Fechas" description="Fecha de emisión y fecha del servicio.">
@@ -928,21 +1097,7 @@ export function OrderForm({
         <FormGrid>
           <div className="space-y-1.5">
             <RequiredLabel required>Moneda</RequiredLabel>
-            <Controller
-              control={control}
-              name="priceCurrency"
-              render={({ field }) => (
-                <Select value={field.value || 'USD'} onValueChange={field.onChange}>
-                  <SelectTrigger className="h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="USD">USD</SelectItem>
-                    <SelectItem value="EUR">EUR</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
-            />
+            <Input readOnly value="USD" className="h-9 bg-muted/30" />
           </div>
           <div className="space-y-1.5">
             <RequiredLabel required>
@@ -955,7 +1110,7 @@ export function OrderForm({
                 <CurrencyAmountInput
                   value={typeof field.value === 'number' ? field.value : undefined}
                   onChange={(v) => field.onChange(v ?? 0)}
-                  currencyPrefix={priceCurrency || 'USD'}
+                  currencyPrefix="USD"
                   disabled={isInsuranceOrder || !canEditAmount}
                   className={cn(errors.priceAmount?.message && 'border-destructive')}
                 />
@@ -1015,31 +1170,40 @@ export function OrderForm({
               <span>
                 Detalle por tipo de servicio · {isInsuranceOrder ? 'Tarifa de seguro' : 'Particular'}
               </span>
-              <span>{priceCurrency || 'USD'}</span>
+              <span>USD</span>
             </div>
             <div className="divide-y">
               {priceLines.map((l) => (
                 <div
                   key={l.id}
-                  className="flex items-center justify-between px-3 py-2 text-sm"
+                  className="flex items-center justify-between px-3 py-2 text-sm gap-2"
                 >
-                  <span className="truncate">{l.name}</span>
+                  <span className="truncate">
+                    {l.name}
+                    {l.qty > 1 ? (
+                      <span className="text-muted-foreground">
+                        {' '}
+                        · {l.qty} ×{' '}
+                        {l.unit !== null ? formatMoney(l.unit) : '—'}
+                      </span>
+                    ) : null}
+                  </span>
                   <span
                     className={cn(
-                      'font-mono',
+                      'font-mono shrink-0',
                       l.amount === null && 'text-warning',
                     )}
                   >
                     {l.amount === null
                       ? 'Sin precio definido'
-                      : l.amount.toFixed(2)}
+                      : formatMoney(l.amount)}
                   </span>
                 </div>
               ))}
               <div className="flex items-center justify-between px-3 py-2 text-sm font-semibold bg-muted/40">
                 <span>Total</span>
                 <span className="font-mono">
-                  {computedPriceSum.toFixed(2)} {priceCurrency || 'USD'}
+                  {formatMoney(computedPriceSum)} USD
                 </span>
               </div>
             </div>
@@ -1052,31 +1216,61 @@ export function OrderForm({
           </div>
         ) : null}
         {isCashea ? (
-          <div className="mt-4 rounded-lg border border-dashed bg-warning-soft/40 px-4 py-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="space-y-1">
-              <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
-                Precio
+          <div className="mt-4 space-y-3">
+            <div className="space-y-1.5 max-w-xs">
+              <RequiredLabel required>Primera cuota (inicial)</RequiredLabel>
+              <Controller
+                control={control}
+                name="casheaFirstInstallmentAmount"
+                render={({ field }) => (
+                  <CurrencyAmountInput
+                    value={typeof field.value === 'number' ? field.value : undefined}
+                    onChange={(v) => field.onChange(v ?? 0)}
+                    currencyPrefix="USD"
+                    disabled={!!savedOrder && savedOrder.status !== 'draft'}
+                    className={cn(
+                      errors.casheaFirstInstallmentAmount?.message &&
+                        'border-destructive',
+                    )}
+                  />
+                )}
+              />
+              <FieldError message={errors.casheaFirstInstallmentAmount?.message} />
+            </div>
+            <div className="rounded-lg border border-dashed bg-warning-soft/40 px-4 py-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+                  Precio
+                </div>
+                <div className="text-sm font-semibold">
+                  {formatMoney(priceAmount ?? 0)} USD
+                </div>
               </div>
-              <div className="text-sm font-semibold">
-                {(priceAmount ?? 0).toFixed(2)} {priceCurrency}
+              <div className="space-y-1">
+                <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+                  Comisión Cashea
+                </div>
+                <div className="text-sm font-semibold text-destructive">
+                  -{formatMoney(casheaCommissionAmount)} USD
+                </div>
+                <div className="text-[10px] text-muted-foreground leading-tight">
+                  {casheaFirstRatePct}% primera cuota + {casheaTotalRatePct}% total
+                </div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+                  Monto a recibir por Cashea
+                </div>
+                <div className="text-base font-bold text-success">
+                  {formatMoney(casheaNet)} USD
+                </div>
               </div>
             </div>
-            <div className="space-y-1">
-              <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
-                Comisión Cashea (10%)
-              </div>
-              <div className="text-sm font-semibold text-destructive">
-                -{((priceAmount ?? 0) * 0.1).toFixed(2)} {priceCurrency}
-              </div>
-            </div>
-            <div className="space-y-1">
-              <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
-                Monto a recibir por Cashea
-              </div>
-              <div className="text-base font-bold text-success">
-                {casheaNet.toFixed(2)} {priceCurrency}
-              </div>
-            </div>
+            <p className="text-[11px] text-muted-foreground">
+              {savedOrder?.casheaTotalRate != null
+                ? 'Comisión fija — porcentajes snapshot al crear la orden.'
+                : 'Porcentajes vigentes al momento de crear la orden. Configurables en Administración → Configuración.'}
+            </p>
           </div>
         ) : null}
       </FormSection>
@@ -1112,8 +1306,12 @@ export function OrderForm({
                 <OrderPaymentForm
                   payments={field.value ?? []}
                   onChange={(next) => field.onChange(next)}
-                  orderCurrency={(priceCurrency as OrderCurrency) ?? 'USD'}
-                  currentRate={currentRate}
+                  usdRate={currentRate}
+                  onEurRateLoaded={(r) =>
+                    setEurRatesById((prev) =>
+                      prev[r.id] ? prev : { ...prev, [r.id]: r },
+                    )
+                  }
                   errors={paymentsErrors}
                 />
               );
@@ -1126,7 +1324,7 @@ export function OrderForm({
                 Total orden
               </div>
               <div className="text-lg font-semibold">
-                {(priceAmount ?? 0).toFixed(2)} {priceCurrency}
+                {formatMoney(priceAmount ?? 0)} USD
               </div>
             </div>
             <div className="space-y-1">
@@ -1134,7 +1332,7 @@ export function OrderForm({
                 Total pagado
               </div>
               <div className="text-lg font-semibold">
-                {totalPaid.toFixed(2)} {priceCurrency}
+                {formatMoney(totalPaid)} USD
               </div>
             </div>
             <div className="space-y-1">
@@ -1148,29 +1346,22 @@ export function OrderForm({
                   </Badge>
                 ) : (
                   <Badge variant="default" className="bg-warning text-white">
-                    {diff > 0 ? `Faltan ${diff.toFixed(2)}` : `Excede ${Math.abs(diff).toFixed(2)}`}
+                    {diff > 0 ? `Faltan ${formatMoney(diff)}` : `Excede ${formatMoney(Math.abs(diff))}`} USD
                   </Badge>
                 )}
               </div>
               {Math.abs(diff) >= 0.01 ? (
-                diffBs !== null ? (
-                  <div className="text-xs text-muted-foreground">
-                    {diff > 0 ? 'Faltan' : 'Excede'}{' '}
-                    <span className="font-mono">
-                      Bs. {Math.abs(diffBs).toLocaleString('es-VE', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </span>
-                    <span className="ml-1 text-[10px]">
-                      (tasa {Number(currentRate?.amountBs ?? 0).toFixed(2)} Bs/{priceCurrency})
-                    </span>
-                  </div>
-                ) : (
-                  <div className="text-xs text-muted-foreground italic">
-                    Sin tasa de cambio activa para {priceCurrency} — no se puede calcular diferencia en Bs.
-                  </div>
-                )
+                <div className="text-xs text-muted-foreground space-y-0.5">
+                  {currentRate ? (
+                    <div>
+                      {diff > 0 ? 'Faltan' : 'Excede'}{' '}
+                      <span className="font-mono">
+                        Bs{' '}
+                        {formatMoney(Math.abs(diff) * Number(currentRate.amountBs))}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
               ) : null}
             </div>
           </div>
@@ -1196,7 +1387,6 @@ export function OrderForm({
           open={authorizeOpen}
           onOpenChange={setAuthorizeOpen}
           orderId={savedOrder.id}
-          currency={(priceCurrency as OrderCurrency) ?? 'USD'}
           currentAmount={priceAmount ?? 0}
           onAuthorized={(updated) => {
             setValue('priceAmount', Number(updated.priceAmount), {

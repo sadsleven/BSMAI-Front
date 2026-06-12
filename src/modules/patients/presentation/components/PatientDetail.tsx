@@ -21,46 +21,11 @@ export type PatientDetailProps = {
   onOpenChange: (open: boolean) => void;
 };
 
-export function PatientDetail({ patientId, open, onOpenChange }: PatientDetailProps) {
-  const [patient, setPatient] = useState<Patient | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!open || !patientId) {
-      setPatient(null);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    patientGateway
-      .getById(patientId)
-      .then((p) => {
-        if (!cancelled) setPatient(p);
-      })
-      .catch((e) => {
-        if (!cancelled) notify.fromError(e, 'No se pudo cargar el paciente.');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [patientId, open]);
-
-  const isLegal = patient?.personType === 'legal_entity';
-
+/** Cuerpo reutilizado por el modal `PatientDetail` y la página `PatientDetailPage`. */
+export function PatientDetailBody({ patient }: { patient: Patient }) {
+  const isLegal = patient.personType === 'legal_entity';
   return (
-    <DetailDialog
-      open={open}
-      onOpenChange={onOpenChange}
-      icon={isLegal ? Building2 : UserRound}
-      title={patient ? displayName(patient) : 'Detalle del paciente'}
-      subtitle={patient?.email}
-      loading={loading}
-    >
-      {patient ? (
-        <div className="divide-y">
+    <div className="divide-y">
           <DetailSection title={isLegal ? 'Información de la empresa' : 'Información personal'}>
             <DetailRow
               label="Tipo"
@@ -189,24 +154,65 @@ export function PatientDetail({ patientId, open, onOpenChange }: PatientDetailPr
             )}
           </DetailSection>
 
-          {(patient.createdAt || patient.updatedAt) && (
-            <DetailSection title="Auditoría">
-              {patient.createdAt && (
-                <DetailRow
-                  label="Creado"
-                  value={new Date(patient.createdAt).toLocaleString()}
-                />
-              )}
-              {patient.updatedAt && (
-                <DetailRow
-                  label="Actualizado"
-                  value={new Date(patient.updatedAt).toLocaleString()}
-                />
-              )}
-            </DetailSection>
+      {(patient.createdAt || patient.updatedAt) && (
+        <DetailSection title="Auditoría">
+          {patient.createdAt && (
+            <DetailRow
+              label="Creado"
+              value={new Date(patient.createdAt).toLocaleString()}
+            />
           )}
-        </div>
-      ) : null}
+          {patient.updatedAt && (
+            <DetailRow
+              label="Actualizado"
+              value={new Date(patient.updatedAt).toLocaleString()}
+            />
+          )}
+        </DetailSection>
+      )}
+    </div>
+  );
+}
+
+export function PatientDetail({ patientId, open, onOpenChange }: PatientDetailProps) {
+  const [patient, setPatient] = useState<Patient | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open || !patientId) {
+      setPatient(null);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    patientGateway
+      .getById(patientId)
+      .then((p) => {
+        if (!cancelled) setPatient(p);
+      })
+      .catch((e) => {
+        if (!cancelled) notify.fromError(e, 'No se pudo cargar el paciente.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [patientId, open]);
+
+  const isLegal = patient?.personType === 'legal_entity';
+
+  return (
+    <DetailDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      icon={isLegal ? Building2 : UserRound}
+      title={patient ? displayName(patient) : 'Detalle del paciente'}
+      subtitle={patient?.email}
+      loading={loading}
+    >
+      {patient ? <PatientDetailBody patient={patient} /> : null}
     </DetailDialog>
   );
 }

@@ -35,8 +35,7 @@ import {
   withAlpha,
 } from '../components/chartSetup';
 import {
-  formatBs,
-  formatBsCompact,
+  formatUsd,
   formatMonth,
   formatNumber,
   formatPercent,
@@ -44,9 +43,10 @@ import {
   monthBucket,
 } from '../../domain/format';
 import { REPORT_PAGE_SIZE } from '../../infrastructure/fetchAll';
+import { bsToUsd, useUsdRate } from '../../domain/useUsdRate';
 import { getHttpErrorMessage } from '@/lib/api';
 
-type PaymentRow = { date: string; amountInBs: number };
+type PaymentRow = { date: string; amountInUsd: number };
 
 const STATUS_COLOR: Record<OrderStatus, string> = {
   draft: CHART_COLORS.neutral,
@@ -86,6 +86,7 @@ export function ReportExecutivePanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [overCap, setOverCap] = useState(false);
+  const usdRate = useUsdRate();
 
   useEffect(() => {
     let cancelled = false;
@@ -105,16 +106,23 @@ export function ReportExecutivePanel() {
             taxRes.metadata.total > REPORT_PAGE_SIZE ||
             ordRes.metadata.total > REPORT_PAGE_SIZE,
         );
-        const toPayments = (rows: { payments?: { paymentDate: string; amountInBs: string | number }[] }[]) =>
+        const toPaymentsUsd = (rows: { payments?: { paymentDate: string; amountInUsd: string | number }[] }[]) =>
           rows.flatMap((a) =>
             (a.payments ?? []).map((p) => ({
               date: p.paymentDate,
-              amountInBs: Number(p.amountInBs || 0),
+              amountInUsd: Number(p.amountInUsd || 0),
             })),
           );
-        setArPayments(toPayments(arRes.data));
-        setApPayments(toPayments(apRes.data));
-        setTaxPayments(toPayments(taxRes.data));
+        const toPaymentsBs = (rows: { payments?: { paymentDate: string; amountInBs: string | number }[] }[]) =>
+          rows.flatMap((a) =>
+            (a.payments ?? []).map((p) => ({
+              date: p.paymentDate,
+              amountInUsd: bsToUsd(p.amountInBs, usdRate),
+            })),
+          );
+        setArPayments(toPaymentsUsd(arRes.data));
+        setApPayments(toPaymentsUsd(apRes.data));
+        setTaxPayments(toPaymentsBs(taxRes.data));
         setOrders(ordRes.data);
       })
       .catch((e) => {
@@ -126,7 +134,7 @@ export function ReportExecutivePanel() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [usdRate]);
 
   const within = useMemo(
     () => (d: string | null | undefined) =>
@@ -134,15 +142,15 @@ export function ReportExecutivePanel() {
     [filters.from, filters.to],
   );
 
-  // ---- Flujo de caja por mes (Bs, pagos reales) ----
+  // ---- Flujo de caja por mes (USD, pagos reales) ----
   const cashFlow = useMemo(() => {
     const income = new Map<string, number>();
     const expense = new Map<string, number>();
     const add = (m: Map<string, number>, key: string, v: number) =>
       m.set(key, (m.get(key) ?? 0) + v);
-    arPayments.forEach((p) => within(p.date) && add(income, monthBucket(p.date), p.amountInBs));
-    apPayments.forEach((p) => within(p.date) && add(expense, monthBucket(p.date), p.amountInBs));
-    taxPayments.forEach((p) => within(p.date) && add(expense, monthBucket(p.date), p.amountInBs));
+    arPayments.forEach((p) => within(p.date) && add(income, monthBucket(p.date), p.amountInUsd));
+    apPayments.forEach((p) => within(p.date) && add(expense, monthBucket(p.date), p.amountInUsd));
+    taxPayments.forEach((p) => within(p.date) && add(expense, monthBucket(p.date), p.amountInUsd));
     const allMonths = new Set<string>([...income.keys(), ...expense.keys()]);
     const months = lastMonths(allMonths);
     const incomeArr = months.map((m) => income.get(m) ?? 0);
@@ -238,7 +246,7 @@ export function ReportExecutivePanel() {
         padding: 10,
         cornerRadius: 8,
         callbacks: {
-          label: (ctx) => `${ctx.dataset.label}: ${formatBs(Number(ctx.parsed.y))}`,
+          label: (ctx) => `${ctx.dataset.label}: ${formatUsd(Number(ctx.parsed.y))}`,
         },
       },
     },
@@ -248,7 +256,7 @@ export function ReportExecutivePanel() {
         beginAtZero: true,
         grid: { color: 'rgba(100, 116, 139, 0.12)' },
         border: { display: false },
-        ticks: { callback: (v) => formatBsCompact(Number(v)) },
+        ticks: { callback: (v) => formatUsd(Number(v)) },
       },
     },
   };
@@ -323,21 +331,21 @@ export function ReportExecutivePanel() {
               icon: ArrowDownCircle,
               tone: 'success',
               label: 'Ingresos',
-              value: formatBs(cashFlow.totalIncome),
+              value: formatUsd(cashFlow.totalIncome),
               hint: 'Cobros recibidos',
             },
             {
               icon: ArrowUpCircle,
               tone: 'destructive',
               label: 'Egresos',
-              value: formatBs(cashFlow.totalExpense),
+              value: formatUsd(cashFlow.totalExpense),
               hint: 'Proveedores + impuestos',
             },
             {
               icon: BarChart3,
               tone: cashFlow.net >= 0 ? 'blue' : 'destructive',
               label: 'Resultado neto',
-              value: formatBs(cashFlow.net),
+              value: formatUsd(cashFlow.net),
             },
             {
               icon: PercentCircle,
@@ -378,7 +386,7 @@ export function ReportExecutivePanel() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard
           title="Ingresos vs Egresos por mes"
-          description="Cobros, pagos a proveedores e impuestos (Bs)"
+          description="Cobros, pagos a proveedores e impuestos (USD)"
           icon={CalendarRange}
           height={320}
           className="lg:col-span-2"

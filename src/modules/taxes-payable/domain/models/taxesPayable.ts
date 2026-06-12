@@ -1,13 +1,12 @@
 import type {
-  DoctorAmountCurrency,
   Order,
   OrderPaymentType,
   PaymentCurrency,
 } from '@/modules/orders/domain/models/order';
 
 export type TaxPayableStatus = 'paid' | 'unpaid' | 'partially_paid';
-export type EffectiveTaxPayableStatus = TaxPayableStatus | 'undefined';
 export type RecipientType = 'doctor' | 'care_center';
+export type TaxPayablePersonType = 'natural' | 'legal_entity';
 
 export interface TaxPayablePayment {
   id: string;
@@ -23,12 +22,22 @@ export interface TaxPayablePayment {
   createdAt?: string;
 }
 
+export interface TaxPayableTaxUnit {
+  id: string;
+  amountBs: string;
+  effectiveDate: string;
+}
+
+export interface TaxPayableAccountsPayableRef {
+  id: string;
+  payableNumber: string;
+  orderId: string;
+  providerAmount?: string | number | null;
+}
+
 export interface TaxPayable {
   id: string;
   taxPayableNumber: string;
-  accountsPayableId: string;
-  orderId: string;
-  order: Order;
   recipientType: RecipientType;
   doctorId?: string | null;
   doctor?: {
@@ -39,12 +48,25 @@ export interface TaxPayable {
   } | null;
   careCenterId?: string | null;
   careCenter?: { id: string; businessName?: string | null } | null;
-  /** Monto del impuesto en moneda original. Null mientras no se factura. */
-  taxAmount?: string | number | null;
-  taxAmountCurrency?: DoctorAmountCurrency | null;
-  taxRate?: string | number | null;
+  personType: TaxPayablePersonType;
+  taxUnitId: string;
+  taxUnit: TaxPayableTaxUnit;
+  /** Snapshot del valor UT (Bs) usado para el cálculo. */
+  taxUnitAmountBs: string | number;
+  /** Base imponible en Bs. */
+  grossAmountBs: string | number;
+  /** Tasa aplicada (0.03 / 0.05). */
+  taxRate: string | number;
+  /** Sustraendo en Bs (sólo PNR). */
+  subtrahendBs: string | number;
+  /** Retención en Bs (≥ 0). */
+  taxAmountBs: string | number;
   status: TaxPayableStatus;
   paidAt?: string | null;
+  /** Órdenes contenidas en la factura agrupada del pago. */
+  orders?: Order[];
+  /** AP cubiertas por el pago al proveedor que originó la retención. */
+  accountsPayables?: TaxPayableAccountsPayableRef[];
   payments?: TaxPayablePayment[];
   createdAt?: string;
   updatedAt?: string;
@@ -59,7 +81,7 @@ export interface TaxesPayableQuery {
   careCenterId?: string;
   branchId?: string;
   orderId?: string;
-  sortBy?: 'orderNumber' | 'createdAt' | 'updatedAt';
+  sortBy?: 'taxPayableNumber' | 'taxAmountBs' | 'grossAmountBs' | 'createdAt' | 'updatedAt';
   sortDir?: 'ASC' | 'DESC';
 }
 
@@ -85,25 +107,18 @@ export interface PaginatedResponse<T> {
 }
 
 export const STATUS_LABEL: Record<TaxPayableStatus, string> = {
-  paid: 'Pagada',
-  unpaid: 'No pagada',
-  partially_paid: 'Pagada parcialmente',
+  paid: 'Pagado',
+  unpaid: 'No pagado',
+  partially_paid: 'Pagado parcialmente',
 };
 
-export const EFFECTIVE_STATUS_LABEL: Record<EffectiveTaxPayableStatus, string> = {
-  ...STATUS_LABEL,
-  undefined: 'Sin definir',
+export const PERSON_TYPE_LABEL: Record<TaxPayablePersonType, string> = {
+  natural: 'Persona natural residente',
+  legal_entity: 'Persona jurídica domiciliada',
 };
-
-export function effectiveStatus(t: TaxPayable): EffectiveTaxPayableStatus {
-  const amt = Number(t.taxAmount ?? 0);
-  if (!t.taxAmount || !Number.isFinite(amt) || amt <= 0) return 'undefined';
-  return t.status;
-}
 
 export function canSelectForPayment(t: TaxPayable): boolean {
-  const s = effectiveStatus(t);
-  return s !== 'paid' && s !== 'undefined';
+  return t.status !== 'paid';
 }
 
 export function recipientName(t: TaxPayable): string {
@@ -114,53 +129,18 @@ export function recipientName(t: TaxPayable): string {
   return t.careCenter?.businessName ?? '—';
 }
 
-/** Tasa de facturación de la orden (Bs por unidad de moneda extranjera). */
-export function billingRateBs(t: TaxPayable): number | null {
-  const r = t.order.billingExchangeRate;
-  if (!r) return null;
-  const n = Number(r.amountBs);
-  return Number.isFinite(n) && n > 0 ? n : null;
+/** Retención en Bs. */
+export function taxAmountBs(t: TaxPayable): number {
+  const n = Number(t.taxAmountBs);
+  return Number.isFinite(n) ? n : 0;
 }
 
-/** Monto del impuesto (lo que se debe al fisco) en moneda original. */
-export function taxAmount(t: TaxPayable): number | null {
-  if (!t.taxAmount) return null;
-  const n = Number(t.taxAmount);
-  return Number.isFinite(n) ? n : null;
-}
-
+/** Suma Bs de pagos aplicados al SENIAT. */
 export function paidBs(t: TaxPayable): number {
   return (t.payments ?? []).reduce((s, p) => s + Number(p.amountInBs || 0), 0);
 }
 
-export function paidOriginal(t: TaxPayable): number | null {
-  const pBs = paidBs(t);
-  if (t.taxAmountCurrency === 'BS') return pBs;
-  const r = billingRateBs(t);
-  if (r === null) return null;
-  return pBs / r;
-}
-
-export function targetBs(t: TaxPayable): number | null {
-  const a = taxAmount(t);
-  if (a === null) return null;
-  if (t.taxAmountCurrency === 'BS') return a;
-  const r = billingRateBs(t);
-  if (r === null) return null;
-  return a * r;
-}
-
-export function pendingBs(t: TaxPayable): number | null {
-  const tg = targetBs(t);
-  if (tg === null) return null;
-  return Math.max(0, tg - paidBs(t));
-}
-
-export function pendingOriginal(t: TaxPayable): number | null {
-  const p = pendingBs(t);
-  if (p === null) return null;
-  if (t.taxAmountCurrency === 'BS') return p;
-  const r = billingRateBs(t);
-  if (r === null) return null;
-  return p / r;
+/** Pendiente Bs. */
+export function pendingBs(t: TaxPayable): number {
+  return Math.max(0, taxAmountBs(t) - paidBs(t));
 }

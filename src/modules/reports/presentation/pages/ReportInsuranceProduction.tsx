@@ -14,14 +14,15 @@ import { SkeletonTableRows } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { accountsReceivableGateway } from '@/modules/accounts-receivable/infrastructure/accountsReceivableGateway';
 import {
-  collectedBs,
-  targetBs,
+  collectedUsd,
+  targetUsd,
   type AccountsReceivable,
 } from '@/modules/accounts-receivable/domain/models/accountsReceivable';
 import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
-import { formatBs, formatNumber, formatPercent, inDateRange } from '../../domain/format';
+import { formatUsd, formatBs, formatNumber, formatPercent, inDateRange } from '../../domain/format';
+import { useUsdRate, usdToBs } from '../../domain/useUsdRate';
 import { REPORT_PAGE_SIZE } from '../../infrastructure/fetchAll';
 import { getHttpErrorMessage } from '@/lib/api';
 
@@ -30,9 +31,9 @@ type Row = {
   name: string;
   accountsCount: number;
   ordersCount: number;
-  billedBs: number;
-  collectedBs: number;
-  pendingBs: number;
+  billedUsd: number;
+  collectedUsd: number;
+  pendingUsd: number;
 };
 
 export function ReportInsuranceProduction() {
@@ -50,6 +51,7 @@ export function ReportInsuranceProduction() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [overCap, setOverCap] = useState(false);
+  const usdRate = useUsdRate();
 
   useEffect(() => {
     let cancelled = false;
@@ -99,6 +101,7 @@ export function ReportInsuranceProduction() {
     rows.forEach((ar) => {
       if (!inDateRange(ar.createdAt, filters.from || undefined, filters.to || undefined)) return;
       const id = ar.insuranceId;
+      if (!id) return;
       let row = map.get(id);
       if (!row) {
         row = {
@@ -106,18 +109,18 @@ export function ReportInsuranceProduction() {
           name: ar.insurance?.name ?? '—',
           accountsCount: 0,
           ordersCount: 0,
-          billedBs: 0,
-          collectedBs: 0,
-          pendingBs: 0,
+          billedUsd: 0,
+          collectedUsd: 0,
+          pendingUsd: 0,
         };
         map.set(id, row);
       }
-      const tgt = targetBs(ar) ?? 0;
-      const col = collectedBs(ar);
+      const tgt = targetUsd(ar) ?? 0;
+      const col = collectedUsd(ar);
       row.accountsCount += 1;
-      row.billedBs += tgt;
-      row.collectedBs += col;
-      row.pendingBs += Math.max(0, tgt - col);
+      row.billedUsd += tgt;
+      row.collectedUsd += col;
+      row.pendingUsd += Math.max(0, tgt - col);
       if (!orderSet.has(id)) orderSet.set(id, new Set());
       orderSet.get(id)!.add(ar.orderId);
     });
@@ -127,7 +130,7 @@ export function ReportInsuranceProduction() {
     const result = Array.from(map.values());
     const s = filters.search.toLowerCase().trim();
     const filtered = s ? result.filter((r) => r.name.toLowerCase().includes(s)) : result;
-    return filtered.sort((a, b) => b.billedBs - a.billedBs);
+    return filtered.sort((a, b) => b.billedUsd - a.billedUsd);
   }, [rows, filters.from, filters.to, filters.search]);
 
   const totals = useMemo(() => {
@@ -135,9 +138,9 @@ export function ReportInsuranceProduction() {
     let collected = 0;
     let pending = 0;
     aggregated.forEach((r) => {
-      billed += r.billedBs;
-      collected += r.collectedBs;
-      pending += r.pendingBs;
+      billed += r.billedUsd;
+      collected += r.collectedUsd;
+      pending += r.pendingUsd;
     });
     return { billed, collected, pending };
   }, [aggregated]);
@@ -167,13 +170,13 @@ export function ReportInsuranceProduction() {
               icon: Wallet,
               tone: 'cyan',
               label: 'Total facturado',
-              value: formatBs(totals.billed),
+              value: formatUsd(totals.billed),
             },
             {
               icon: TrendingUp,
               tone: 'success',
               label: 'Cobrado',
-              value: formatBs(totals.collected),
+              value: formatUsd(totals.collected),
               hint: `${totals.billed > 0 ? formatPercent((totals.collected / totals.billed) * 100) : '—'}`,
             },
             {
@@ -181,7 +184,7 @@ export function ReportInsuranceProduction() {
               tone: 'warning',
               label: 'Top aseguradora',
               value: top ? top.name : '—',
-              hint: top ? formatBs(top.billedBs) : undefined,
+              hint: top ? formatUsd(top.billedUsd) : undefined,
             },
           ]}
         />
@@ -215,25 +218,29 @@ export function ReportInsuranceProduction() {
           </div>
         ) : null}
 
+        <div className="m-4 rounded-lg border overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-[oklch(0.985_0.003_250)] hover:bg-[oklch(0.985_0.003_250)]">
+            <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">#</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Aseguradora</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Órdenes</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Cuentas</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Facturado Bs.</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Cobrado Bs.</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Pendiente Bs.</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">% Cobranza</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Órdenes</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Cuentas</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Facturado USD</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Facturado Bs.</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Cobrado USD</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Cobrado Bs.</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Pendiente USD</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Pendiente Bs.</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">% Cobranza</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <SkeletonTableRows rows={6} columns={8} />
+              <SkeletonTableRows rows={6} columns={11} />
             ) : aggregated.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="p-0">
+                <TableCell colSpan={11} className="p-0">
                   <EmptyState
                     icon={ShieldCheck}
                     title={hasActiveFilters ? 'Sin resultados' : 'Sin actividad de aseguradoras'}
@@ -247,7 +254,7 @@ export function ReportInsuranceProduction() {
               </TableRow>
             ) : (
               aggregated.map((r, idx) => {
-                const pct = r.billedBs > 0 ? (r.collectedBs / r.billedBs) * 100 : 0;
+                const pct = r.billedUsd > 0 ? (r.collectedUsd / r.billedUsd) * 100 : 0;
                 return (
                   <TableRow key={r.insuranceId} className="hover:bg-[oklch(0.985_0.003_250)]">
                     <TableCell className="py-3.5 px-4 text-sm text-muted-foreground">
@@ -261,13 +268,22 @@ export function ReportInsuranceProduction() {
                       {formatNumber(r.accountsCount)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                      {formatBs(r.billedBs)}
+                      {formatUsd(r.billedUsd)}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
+                      {formatBs(usdToBs(r.billedUsd, usdRate))}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-success">
-                      {formatBs(r.collectedBs)}
+                      {formatUsd(r.collectedUsd)}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-success">
+                      {formatBs(usdToBs(r.collectedUsd, usdRate))}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-warning">
-                      {formatBs(r.pendingBs)}
+                      {formatUsd(r.pendingUsd)}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-warning">
+                      {formatBs(usdToBs(r.pendingUsd, usdRate))}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-muted-foreground">
                       {formatPercent(pct)}
@@ -278,6 +294,7 @@ export function ReportInsuranceProduction() {
             )}
           </TableBody>
         </Table>
+        </div>
       </div>
     </ReportShell>
   );

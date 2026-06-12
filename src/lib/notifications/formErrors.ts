@@ -68,7 +68,6 @@ export const COMMON_LABELS: FieldLabelMap = {
   pathologyIds: 'Patologías',
   orderDate: 'Fecha de la orden',
   appointmentDate: 'Fecha de atención',
-  priceCurrency: 'Moneda',
   priceAmount: 'Monto',
   // Order payments
   payments: 'Pagos',
@@ -80,7 +79,6 @@ export const COMMON_LABELS: FieldLabelMap = {
   // Service type prices
   prices: 'Precios',
   priceUsd: 'Precio USD',
-  priceEur: 'Precio EUR',
 };
 
 type AnyError = Record<string, unknown>;

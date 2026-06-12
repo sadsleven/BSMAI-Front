@@ -35,6 +35,7 @@ import { SortableHeader, type SortDir } from '@/components/ui/sortable-header';
 import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
+import { formatCreated } from '@/lib/dates';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { Plus, Pencil, Trash2, Power, Building, Undo2, Eye } from 'lucide-react';
@@ -291,9 +292,10 @@ export function BranchList() {
           </div>
         ) : null}
 
+        <div className="m-4 rounded-lg border overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-[oklch(0.985_0.003_250)] hover:bg-[oklch(0.985_0.003_250)]">
+            <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 <SortableHeader<SortBy>
                   column="name"
@@ -310,17 +312,20 @@ export function BranchList() {
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Estado
               </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                Creación
+              </TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-center">
                 Acciones
               </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <SkeletonTableRows rows={5} columns={4} />
+              <SkeletonTableRows rows={5} columns={5} />
             ) : branches.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="p-0">
+                <TableCell colSpan={5} className="p-0">
                   <EmptyState
                     icon={Building}
                     title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay sucursales'}
@@ -356,9 +361,12 @@ export function BranchList() {
                   <TableCell className="py-3.5 px-4">
                     <StatusBadge b={b} />
                   </TableCell>
+                  <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                    {formatCreated(b.createdAt)}
+                  </TableCell>
                   <TableCell className="py-3.5 px-4 text-right">
-                    <div className="inline-flex items-center gap-0.5">
-                      <Can permission={PERMISSIONS.BRANCHES.VIEW}>
+                    <div className="flex items-center justify-center gap-0.5">
+                      <Can permission={PERMISSIONS.BRANCHES.LIST}>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -443,6 +451,7 @@ export function BranchList() {
           onPageSizeChange={(limit) => updateParam({ limit: String(limit) })}
           itemLabel="sucursales"
         />
+        </div>
       </div>
 
       <ConfirmDialog

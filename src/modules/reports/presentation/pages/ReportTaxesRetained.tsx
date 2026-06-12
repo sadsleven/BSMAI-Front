@@ -23,12 +23,11 @@ import { SkeletonTableRows } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { taxesPayableGateway } from '@/modules/taxes-payable/infrastructure/taxesPayableGateway';
 import {
-  EFFECTIVE_STATUS_LABEL,
-  effectiveStatus,
   paidBs,
   pendingBs,
   recipientName,
-  targetBs,
+  STATUS_LABEL,
+  taxAmountBs,
   type TaxPayable,
   type TaxPayableStatus,
 } from '@/modules/taxes-payable/domain/models/taxesPayable';
@@ -39,18 +38,18 @@ import { fullName as doctorFullName, type Doctor } from '@/modules/doctors/domai
 import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
-import { formatBs, formatDate, formatNumber, formatPercent, inDateRange } from '../../domain/format';
+import { formatUsd, formatBs, formatDate, formatNumber, formatPercent, inDateRange } from '../../domain/format';
+import { bsToUsd, useUsdRate, usdToBs } from '../../domain/useUsdRate';
 import { REPORT_PAGE_SIZE } from '../../infrastructure/fetchAll';
 import { getHttpErrorMessage } from '@/lib/api';
 
-const STATUS_TONE: Record<string, string> = {
+const STATUS_TONE: Record<TaxPayableStatus, string> = {
   paid: 'bg-success-soft text-success',
   unpaid: 'bg-warning-soft text-warning',
   partially_paid: 'bg-brand-cyan-soft text-brand-blue-strong',
-  undefined: 'bg-muted text-muted-foreground',
 };
 
-const COLUMNS = 12;
+const COLUMNS = 15;
 
 export function ReportTaxesRetained() {
   const [sp, setSp] = useSearchParams();
@@ -73,6 +72,7 @@ export function ReportTaxesRetained() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [overCap, setOverCap] = useState(false);
+  const usdRate = useUsdRate();
 
   useEffect(() => {
     (async () => {
@@ -148,14 +148,19 @@ export function ReportTaxesRetained() {
   const enriched = useMemo(() => {
     const s = filters.search.toLowerCase().trim();
     return rows
-      .map((t) => ({ t, order: ordersIdx[t.orderId] ?? t.order }))
+      .map((t) => {
+        const firstOrderId = t.orders?.[0]?.id;
+        const order = firstOrderId ? (ordersIdx[firstOrderId] ?? t.orders?.[0]) : t.orders?.[0];
+        return { t, order };
+      })
       .filter(({ t, order }) => {
         if (!inDateRange(t.createdAt, filters.from || undefined, filters.to || undefined))
           return false;
         if (!s) return true;
+        const orderNums = (t.orders ?? []).map((o) => o.orderNumber).join(' ');
         const blob = [
           t.taxPayableNumber,
-          order?.orderNumber,
+          orderNums,
           recipientName(t),
           holderDisplayName(order?.patient),
         ]
@@ -173,17 +178,17 @@ export function ReportTaxesRetained() {
     let natural = 0;
     let legal = 0;
     enriched.forEach(({ t }) => {
-      const tg = targetBs(t) ?? 0;
-      const p = paidBs(t);
-      const pen = pendingBs(t) ?? Math.max(0, tg - p);
-      target += tg;
-      paid += p;
-      pending += pen;
-      if (t.doctor?.isLegalEntity) legal += tg;
-      else natural += tg;
+      const tgUsd = bsToUsd(taxAmountBs(t), usdRate);
+      const pUsd = bsToUsd(paidBs(t), usdRate);
+      const penUsd = bsToUsd(pendingBs(t), usdRate);
+      target += tgUsd;
+      paid += pUsd;
+      pending += penUsd;
+      if (t.personType === 'legal_entity') legal += tgUsd;
+      else natural += tgUsd;
     });
     return { target, paid, pending, natural, legal, count: enriched.length };
-  }, [enriched]);
+  }, [enriched, usdRate]);
 
   const paged = useMemo(() => {
     const start = (filters.page - 1) * filters.limit;
@@ -209,21 +214,21 @@ export function ReportTaxesRetained() {
               icon: Receipt,
               tone: 'blue',
               label: 'Total retenido',
-              value: formatBs(totals.target),
-              hint: `Natural ${formatBs(totals.natural)} · Jurídico ${formatBs(totals.legal)}`,
+              value: formatUsd(totals.target),
+              hint: `Natural ${formatUsd(totals.natural)} · Jurídico ${formatUsd(totals.legal)}`,
             },
             {
               icon: TrendingUp,
               tone: 'success',
-              label: 'Pagado al fisco',
-              value: formatBs(totals.paid),
+              label: 'Pagado al SENIAT',
+              value: formatUsd(totals.paid),
               hint: `${totals.target > 0 ? formatPercent((totals.paid / totals.target) * 100) : '0%'} de avance`,
             },
             {
               icon: AlertCircle,
               tone: 'warning',
               label: 'Pendiente de pago',
-              value: formatBs(totals.pending),
+              value: formatUsd(totals.pending),
             },
             {
               icon: Wallet,
@@ -284,11 +289,11 @@ export function ReportTaxesRetained() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Estado: todos</SelectItem>
-                  <SelectItem value="unpaid">{EFFECTIVE_STATUS_LABEL.unpaid}</SelectItem>
+                  <SelectItem value="unpaid">{STATUS_LABEL.unpaid}</SelectItem>
                   <SelectItem value="partially_paid">
-                    {EFFECTIVE_STATUS_LABEL.partially_paid}
+                    {STATUS_LABEL.partially_paid}
                   </SelectItem>
-                  <SelectItem value="paid">{EFFECTIVE_STATUS_LABEL.paid}</SelectItem>
+                  <SelectItem value="paid">{STATUS_LABEL.paid}</SelectItem>
                 </SelectContent>
               </Select>
             </>
@@ -301,20 +306,24 @@ export function ReportTaxesRetained() {
           </div>
         ) : null}
 
+        <div className="m-4 rounded-lg border overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-[oklch(0.985_0.003_250)] hover:bg-[oklch(0.985_0.003_250)]">
+            <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Fecha</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Médico</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Tipo</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Paciente</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Orden</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Retención</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">% Retención</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Monto retenido</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Total Bs.</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Pagado Bs.</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Pendiente Bs.</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">% Retención</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto retenido</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Total USD</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Total Bs.</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Pagado USD</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Pagado Bs.</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Pendiente USD</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Pendiente Bs.</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Estado</TableHead>
             </TableRow>
           </TableHeader>
@@ -337,11 +346,14 @@ export function ReportTaxesRetained() {
               </TableRow>
             ) : (
               paged.map(({ t, order }) => {
-                const tg = targetBs(t);
-                const p = paidBs(t);
-                const pen = pendingBs(t);
-                const eff = effectiveStatus(t);
+                const tgBs = taxAmountBs(t);
+                const pBs = paidBs(t);
+                const penBs = pendingBs(t);
+                const tgUsd = bsToUsd(tgBs, usdRate);
+                const pUsd = bsToUsd(pBs, usdRate);
+                const penUsd = bsToUsd(penBs, usdRate);
                 const rate = t.taxRate ? Number(t.taxRate) * 100 : null;
+                const orderNums = (t.orders ?? []).map((o) => o.orderNumber).join(', ');
                 return (
                   <TableRow key={t.id} className="hover:bg-[oklch(0.985_0.003_250)]">
                     <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
@@ -352,14 +364,14 @@ export function ReportTaxesRetained() {
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm">
                       <Badge variant="outline" className="text-xs font-normal">
-                        {t.doctor?.isLegalEntity ? 'Jurídico' : 'Natural'}
+                        {t.personType === 'legal_entity' ? 'Jurídico' : 'Natural'}
                       </Badge>
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm">
                       {holderDisplayName(order?.patient)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono">
-                      {order?.orderNumber ?? '—'}
+                      {orderNums || '—'}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono">
                       {t.taxPayableNumber}
@@ -368,25 +380,32 @@ export function ReportTaxesRetained() {
                       {rate !== null ? `${rate.toFixed(1)}%` : '—'}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                      {t.taxAmount && t.taxAmountCurrency
-                        ? `${t.taxAmountCurrency} ${Number(t.taxAmount).toFixed(2)}`
-                        : '—'}
+                      {formatBs(tgBs)} Bs.
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                      {formatBs(tg)}
+                      {formatUsd(tgUsd)}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
+                      {formatBs(usdToBs(tgUsd, usdRate))}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-success">
-                      {formatBs(p)}
+                      {formatUsd(pUsd)}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-success">
+                      {formatBs(usdToBs(pUsd, usdRate))}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-warning">
-                      {formatBs(pen)}
+                      {formatUsd(penUsd)}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-warning">
+                      {formatBs(usdToBs(penUsd, usdRate))}
                     </TableCell>
                     <TableCell className="py-3.5 px-4">
                       <Badge
                         variant="outline"
-                        className={`text-xs ${STATUS_TONE[eff]} border-transparent`}
+                        className={`text-xs ${STATUS_TONE[t.status]} border-transparent`}
                       >
-                        {EFFECTIVE_STATUS_LABEL[eff]}
+                        {STATUS_LABEL[t.status]}
                       </Badge>
                     </TableCell>
                   </TableRow>
@@ -405,6 +424,7 @@ export function ReportTaxesRetained() {
           onPageSizeChange={(limit) => updateParam({ limit: String(limit) })}
           itemLabel="retenciones"
         />
+        </div>
       </div>
     </ReportShell>
   );

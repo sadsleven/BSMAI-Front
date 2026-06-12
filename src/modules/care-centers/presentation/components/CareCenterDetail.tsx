@@ -12,6 +12,7 @@ import type { CareCenter } from '../../domain/models/careCenter';
 import type { Bank } from '@/modules/banks/domain/models/bank';
 import { bankGateway } from '@/modules/banks/infrastructure/bankGateway';
 import { notify } from '@/lib/notifications/toast';
+import { ServicePricesDetailTable } from '@/components/ui/service-prices-detail-table';
 
 const TYPE_LABEL = {
   mobile_payment: 'Pago Móvil',
@@ -31,48 +32,16 @@ export type CareCenterDetailProps = {
   onOpenChange: (open: boolean) => void;
 };
 
-export function CareCenterDetail({ centerId, open, onOpenChange }: CareCenterDetailProps) {
-  const [center, setCenter] = useState<CareCenter | null>(null);
-  const [banks, setBanks] = useState<Map<string, Bank>>(new Map());
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!open || !centerId) {
-      setCenter(null);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    Promise.all([careCenterGateway.getById(centerId), bankGateway.list()])
-      .then(([c, bs]) => {
-        if (cancelled) return;
-        setCenter(c);
-        const map = new Map<string, Bank>();
-        for (const b of bs) map.set(b.code, b);
-        setBanks(map);
-      })
-      .catch((e) => {
-        if (!cancelled) notify.fromError(e, 'No se pudo cargar el centro.');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [centerId, open]);
-
+/** Cuerpo reutilizado por el modal `CareCenterDetail` y la página `CareCenterDetailPage`. */
+export function CareCenterDetailBody({
+  center,
+  banks,
+}: {
+  center: CareCenter;
+  banks: Map<string, Bank>;
+}) {
   return (
-    <DetailDialog
-      open={open}
-      onOpenChange={onOpenChange}
-      icon={Hospital}
-      title={center ? center.businessName : 'Detalle del centro'}
-      subtitle={center?.email}
-      loading={loading}
-    >
-      {center ? (
-        <div className="divide-y">
+    <div className="divide-y">
           <DetailSection title="Datos del centro">
             <DetailRow label="Razón social" value={center.businessName} />
             <DetailRow label="RIF" value={center.rif} mono />
@@ -123,6 +92,10 @@ export function CareCenterDetail({ centerId, open, onOpenChange }: CareCenterDet
             ) : (
               <p className="text-sm text-muted-foreground italic">Sin especialidades.</p>
             )}
+          </DetailSection>
+
+          <DetailSection title={`Precios por tipo de servicio (${center.servicePrices?.length ?? 0})`}>
+            <ServicePricesDetailTable prices={center.servicePrices ?? []} />
           </DetailSection>
 
           <DetailSection title={`Métodos de pago (${center.paymentMethods?.length ?? 0})`}>
@@ -179,24 +152,67 @@ export function CareCenterDetail({ centerId, open, onOpenChange }: CareCenterDet
             )}
           </DetailSection>
 
-          {(center.createdAt || center.updatedAt) && (
-            <DetailSection title="Auditoría">
-              {center.createdAt && (
-                <DetailRow
-                  label="Creado"
-                  value={new Date(center.createdAt).toLocaleString()}
-                />
-              )}
-              {center.updatedAt && (
-                <DetailRow
-                  label="Actualizado"
-                  value={new Date(center.updatedAt).toLocaleString()}
-                />
-              )}
-            </DetailSection>
+      {(center.createdAt || center.updatedAt) && (
+        <DetailSection title="Auditoría">
+          {center.createdAt && (
+            <DetailRow
+              label="Creado"
+              value={new Date(center.createdAt).toLocaleString()}
+            />
           )}
-        </div>
-      ) : null}
+          {center.updatedAt && (
+            <DetailRow
+              label="Actualizado"
+              value={new Date(center.updatedAt).toLocaleString()}
+            />
+          )}
+        </DetailSection>
+      )}
+    </div>
+  );
+}
+
+export function CareCenterDetail({ centerId, open, onOpenChange }: CareCenterDetailProps) {
+  const [center, setCenter] = useState<CareCenter | null>(null);
+  const [banks, setBanks] = useState<Map<string, Bank>>(new Map());
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open || !centerId) {
+      setCenter(null);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([careCenterGateway.getById(centerId), bankGateway.list()])
+      .then(([c, bs]) => {
+        if (cancelled) return;
+        setCenter(c);
+        const map = new Map<string, Bank>();
+        for (const b of bs) map.set(b.code, b);
+        setBanks(map);
+      })
+      .catch((e) => {
+        if (!cancelled) notify.fromError(e, 'No se pudo cargar el centro.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [centerId, open]);
+
+  return (
+    <DetailDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      icon={Hospital}
+      title={center ? center.businessName : 'Detalle del centro'}
+      subtitle={center?.email}
+      loading={loading}
+    >
+      {center ? <CareCenterDetailBody center={center} banks={banks} /> : null}
     </DetailDialog>
   );
 }

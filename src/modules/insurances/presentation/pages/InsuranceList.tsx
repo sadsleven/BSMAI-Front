@@ -35,6 +35,7 @@ import { SortableHeader, type SortDir } from '@/components/ui/sortable-header';
 import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
+import { formatCreated } from '@/lib/dates';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { Plus, Pencil, Trash2, Power, Shield, Undo2, Eye } from 'lucide-react';
@@ -43,7 +44,6 @@ import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
 import { notify } from '@/lib/notifications/toast';
 import { cn } from '@/lib/utils';
-import { InsuranceDetail } from '../components/InsuranceDetail';
 
 type SortBy = 'name' | 'createdAt' | 'updatedAt';
 type Deletion = 'active' | 'deleted' | 'all';
@@ -93,7 +93,6 @@ export function InsuranceList() {
   const [actionLoading, setActionLoading] = useState(false);
   const [toggleTarget, setToggleTarget] = useState<Insurance | null>(null);
   const [restoreTarget, setRestoreTarget] = useState<Insurance | null>(null);
-  const [viewTargetId, setViewTargetId] = useState<string | null>(null);
 
   const canSeeDeleted =
     has(PERMISSIONS.INSURANCES.HARD_DELETE) || has(PERMISSIONS.INSURANCES.RESTORE);
@@ -288,9 +287,10 @@ export function InsuranceList() {
           </div>
         ) : null}
 
+        <div className="m-4 rounded-lg border overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-[oklch(0.985_0.003_250)] hover:bg-[oklch(0.985_0.003_250)]">
+            <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 <SortableHeader<SortBy>
                   column="name"
@@ -307,17 +307,20 @@ export function InsuranceList() {
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Estado
               </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                Creación
+              </TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-center">
                 Acciones
               </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <SkeletonTableRows rows={5} columns={4} />
+              <SkeletonTableRows rows={5} columns={5} />
             ) : insurances.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="p-0">
+                <TableCell colSpan={5} className="p-0">
                   <EmptyState
                     icon={Shield}
                     title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay seguros'}
@@ -360,18 +363,22 @@ export function InsuranceList() {
                   <TableCell className="py-3.5 px-4">
                     <StatusBadge i={i} />
                   </TableCell>
+                  <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                    {formatCreated(i.createdAt)}
+                  </TableCell>
                   <TableCell className="py-3.5 px-4 text-right">
-                    <div className="inline-flex items-center gap-0.5">
-                      <Can permission={PERMISSIONS.INSURANCES.VIEW}>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Ver detalle"
-                          onClick={() => setViewTargetId(i.id)}
-                          className="w-8 h-8"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </Button>
+                    <div className="flex items-center justify-center gap-0.5">
+                      <Can permission={PERMISSIONS.INSURANCES.LIST}>
+                        <Link to={`/insurances/${i.id}`}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Ver detalle"
+                            className="w-8 h-8"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                        </Link>
                       </Can>
                       {i.deletedAt ? (
                         <Can permission={PERMISSIONS.INSURANCES.RESTORE}>
@@ -447,6 +454,7 @@ export function InsuranceList() {
           onPageSizeChange={(limit) => updateParam({ limit: String(limit) })}
           itemLabel="seguros"
         />
+        </div>
       </div>
 
       <ConfirmDialog
@@ -561,13 +569,6 @@ export function InsuranceList() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <InsuranceDetail
-        insuranceId={viewTargetId}
-        open={!!viewTargetId}
-        onOpenChange={(o) => {
-          if (!o) setViewTargetId(null);
-        }}
-      />
     </div>
   );
 }

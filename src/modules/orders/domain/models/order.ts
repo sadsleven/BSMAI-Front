@@ -8,12 +8,12 @@ export type OrderStatus =
 
 export type OrderType = 'cash' | 'credit' | 'insurance' | 'cashea';
 export type ProviderType = 'doctor' | 'care_center';
-export type OrderCurrency = 'USD' | 'EUR';
 export type InsuranceSource = 'direct' | 'via_contractor';
 export type OrderPaymentType =
   | 'mobile_payment'
   | 'bank_transfer'
-  | 'cash_foreign'
+  | 'cash_usd'
+  | 'cash_eur'
   | 'cash_bs'
   | 'other';
 export type PaymentCurrency = 'USD' | 'EUR' | 'BS';
@@ -28,7 +28,7 @@ export interface OrderPayment {
   accountNumber?: string | null;
   amountCurrency: PaymentCurrency;
   amountValue: number | string;
-  amountInBs?: number | string;
+  amountInUsd?: number | string;
 }
 
 export interface OrderRefSummary {
@@ -44,17 +44,26 @@ export interface OrderRefSummary {
   phones?: Array<{ id?: string; number: string; label?: string | null }>;
 }
 
-export type DoctorAmountCurrency = 'USD' | 'EUR' | 'BS';
+/** Observaciones del informe (Paso 3) de un proveedor. Mapea OrderProviderReport. */
+export interface OrderProviderReportRow {
+  id?: string;
+  providerType: ProviderType;
+  doctorId?: string | null;
+  careCenterId?: string | null;
+  observations?: string | null;
+}
 
 /** Fila ST + proveedor dentro de una orden (mapea OrderServiceType del BE). */
 export interface OrderServiceTypeRow {
   serviceTypeId: string;
-  serviceType?: { id: string; name: string };
+  serviceType?: { id: string; name: string; allowsQuantity?: boolean };
   providerType: ProviderType;
   doctorId?: string | null;
   doctor?: (OrderRefSummary & { isLegalEntity?: boolean }) | null;
   careCenterId?: string | null;
   careCenter?: OrderRefSummary | null;
+  /** Cantidad del ST (≥1). Sólo > 1 si el ST tiene `allowsQuantity`. */
+  quantity?: number;
 }
 
 export interface Order {
@@ -89,13 +98,30 @@ export interface Order {
   pathologies?: Array<{ id: string; name: string }>;
   orderDate: string;
   appointmentDate: string;
-  priceCurrency: OrderCurrency;
   priceAmount: string | number;
+  /**
+   * Comisión Cashea snapshot (dos tramos) al crear la orden. Sólo presentes
+   * cuando `type='cashea'`. Comisión = primeraCuota × firstRate + total × totalRate.
+   */
+  casheaFirstInstallmentAmount?: string | number | null;
+  casheaFirstInstallmentRate?: string | number | null;
+  casheaTotalRate?: string | number | null;
+  /**
+   * Modo tasa fija para órdenes seguro. Cuando true, la cuenta por cobrar del
+   * seguro se compara en Bs usando `fixedExchangeRate` (snapshot).
+   */
+  useFixedRate?: boolean;
+  fixedExchangeRateId?: string | null;
+  fixedExchangeRate?: {
+    id: string;
+    currency: 'USD' | 'EUR';
+    amountBs: string | number;
+    effectiveDate: string;
+  } | null;
   servicePricing?: Array<{
     serviceTypeId: string;
     kind: 'particular' | 'insurance' | 'doctor' | 'care_center';
     priceUsd: string | number;
-    priceEur: string | number;
   }>;
   createdById: string;
   createdBy?: {
@@ -118,9 +144,17 @@ export interface Order {
   // Pasos 2-4
   attended?: boolean;
   attendedAt?: string | null;
+  /** Nota general de la orden (nivel orden, staff). */
   otherStudies?: string | null;
+  /** Observaciones del informe segmentadas por proveedor (Paso 3). */
+  providerReports?: OrderProviderReportRow[];
+  /**
+   * Sólo presente en la lista para usuarios proveedor: indica si SU propia
+   * observación (Paso 3) ya está completa. El estado mostrado al proveedor se
+   * deriva de este flag, no del `status` global de la orden.
+   */
+  providerObservationComplete?: boolean;
   doctorAmount?: string | number | null;
-  doctorAmountCurrency?: DoctorAmountCurrency | null;
   billingExchangeRateId?: string | null;
   billingExchangeRate?: {
     id: string;
@@ -145,8 +179,16 @@ export interface AuthorizeOrderAmountDto {
   observation: string;
 }
 
+export interface ReportProviderInput {
+  providerType: ProviderType;
+  doctorId?: string;
+  careCenterId?: string;
+  observations?: string | null;
+}
+
 export interface ReportOrderDto {
   otherStudies?: string | null;
+  providerReports?: ReportProviderInput[];
 }
 
 export interface BillingProviderInput {
@@ -154,7 +196,6 @@ export interface BillingProviderInput {
   doctorId?: string;
   careCenterId?: string;
   amount: number;
-  currency: DoctorAmountCurrency;
 }
 
 export interface BillingOrderDto {
@@ -167,6 +208,7 @@ export interface OrderServiceTypeRowInput {
   providerType: ProviderType;
   doctorId?: string;
   careCenterId?: string;
+  quantity?: number;
 }
 
 export interface CreateOrderDto {
@@ -183,8 +225,11 @@ export interface CreateOrderDto {
   pathologyIds?: string[];
   orderDate: string;
   appointmentDate: string;
-  priceCurrency: OrderCurrency;
   priceAmount: number;
+  /** Monto de la primera cuota (inicial) Cashea, USD. Requerido si type='cashea'. */
+  casheaFirstInstallmentAmount?: number;
+  useFixedRate?: boolean;
+  fixedExchangeRateId?: string;
   payments?: OrderPaymentInput[];
 }
 
@@ -197,6 +242,7 @@ export interface OrderPaymentInput {
   bankCode?: string;
   exchangeRateId?: string;
   accountNumber?: string;
+  paymentAccountId?: string;
   amountCurrency: PaymentCurrency;
   amountValue: number;
 }
@@ -245,7 +291,8 @@ export const ORDER_TYPE_LABEL: Record<OrderType, string> = {
 export const PAYMENT_TYPE_LABEL: Record<OrderPaymentType, string> = {
   mobile_payment: 'Pago móvil',
   bank_transfer: 'Transferencia',
-  cash_foreign: 'Efectivo divisas',
+  cash_usd: 'Efectivo dólares',
+  cash_eur: 'Efectivo euros',
   cash_bs: 'Efectivo bolívares',
   other: 'Otro',
 };

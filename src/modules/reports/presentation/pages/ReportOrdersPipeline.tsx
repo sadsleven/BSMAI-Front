@@ -42,12 +42,13 @@ import { ReportShell } from '../components/ReportShell';
 import { KpiRow, type KpiTone } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import {
-  formatBs,
+  formatUsd,
   formatDate,
   formatNumber,
   daysBetween,
   inDateRange,
 } from '../../domain/format';
+import { formatMoney } from '@/lib/format/money';
 import { REPORT_PAGE_SIZE } from '../../infrastructure/fetchAll';
 import { getHttpErrorMessage } from '@/lib/api';
 
@@ -206,7 +207,7 @@ export function ReportOrdersPipeline() {
             tone: STATUS_META[st].tone,
             label: ORDER_STATUS_LABEL[st],
             value: formatNumber(byStatus[st].count),
-            hint: byStatus[st].amountBs > 0 ? formatBs(byStatus[st].amountBs) : undefined,
+            hint: byStatus[st].amountBs > 0 ? formatUsd(byStatus[st].amountBs) : undefined,
           }))}
         />
       }
@@ -275,17 +276,18 @@ export function ReportOrdersPipeline() {
           </div>
         ) : null}
 
+        <div className="m-4 rounded-lg border overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-[oklch(0.985_0.003_250)] hover:bg-[oklch(0.985_0.003_250)]">
+            <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Orden</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Fecha</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Paciente</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Especialidad</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Tipo</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Estado</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Días en sistema</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Monto</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Días en sistema</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -345,7 +347,7 @@ export function ReportOrdersPipeline() {
                       {formatNumber(days)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                      {o.priceCurrency} {Number(o.priceAmount).toFixed(2)}
+                      USD {formatMoney(o.priceAmount)}
                     </TableCell>
                   </TableRow>
                 );
@@ -363,6 +365,7 @@ export function ReportOrdersPipeline() {
           onPageSizeChange={(limit) => updateParam({ limit: String(limit) })}
           itemLabel="órdenes"
         />
+        </div>
       </div>
     </ReportShell>
   );

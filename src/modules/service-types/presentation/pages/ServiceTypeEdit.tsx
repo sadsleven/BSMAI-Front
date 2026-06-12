@@ -38,12 +38,13 @@ export function ServiceTypeEdit() {
       name: '',
       description: '',
       isActive: true,
-      particularPriceUsd: 0,
-      particularPriceEur: 0,
+      particularPriceUsd: undefined,
+      allowsQuantity: false,
     },
   });
 
   const isActive = watch('isActive') ?? true;
+  const allowsQuantity = watch('allowsQuantity') ?? false;
 
   useEffect(() => {
     if (!id) return;
@@ -54,8 +55,8 @@ export function ServiceTypeEdit() {
           name: p.name,
           description: p.description ?? '',
           isActive: p.isActive ?? true,
-          particularPriceUsd: Number(p.particularPriceUsd) || 0,
-          particularPriceEur: Number(p.particularPriceEur) || 0,
+          particularPriceUsd: p.particularPriceUsd != null ? Number(p.particularPriceUsd) : undefined,
+          allowsQuantity: p.allowsQuantity ?? false,
         });
         setDisplayName(p.name);
       } catch (e) {
@@ -75,7 +76,7 @@ export function ServiceTypeEdit() {
         description: values.description ?? undefined,
         isActive: values.isActive,
         particularPriceUsd: values.particularPriceUsd,
-        particularPriceEur: values.particularPriceEur,
+        allowsQuantity: values.allowsQuantity,
       });
       notify.success('Tipo de servicio actualizado');
       navigate('/service-types');
@@ -147,20 +148,18 @@ export function ServiceTypeEdit() {
 
         <FormSection
           title="Precio Particular"
-          description="Monto que se cobra al paciente en órdenes Contado, Crédito o Cashea. Los precios para seguros se cargan en cada Seguro."
+          description="Monto en USD que se cobra al paciente en órdenes Contado, Crédito o Cashea. Opcional. Los precios para seguros se cargan en cada Seguro."
         >
           <FormGrid>
             <div className="space-y-1.5">
-              <Label className="text-sm font-medium">
-                Precio Particular USD <span className="text-destructive">*</span>
-              </Label>
+              <Label className="text-sm font-medium">Precio Particular USD (opcional)</Label>
               <Controller
                 control={control}
                 name="particularPriceUsd"
                 render={({ field }) => (
                   <CurrencyAmountInput
                     value={field.value}
-                    onChange={(v) => field.onChange(v ?? 0)}
+                    onChange={(v) => field.onChange(v)}
                     currencyPrefix="$"
                     invalid={!!errors.particularPriceUsd}
                   />
@@ -173,30 +172,21 @@ export function ServiceTypeEdit() {
                 </p>
               ) : null}
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-sm font-medium">
-                Precio Particular EUR <span className="text-destructive">*</span>
-              </Label>
-              <Controller
-                control={control}
-                name="particularPriceEur"
-                render={({ field }) => (
-                  <CurrencyAmountInput
-                    value={field.value}
-                    onChange={(v) => field.onChange(v ?? 0)}
-                    currencyPrefix="€"
-                    invalid={!!errors.particularPriceEur}
-                  />
-                )}
-              />
-              {errors.particularPriceEur ? (
-                <p className="text-xs text-destructive flex items-center gap-1 mt-1">
-                  <AlertTriangle className="w-3 h-3" />
-                  {errors.particularPriceEur.message}
-                </p>
-              ) : null}
-            </div>
           </FormGrid>
+        </FormSection>
+
+        <FormSection
+          title="Cantidad"
+          description="Activá si este servicio puede facturarse por cantidad en una orden (ej. sesiones de fisioterapia)."
+        >
+          <FormSwitch
+            label="Permite cantidad"
+            description="Al añadir este servicio a una orden, podrás indicar cuántas unidades."
+            checked={allowsQuantity}
+            onCheckedChange={(v) =>
+              setValue('allowsQuantity', v, { shouldDirty: true, shouldValidate: true })
+            }
+          />
         </FormSection>
 
         <FormSection title="Estado">

@@ -29,7 +29,9 @@ import {
 import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
-import { formatBs, formatDate, formatNumber, inDateRange } from '../../domain/format';
+import { formatUsd, formatBs, formatDate, formatNumber, inDateRange } from '../../domain/format';
+import { formatMoney } from '@/lib/format/money';
+import { useUsdRate, usdToBs } from '../../domain/useUsdRate';
 import { REPORT_PAGE_SIZE } from '../../infrastructure/fetchAll';
 import { getHttpErrorMessage } from '@/lib/api';
 
@@ -41,7 +43,7 @@ type CollectionRow = {
   bankCode: string | null | undefined;
   amountValue: number;
   amountCurrency: 'USD' | 'EUR' | 'BS';
-  amountInBs: number;
+  amountInUsd: number;
   insuranceName: string;
   receivableNumber: string;
 };
@@ -64,6 +66,7 @@ export function ReportCollections() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [overCap, setOverCap] = useState(false);
+  const usdRate = useUsdRate();
 
   useEffect(() => {
     let cancelled = false;
@@ -85,7 +88,7 @@ export function ReportCollections() {
               bankCode: p.bankCode,
               amountValue: Number(p.amountValue ?? 0),
               amountCurrency: p.amountCurrency,
-              amountInBs: Number(p.amountInBs ?? 0),
+              amountInUsd: Number(p.amountInUsd ?? 0),
               insuranceName: ar.insurance?.name ?? '—',
               receivableNumber: ar.receivableNumber,
             });
@@ -148,9 +151,9 @@ export function ReportCollections() {
     let count = 0;
     const byType = new Map<OrderPaymentType, number>();
     filtered.forEach((it) => {
-      bs += it.amountInBs;
+      bs += it.amountInUsd;
       count += 1;
-      byType.set(it.type, (byType.get(it.type) ?? 0) + it.amountInBs);
+      byType.set(it.type, (byType.get(it.type) ?? 0) + it.amountInUsd);
     });
     const top = Array.from(byType.entries()).sort((a, b) => b[1] - a[1])[0];
     return { bs, count, topMethod: top ? PAYMENT_TYPE_LABEL[top[0]] : '—', topAmount: top?.[1] ?? 0 };
@@ -180,7 +183,7 @@ export function ReportCollections() {
               icon: ArrowDownCircle,
               tone: 'success',
               label: 'Total cobrado',
-              value: formatBs(totals.bs),
+              value: formatUsd(totals.bs),
             },
             {
               icon: ListChecks,
@@ -193,13 +196,13 @@ export function ReportCollections() {
               tone: 'cyan',
               label: 'Método principal',
               value: totals.topMethod,
-              hint: totals.topAmount ? formatBs(totals.topAmount) : undefined,
+              hint: totals.topAmount ? formatUsd(totals.topAmount) : undefined,
             },
             {
               icon: TrendingUp,
               tone: 'warning',
               label: 'Promedio por cobro',
-              value: totals.count > 0 ? formatBs(totals.bs / totals.count) : '—',
+              value: totals.count > 0 ? formatUsd(totals.bs / totals.count) : '—',
             },
           ]}
         />
@@ -251,25 +254,27 @@ export function ReportCollections() {
           </div>
         ) : null}
 
+        <div className="m-4 rounded-lg border overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-[oklch(0.985_0.003_250)] hover:bg-[oklch(0.985_0.003_250)]">
+            <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Fecha</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Aseguradora</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Cuenta</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Método</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Banco</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Referencia</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Monto</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Monto Bs.</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto USD</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto Bs.</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <SkeletonTableRows rows={6} columns={8} />
+              <SkeletonTableRows rows={6} columns={9} />
             ) : paged.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="p-0">
+                <TableCell colSpan={9} className="p-0">
                   <EmptyState
                     icon={ArrowDownCircle}
                     title={hasActiveFilters ? 'Sin resultados' : 'Sin cobros registrados'}
@@ -305,10 +310,13 @@ export function ReportCollections() {
                     {it.referenceNumber ?? '—'}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                    {it.amountCurrency} {it.amountValue.toFixed(2)}
+                    {it.amountCurrency} {formatMoney(it.amountValue)}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-success">
-                    {formatBs(it.amountInBs)}
+                    {formatUsd(it.amountInUsd)}
+                  </TableCell>
+                  <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-success">
+                    {formatBs(usdToBs(it.amountInUsd, usdRate))}
                   </TableCell>
                 </TableRow>
               ))
@@ -325,6 +333,7 @@ export function ReportCollections() {
           onPageSizeChange={(limit) => updateParam({ limit: String(limit) })}
           itemLabel="cobros"
         />
+        </div>
       </div>
     </ReportShell>
   );

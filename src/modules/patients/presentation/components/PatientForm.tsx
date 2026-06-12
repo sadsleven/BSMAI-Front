@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils';
 import type { PatientValues } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
 import { contractorGateway } from '@/modules/contractors/infrastructure/contractorGateway';
+import { insuranceGateway } from '@/modules/insurances/infrastructure/insuranceGateway';
 import type { Contractor } from '@/modules/contractors/domain/models/contractor';
 import type { Insurance } from '@/modules/insurances/domain/models/insurance';
 
@@ -73,6 +74,24 @@ export function PatientForm({
         if (!cancelled) setAssignableContractors(list);
       } catch {
         if (!cancelled) setAssignableContractors([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Catálogo de seguros asignables para mapear ids → nombre en el resumen de
+  // seguros directos (un seguro recién seleccionado no está en los "existing").
+  const [assignableInsurances, setAssignableInsurances] = useState<Insurance[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await insuranceGateway.listAssignable();
+        if (!cancelled) setAssignableInsurances(list);
+      } catch {
+        if (!cancelled) setAssignableInsurances([]);
       }
     })();
     return () => {
@@ -138,9 +157,11 @@ export function PatientForm({
   const availableSummary = useMemo(() => {
     type Row = { id: string; name: string; source: 'direct' | 'via_contractor'; contractorName?: string };
     const map = new Map<string, Row>();
-    // Directos primero (incluye existing stale por si están en value)
+    // Directos primero (incluye existing stale + catálogo asignable por si el
+    // seguro fue recién seleccionado y no está en los "existing").
     const directLookup = new Map<string, Insurance>();
     for (const ins of existingDirectInsurances ?? []) directLookup.set(ins.id, ins);
+    for (const ins of assignableInsurances) directLookup.set(ins.id, ins);
     for (const id of directInsuranceIds) {
       const ins = directLookup.get(id);
       if (ins) {
@@ -159,7 +180,7 @@ export function PatientForm({
       });
     }
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [directInsuranceIds, existingDirectInsurances, coveredByContractor]);
+  }, [directInsuranceIds, existingDirectInsurances, assignableInsurances, coveredByContractor]);
 
   const phoneErrors = (errors.phones as unknown as Array<{ number?: { message?: string } } | undefined>)?.map?.(
     (e) => (e?.number ? { number: e.number.message } : undefined),
@@ -334,7 +355,8 @@ export function PatientForm({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="birthDate" className="text-sm font-medium">
-              Fecha de nacimiento <span className="text-destructive">*</span>
+              Fecha de nacimiento{' '}
+              <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
             </Label>
             <Controller
               name="birthDate"
@@ -393,6 +415,7 @@ export function PatientForm({
       <FormSection
         title="Contratistas"
         description="Asigná uno o más contratistas al paciente. Cada contratista aporta sus propios seguros."
+        allowOverflow
       >
         <Controller
           name="contractorIds"
@@ -415,6 +438,7 @@ export function PatientForm({
       <FormSection
         title="Seguros directos"
         description="Seguros asignados directamente al paciente (sin contratista). No podés elegir seguros ya cubiertos por algún contratista seleccionado."
+        allowOverflow
       >
         <Controller
           name="directInsuranceIds"

@@ -1,7 +1,6 @@
 import { useNavigate } from 'react-router-dom';
-import { Bell, LogOut, Menu, Plus, Search, User as UserIcon } from 'lucide-react';
+import { Bell, LogOut, Menu, Plus, User as UserIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { useAuthStore } from '@/modules/auth/domain/store/authStore';
 import { getFullName } from '@/modules/auth/domain/models/authUser';
 import { authApi } from '@/modules/auth/infrastructure/authApi';
@@ -15,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ExchangeRatesBadge } from './ExchangeRatesBadge';
+import { NavbarSearch } from './NavbarSearch';
 
 export type NavbarProps = {
   onMenuClick?: () => void;
@@ -24,6 +24,9 @@ export function Navbar({ onMenuClick }: NavbarProps) {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
+  // Proveedores (doctor/centro) sólo gestionan sus informes: sin búsqueda
+  // global ni creación de órdenes.
+  const isProvider = !!user?.providerLink;
 
   const initials = user
     ? `${user.firstName?.[0] ?? ''}${user.lastName?.[0] ?? ''}`.toUpperCase() || 'U'
@@ -61,35 +64,34 @@ export function Navbar({ onMenuClick }: NavbarProps) {
       </div>
 
       {/* Left cluster: search + create order (desktop) */}
-      <div className="relative w-[320px] hidden md:block">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-        <Input
-          type="search"
-          placeholder="Buscar pacientes, órdenes, doctores…"
-          className="h-10 pl-9 bg-muted/40"
-        />
-      </div>
-      <Button
-        size="sm"
-        className="hidden md:inline-flex h-10 px-4 shrink-0"
-        onClick={handleCreateOrder}
-      >
-        <Plus className="w-4 h-4 mr-1.5" />
-        Crear orden
-      </Button>
+      {!isProvider && (
+        <>
+          <NavbarSearch />
+          <Button
+            size="sm"
+            className="hidden md:inline-flex h-10 px-4 shrink-0"
+            onClick={handleCreateOrder}
+          >
+            <Plus className="w-4 h-4 mr-1.5" />
+            Crear orden
+          </Button>
+        </>
+      )}
 
       {/* Right cluster */}
       <div className="ml-auto flex items-center gap-1 sm:gap-2">
         {/* Compact "Crear orden" on mobile (icon only) */}
-        <Button
-          size="icon"
-          className="md:hidden h-10 w-10 shrink-0"
-          onClick={handleCreateOrder}
-          title="Crear orden"
-          aria-label="Crear orden"
-        >
-          <Plus className="w-5 h-5" />
-        </Button>
+        {!isProvider && (
+          <Button
+            size="icon"
+            className="md:hidden h-10 w-10 shrink-0"
+            onClick={handleCreateOrder}
+            title="Crear orden"
+            aria-label="Crear orden"
+          >
+            <Plus className="w-5 h-5" />
+          </Button>
+        )}
         <ExchangeRatesBadge />
         <button
           type="button"

@@ -12,6 +12,7 @@ import { fullName, type Doctor } from '../../domain/models/doctor';
 import type { Bank } from '@/modules/banks/domain/models/bank';
 import { bankGateway } from '@/modules/banks/infrastructure/bankGateway';
 import { notify } from '@/lib/notifications/toast';
+import { ServicePricesDetailTable } from '@/components/ui/service-prices-detail-table';
 
 const TYPE_LABEL = {
   mobile_payment: 'Pago Móvil',
@@ -31,48 +32,16 @@ export type DoctorDetailProps = {
   onOpenChange: (open: boolean) => void;
 };
 
-export function DoctorDetail({ doctorId, open, onOpenChange }: DoctorDetailProps) {
-  const [doctor, setDoctor] = useState<Doctor | null>(null);
-  const [banks, setBanks] = useState<Map<string, Bank>>(new Map());
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!open || !doctorId) {
-      setDoctor(null);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    Promise.all([doctorGateway.getById(doctorId), bankGateway.list()])
-      .then(([d, bs]) => {
-        if (cancelled) return;
-        setDoctor(d);
-        const map = new Map<string, Bank>();
-        for (const b of bs) map.set(b.code, b);
-        setBanks(map);
-      })
-      .catch((e) => {
-        if (!cancelled) notify.fromError(e, 'No se pudo cargar el doctor.');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [doctorId, open]);
-
+/** Cuerpo reutilizado por el modal `DoctorDetail` y la página `DoctorDetailPage`. */
+export function DoctorDetailBody({
+  doctor,
+  banks,
+}: {
+  doctor: Doctor;
+  banks: Map<string, Bank>;
+}) {
   return (
-    <DetailDialog
-      open={open}
-      onOpenChange={onOpenChange}
-      icon={BriefcaseMedical}
-      title={doctor ? fullName(doctor) : 'Detalle del doctor'}
-      subtitle={doctor?.email}
-      loading={loading}
-    >
-      {doctor ? (
-        <div className="divide-y">
+    <div className="divide-y">
           <DetailSection title="Datos personales">
             <DetailRow label="Cédula" value={doctor.cedula} mono />
             <DetailRow
@@ -135,6 +104,10 @@ export function DoctorDetail({ doctorId, open, onOpenChange }: DoctorDetailProps
             )}
           </DetailSection>
 
+          <DetailSection title={`Precios por tipo de servicio (${doctor.servicePrices?.length ?? 0})`}>
+            <ServicePricesDetailTable prices={doctor.servicePrices ?? []} />
+          </DetailSection>
+
           <DetailSection title={`Métodos de pago (${doctor.paymentMethods?.length ?? 0})`}>
             {doctor.paymentMethods?.length ? (
               <ul className="space-y-2">
@@ -189,24 +162,67 @@ export function DoctorDetail({ doctorId, open, onOpenChange }: DoctorDetailProps
             )}
           </DetailSection>
 
-          {(doctor.createdAt || doctor.updatedAt) && (
-            <DetailSection title="Auditoría">
-              {doctor.createdAt && (
-                <DetailRow
-                  label="Creado"
-                  value={new Date(doctor.createdAt).toLocaleString()}
-                />
-              )}
-              {doctor.updatedAt && (
-                <DetailRow
-                  label="Actualizado"
-                  value={new Date(doctor.updatedAt).toLocaleString()}
-                />
-              )}
-            </DetailSection>
+      {(doctor.createdAt || doctor.updatedAt) && (
+        <DetailSection title="Auditoría">
+          {doctor.createdAt && (
+            <DetailRow
+              label="Creado"
+              value={new Date(doctor.createdAt).toLocaleString()}
+            />
           )}
-        </div>
-      ) : null}
+          {doctor.updatedAt && (
+            <DetailRow
+              label="Actualizado"
+              value={new Date(doctor.updatedAt).toLocaleString()}
+            />
+          )}
+        </DetailSection>
+      )}
+    </div>
+  );
+}
+
+export function DoctorDetail({ doctorId, open, onOpenChange }: DoctorDetailProps) {
+  const [doctor, setDoctor] = useState<Doctor | null>(null);
+  const [banks, setBanks] = useState<Map<string, Bank>>(new Map());
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open || !doctorId) {
+      setDoctor(null);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([doctorGateway.getById(doctorId), bankGateway.list()])
+      .then(([d, bs]) => {
+        if (cancelled) return;
+        setDoctor(d);
+        const map = new Map<string, Bank>();
+        for (const b of bs) map.set(b.code, b);
+        setBanks(map);
+      })
+      .catch((e) => {
+        if (!cancelled) notify.fromError(e, 'No se pudo cargar el doctor.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [doctorId, open]);
+
+  return (
+    <DetailDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      icon={BriefcaseMedical}
+      title={doctor ? fullName(doctor) : 'Detalle del doctor'}
+      subtitle={doctor?.email}
+      loading={loading}
+    >
+      {doctor ? <DoctorDetailBody doctor={doctor} banks={banks} /> : null}
     </DetailDialog>
   );
 }

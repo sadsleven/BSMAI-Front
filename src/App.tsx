@@ -19,15 +19,21 @@ import { SpecialtyEdit } from './modules/specialties/presentation/pages/Specialt
 import { PatientList } from './modules/patients/presentation/pages/PatientList';
 import { PatientCreate } from './modules/patients/presentation/pages/PatientCreate';
 import { PatientEdit } from './modules/patients/presentation/pages/PatientEdit';
+import { PatientDetailPage } from './modules/patients/presentation/pages/PatientDetailPage';
 import { DoctorList } from './modules/doctors/presentation/pages/DoctorList';
 import { DoctorCreate } from './modules/doctors/presentation/pages/DoctorCreate';
 import { DoctorEdit } from './modules/doctors/presentation/pages/DoctorEdit';
+import { DoctorChangePassword } from './modules/doctors/presentation/pages/DoctorChangePassword';
+import { DoctorDetailPage } from './modules/doctors/presentation/pages/DoctorDetailPage';
 import { CareCenterList } from './modules/care-centers/presentation/pages/CareCenterList';
 import { CareCenterCreate } from './modules/care-centers/presentation/pages/CareCenterCreate';
 import { CareCenterEdit } from './modules/care-centers/presentation/pages/CareCenterEdit';
+import { CareCenterChangePassword } from './modules/care-centers/presentation/pages/CareCenterChangePassword';
+import { CareCenterDetailPage } from './modules/care-centers/presentation/pages/CareCenterDetailPage';
 import { InsuranceList } from './modules/insurances/presentation/pages/InsuranceList';
 import { InsuranceCreate } from './modules/insurances/presentation/pages/InsuranceCreate';
 import { InsuranceEdit } from './modules/insurances/presentation/pages/InsuranceEdit';
+import { InsuranceDetailPage } from './modules/insurances/presentation/pages/InsuranceDetailPage';
 import { PathologyList } from './modules/pathologies/presentation/pages/PathologyList';
 import { PathologyCreate } from './modules/pathologies/presentation/pages/PathologyCreate';
 import { PathologyEdit } from './modules/pathologies/presentation/pages/PathologyEdit';
@@ -40,18 +46,23 @@ import { ContractorEdit } from './modules/contractors/presentation/pages/Contrac
 import { ExchangeRateList } from './modules/exchange-rates/presentation/pages/ExchangeRateList';
 import { ExchangeRateCreate } from './modules/exchange-rates/presentation/pages/ExchangeRateCreate';
 import { ExchangeRateEdit } from './modules/exchange-rates/presentation/pages/ExchangeRateEdit';
+import { TaxUnitList } from './modules/tax-units/presentation/pages/TaxUnitList';
+import { TaxUnitCreate } from './modules/tax-units/presentation/pages/TaxUnitCreate';
+import { TaxUnitEdit } from './modules/tax-units/presentation/pages/TaxUnitEdit';
 import { BranchList } from './modules/branches/presentation/pages/BranchList';
 import { BranchCreate } from './modules/branches/presentation/pages/BranchCreate';
 import { BranchEdit } from './modules/branches/presentation/pages/BranchEdit';
+import { PaymentAccountList } from './modules/payment-accounts/presentation/pages/PaymentAccountList';
+import { PaymentAccountCreate } from './modules/payment-accounts/presentation/pages/PaymentAccountCreate';
+import { PaymentAccountEdit } from './modules/payment-accounts/presentation/pages/PaymentAccountEdit';
 import { OrderList } from './modules/orders/presentation/pages/OrderList';
 import { OrderCreate } from './modules/orders/presentation/pages/OrderCreate';
 import { OrderEdit } from './modules/orders/presentation/pages/OrderEdit';
+import { OrderDetailPage } from './modules/orders/presentation/pages/OrderDetailPage';
 import { AccountsPayableList } from './modules/accounts-payable/presentation/pages/AccountsPayableList';
 import { AccountsPayableRegisterPayment } from './modules/accounts-payable/presentation/pages/AccountsPayableRegisterPayment';
 import { AccountsReceivableList } from './modules/accounts-receivable/presentation/pages/AccountsReceivableList';
 import { AccountsReceivableRegisterCollection } from './modules/accounts-receivable/presentation/pages/AccountsReceivableRegisterCollection';
-import { CreditsReceivableList } from './modules/credits-receivable/presentation/pages/CreditsReceivableList';
-import { CreditsReceivableRegisterCollection } from './modules/credits-receivable/presentation/pages/CreditsReceivableRegisterCollection';
 import { TaxesPayableList } from './modules/taxes-payable/presentation/pages/TaxesPayableList';
 import { TaxesPayableRegisterPayment } from './modules/taxes-payable/presentation/pages/TaxesPayableRegisterPayment';
 import { ReportReceivablesList } from './modules/reports/presentation/pages/ReportReceivablesList';
@@ -68,6 +79,9 @@ import { ReportTaxesRetained } from './modules/reports/presentation/pages/Report
 import { ReportExecutivePanel } from './modules/reports/presentation/pages/ReportExecutivePanel';
 import { ReportOrdersAnalytics } from './modules/reports/presentation/pages/ReportOrdersAnalytics';
 import { ReportInsurerCollections } from './modules/reports/presentation/pages/ReportInsurerCollections';
+import { ReportPaymentAccountInflows } from './modules/reports/presentation/pages/ReportPaymentAccountInflows';
+import { AppConfigPage } from './modules/app-config/presentation/pages/AppConfigPage';
+import { GuidePage } from './modules/guide/presentation/pages/GuidePage';
 import { RequirePermission } from './modules/auth/presentation/components/RequirePermission';
 import { PERMISSIONS } from './modules/auth/domain/models/permissions';
 
@@ -96,6 +110,7 @@ function App() {
         >
           <Route index element={<DashboardPage />} />
           <Route path="profile" element={<ProfilePage />} />
+          <Route path="guide" element={<GuidePage />} />
           <Route path="users">
             <Route index element={<UserList />} />
             <Route path="create" element={<UserCreate />} />
@@ -116,21 +131,27 @@ function App() {
             <Route index element={<PatientList />} />
             <Route path="create" element={<PatientCreate />} />
             <Route path="edit/:id" element={<PatientEdit />} />
+            <Route path=":id" element={<PatientDetailPage />} />
           </Route>
           <Route path="doctors">
             <Route index element={<DoctorList />} />
             <Route path="create" element={<DoctorCreate />} />
             <Route path="edit/:id" element={<DoctorEdit />} />
+            <Route path=":id/change-password" element={<DoctorChangePassword />} />
+            <Route path=":id" element={<DoctorDetailPage />} />
           </Route>
           <Route path="care-centers">
             <Route index element={<CareCenterList />} />
             <Route path="create" element={<CareCenterCreate />} />
             <Route path="edit/:id" element={<CareCenterEdit />} />
+            <Route path=":id/change-password" element={<CareCenterChangePassword />} />
+            <Route path=":id" element={<CareCenterDetailPage />} />
           </Route>
           <Route path="insurances">
             <Route index element={<InsuranceList />} />
             <Route path="create" element={<InsuranceCreate />} />
             <Route path="edit/:id" element={<InsuranceEdit />} />
+            <Route path=":id" element={<InsuranceDetailPage />} />
           </Route>
           <Route path="pathologies">
             <Route index element={<PathologyList />} />
@@ -152,15 +173,26 @@ function App() {
             <Route path="create" element={<ExchangeRateCreate />} />
             <Route path="edit/:id" element={<ExchangeRateEdit />} />
           </Route>
+          <Route path="tax-units">
+            <Route index element={<TaxUnitList />} />
+            <Route path="create" element={<TaxUnitCreate />} />
+            <Route path="edit/:id" element={<TaxUnitEdit />} />
+          </Route>
           <Route path="branches">
             <Route index element={<BranchList />} />
             <Route path="create" element={<BranchCreate />} />
             <Route path="edit/:id" element={<BranchEdit />} />
           </Route>
+          <Route path="payment-accounts">
+            <Route index element={<PaymentAccountList />} />
+            <Route path="create" element={<PaymentAccountCreate />} />
+            <Route path="edit/:id" element={<PaymentAccountEdit />} />
+          </Route>
           <Route path="orders">
             <Route index element={<OrderList />} />
             <Route path="create" element={<OrderCreate />} />
             <Route path="edit/:id" element={<OrderEdit />} />
+            <Route path=":id" element={<OrderDetailPage />} />
           </Route>
           <Route path="accounts-payable">
             <Route index element={<AccountsPayableList />} />
@@ -176,13 +208,6 @@ function App() {
               element={<AccountsReceivableRegisterCollection />}
             />
           </Route>
-          <Route path="credits-receivable">
-            <Route index element={<CreditsReceivableList />} />
-            <Route
-              path="register-collection"
-              element={<CreditsReceivableRegisterCollection />}
-            />
-          </Route>
           <Route path="taxes-payable">
             <Route index element={<TaxesPayableList />} />
             <Route
@@ -190,6 +215,14 @@ function App() {
               element={<TaxesPayableRegisterPayment />}
             />
           </Route>
+          <Route
+            path="config"
+            element={
+              <RequirePermission permission={PERMISSIONS.APP_CONFIG.VIEW}>
+                <AppConfigPage />
+              </RequirePermission>
+            }
+          />
           <Route path="reports">
             <Route
               path="executive-panel"
@@ -276,6 +309,14 @@ function App() {
               element={
                 <RequirePermission permission={PERMISSIONS.REPORTS.COLLECTIONS_LIST}>
                   <ReportCollections />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="payment-account-inflows"
+              element={
+                <RequirePermission permission={PERMISSIONS.REPORTS.PAYMENT_ACCOUNT_INFLOWS_LIST}>
+                  <ReportPaymentAccountInflows />
                 </RequirePermission>
               }
             />

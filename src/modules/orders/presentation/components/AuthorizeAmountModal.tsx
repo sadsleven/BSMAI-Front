@@ -17,13 +17,12 @@ import { ShieldCheck, X, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { notify } from '@/lib/notifications/toast';
 import { orderGateway } from '../../infrastructure/orderGateway';
-import type { Order, OrderCurrency } from '../../domain/models/order';
+import type { Order } from '../../domain/models/order';
 
 export type AuthorizeAmountModalProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   orderId: string;
-  currency: OrderCurrency;
   /** Monto actual de la orden, prefillado en el input. */
   currentAmount: number;
   /** Orden actualizada tras autorizar — el padre sincroniza monto + auditoría. */
@@ -43,7 +42,6 @@ export function AuthorizeAmountModal({
   open,
   onOpenChange,
   orderId,
-  currency,
   currentAmount,
   onAuthorized,
 }: AuthorizeAmountModalProps) {
@@ -167,7 +165,7 @@ export function AuthorizeAmountModal({
             <CurrencyAmountInput
               value={amount}
               onChange={setAmount}
-              currencyPrefix={currency}
+              currencyPrefix="USD"
               invalid={!!errors.amount}
             />
             <FieldError message={errors.amount} />

@@ -33,6 +33,8 @@ export interface CareCenter {
   paymentMethods: CareCenterPaymentMethod[];
   /** Precios de pago al centro por Tipo de Servicio realizado. */
   servicePrices?: ServicePriceRow[];
+  /** Cuenta de usuario vinculada (acceso al sistema). Null si no tiene acceso. */
+  userId?: string | null;
   createdAt?: string;
   updatedAt?: string;
   deletedAt?: string | null;
@@ -40,13 +42,15 @@ export interface CareCenter {
 
 export interface CreateCareCenterDto {
   businessName: string;
-  email?: string;
+  email: string;
   rif?: string;
   phones: { number: string; label?: string }[];
   specialtyIds: string[];
   paymentMethods?: CareCenterPaymentMethod[];
   servicePrices?: ServicePricePayload[];
   isActive?: boolean;
+  /** Si se define, habilita/cambia el acceso del centro como usuario proveedor. */
+  password?: string;
 }
 
 export type UpdateCareCenterDto = Partial<CreateCareCenterDto>;

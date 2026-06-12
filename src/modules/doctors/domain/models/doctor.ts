@@ -35,6 +35,8 @@ export interface Doctor {
   paymentMethods: DoctorPaymentMethod[];
   /** Precios de pago al doctor por Tipo de Servicio realizado. */
   servicePrices?: ServicePriceRow[];
+  /** Cuenta de usuario vinculada (acceso al sistema). Null si no tiene acceso. */
+  userId?: string | null;
   createdAt?: string;
   updatedAt?: string;
   deletedAt?: string | null;
@@ -42,7 +44,7 @@ export interface Doctor {
 
 export interface CreateDoctorDto {
   cedula: string;
-  email?: string;
+  email: string;
   firstName: string;
   lastName: string;
   isLegalEntity?: boolean;
@@ -52,6 +54,8 @@ export interface CreateDoctorDto {
   paymentMethods?: DoctorPaymentMethod[];
   servicePrices?: ServicePricePayload[];
   isActive?: boolean;
+  /** Si se define, habilita/cambia el acceso del doctor como usuario proveedor. */
+  password?: string;
 }
 
 export type UpdateDoctorDto = Partial<CreateDoctorDto>;

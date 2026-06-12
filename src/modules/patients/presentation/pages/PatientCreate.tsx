@@ -41,7 +41,7 @@ export function PatientCreate() {
       const dto: CreatePatientDto = {
         personType: values.personType,
         email: values.email?.trim() || undefined,
-        birthDate: values.birthDate,
+        birthDate: values.birthDate || undefined,
         address: values.address,
         phones: values.phones.map((p) => ({
           number: p.number,

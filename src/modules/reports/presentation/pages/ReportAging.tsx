@@ -22,18 +22,17 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { accountsReceivableGateway } from '@/modules/accounts-receivable/infrastructure/accountsReceivableGateway';
 import { accountsPayableGateway } from '@/modules/accounts-payable/infrastructure/accountsPayableGateway';
 import {
-  collectedBs as arCollectedBs,
-  targetBs as arTargetBs,
+  collectedUsd as arCollectedUsd,
+  targetUsd as arTargetUsd,
 } from '@/modules/accounts-receivable/domain/models/accountsReceivable';
 import {
-  paidBs as apPaidBs,
+  paidUsd as apPaidUsd,
   recipientName,
-  targetBs as apTargetBs,
+  amountToReceiveUsd as apTargetUsd,
 } from '@/modules/accounts-payable/domain/models/accountsPayable';
-import { useTaxRates } from '@/lib/config/taxRates';
 import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
-import { formatBs, formatNumber, daysBetween } from '../../domain/format';
+import { formatUsd, formatNumber, daysBetween } from '../../domain/format';
 import { REPORT_PAGE_SIZE } from '../../infrastructure/fetchAll';
 import { getHttpErrorMessage } from '@/lib/api';
 
@@ -75,8 +74,6 @@ export function ReportAging() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [overCap, setOverCap] = useState(false);
-  const taxRates = useTaxRates();
-
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -128,13 +125,14 @@ export function ReportAging() {
     const map = new Map<string, Row>();
     if (filters.mode === 'receivable') {
       arRows.forEach((ar) => {
-        const tgt = arTargetBs(ar) ?? 0;
-        const collected = arCollectedBs(ar);
+        const tgt = arTargetUsd(ar) ?? 0;
+        const collected = arCollectedUsd(ar);
         const pending = Math.max(0, tgt - collected);
         if (pending <= 0.01) return;
         const days = daysBetween(ar.createdAt ?? new Date().toISOString());
         const b = bucketize(days);
         const id = ar.insuranceId;
+        if (!id) return;
         let row = map.get(id);
         if (!row) {
           row = {
@@ -155,8 +153,8 @@ export function ReportAging() {
       });
     } else {
       apRows.forEach((ap) => {
-        const tgt = apTargetBs(ap, taxRates) ?? 0;
-        const paid = apPaidBs(ap);
+        const tgt = apTargetUsd(ap) ?? 0;
+        const paid = apPaidUsd(ap);
         const pending = Math.max(0, tgt - paid);
         if (pending <= 0.01) return;
         const days = daysBetween(ap.createdAt ?? new Date().toISOString());
@@ -185,7 +183,7 @@ export function ReportAging() {
     const s = filters.search.toLowerCase().trim();
     const filtered = s ? result.filter((r) => r.name.toLowerCase().includes(s)) : result;
     return filtered.sort((a, b) => b.total - a.total);
-  }, [arRows, apRows, filters.mode, filters.search, taxRates]);
+  }, [arRows, apRows, filters.mode, filters.search]);
 
   const totals = useMemo(() => {
     let b0_30 = 0;
@@ -218,25 +216,25 @@ export function ReportAging() {
               icon: Hourglass,
               tone: 'success',
               label: '0–30 días',
-              value: formatBs(totals.b0_30),
+              value: formatUsd(totals.b0_30),
             },
             {
               icon: Clock4,
               tone: 'cyan',
               label: '31–60 días',
-              value: formatBs(totals.b31_60),
+              value: formatUsd(totals.b31_60),
             },
             {
               icon: TrendingDown,
               tone: 'warning',
               label: '61–90 días',
-              value: formatBs(totals.b61_90),
+              value: formatUsd(totals.b61_90),
             },
             {
               icon: AlertCircle,
               tone: 'destructive',
               label: 'Más de 90 días',
-              value: formatBs(totals.b90),
+              value: formatUsd(totals.b90),
             },
           ]}
         />
@@ -276,18 +274,19 @@ export function ReportAging() {
           </div>
         ) : null}
 
+        <div className="m-4 rounded-lg border overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-[oklch(0.985_0.003_250)] hover:bg-[oklch(0.985_0.003_250)]">
+            <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 {filters.mode === 'receivable' ? 'Aseguradora' : 'Proveedor'}
               </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Cuentas</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">0–30 días</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">31–60</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">61–90</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">+90</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Total pendiente</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Cuentas</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">0–30 días</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">31–60</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">61–90</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">+90</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Total pendiente</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -311,25 +310,26 @@ export function ReportAging() {
                     {formatNumber(r.count)}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-success">
-                    {formatBs(r.b0_30)}
+                    {formatUsd(r.b0_30)}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-brand-blue-strong">
-                    {formatBs(r.b31_60)}
+                    {formatUsd(r.b31_60)}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-warning">
-                    {formatBs(r.b61_90)}
+                    {formatUsd(r.b61_90)}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-destructive">
-                    {formatBs(r.b90)}
+                    {formatUsd(r.b90)}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono text-right font-semibold">
-                    {formatBs(r.total)}
+                    {formatUsd(r.total)}
                   </TableCell>
                 </TableRow>
               ))
             )}
           </TableBody>
         </Table>
+        </div>
       </div>
     </ReportShell>
   );

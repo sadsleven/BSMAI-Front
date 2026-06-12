@@ -1,5 +1,5 @@
 /**
- * Tipo de Servicio. Sólo guarda el precio "Particular" (USD y EUR) — los precios
+ * Tipo de Servicio. Guarda el precio "Particular" en USD (opcional) — los precios
  * por Seguro, Doctor o Centro viven en sus propias sub-tablas.
  */
 export interface ServiceType {
@@ -7,8 +7,9 @@ export interface ServiceType {
   name: string;
   description?: string | null;
   isActive: boolean;
-  particularPriceUsd: string | number;
-  particularPriceEur: string | number;
+  particularPriceUsd: string | number | null;
+  /** Si true, puede asignarse cantidad en la orden (ej. sesiones). */
+  allowsQuantity?: boolean;
   createdAt?: string;
   updatedAt?: string;
   deletedAt?: string | null;
@@ -18,8 +19,8 @@ export interface CreateServiceTypeDto {
   name: string;
   description?: string;
   isActive?: boolean;
-  particularPriceUsd: number;
-  particularPriceEur: number;
+  particularPriceUsd?: number;
+  allowsQuantity?: boolean;
 }
 
 export type UpdateServiceTypeDto = Partial<CreateServiceTypeDto>;

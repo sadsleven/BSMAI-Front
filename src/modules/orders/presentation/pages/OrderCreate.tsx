@@ -38,12 +38,21 @@ function buildDto(values: OrderValues): CreateOrderDto {
       doctorId: r.providerType === 'doctor' ? r.doctorId || undefined : undefined,
       careCenterId:
         r.providerType === 'care_center' ? r.careCenterId || undefined : undefined,
+      quantity: r.quantity ?? undefined,
     })),
     pathologyIds: values.pathologyIds ?? [],
     orderDate: values.orderDate,
     appointmentDate: values.appointmentDate,
-    priceCurrency: values.priceCurrency,
     priceAmount: values.priceAmount,
+    casheaFirstInstallmentAmount:
+      values.type === 'cashea'
+        ? values.casheaFirstInstallmentAmount ?? 0
+        : undefined,
+    useFixedRate: values.type === 'insurance' && !!values.useFixedRate,
+    fixedExchangeRateId:
+      values.type === 'insurance' && values.useFixedRate && values.fixedExchangeRateId
+        ? values.fixedExchangeRateId
+        : undefined,
     payments: (values.payments ?? []).map((p) => ({
       type: p.type,
       paymentDate: p.paymentDate,
@@ -51,6 +60,7 @@ function buildDto(values: OrderValues): CreateOrderDto {
       bankCode: p.bankCode || undefined,
       exchangeRateId: p.exchangeRateId || undefined,
       accountNumber: p.accountNumber || undefined,
+      paymentAccountId: p.paymentAccountId || undefined,
       amountCurrency: p.amountCurrency,
       amountValue: p.amountValue,
     })),
@@ -78,8 +88,10 @@ export function OrderCreate() {
       pathologyIds: [],
       orderDate: todayIso(),
       appointmentDate: '',
-      priceCurrency: 'USD',
       priceAmount: 0,
+      casheaFirstInstallmentAmount: 0,
+      useFixedRate: false,
+      fixedExchangeRateId: '',
       payments: [],
     },
   });
@@ -90,8 +102,8 @@ export function OrderCreate() {
     try {
       const dto = buildDto(values);
       const created = await orderGateway.create(dto);
-      notify.success('Orden creada en borrador. Continuá con el Paso 2.');
-      navigate(`/orders/edit/${created.id}`);
+      notify.success('Orden creada en borrador.');
+      navigate(`/orders/edit/${created.id}`, { preventScrollReset: true });
     } catch (err) {
       notify.fromError(err, 'No se pudo crear la orden.');
     }
@@ -137,7 +149,7 @@ export function OrderCreate() {
                 Cancelar
               </Button>
               <Button type="submit" disabled={formState.isSubmitting}>
-                {formState.isSubmitting ? 'Guardando…' : 'Guardar borrador'}
+                {formState.isSubmitting ? 'Guardando…' : 'Crear orden'}
               </Button>
             </div>
           </div>

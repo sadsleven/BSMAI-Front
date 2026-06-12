@@ -9,6 +9,7 @@ import { FileText } from 'lucide-react';
 import { serviceTypeGateway } from '../../infrastructure/serviceTypeGateway';
 import type { ServiceType } from '../../domain/models/serviceType';
 import { notify } from '@/lib/notifications/toast';
+import { formatMoney } from '@/lib/format/money';
 
 export type ServiceTypeDetailProps = {
   serviceTypeId: string | null;
@@ -57,6 +58,16 @@ export function ServiceTypeDetail({ serviceTypeId, open, onOpenChange }: Service
             <DetailRow label="Nombre" value={serviceType.name} />
             <DetailRow label="Descripción" value={serviceType.description} />
             <DetailRow
+              label="Por cantidad"
+              value={
+                serviceType.allowsQuantity ? (
+                  <DetailBadge tone="success">Sí</DetailBadge>
+                ) : (
+                  <DetailBadge tone="neutral">No</DetailBadge>
+                )
+              }
+            />
+            <DetailRow
               label="Estado"
               value={
                 serviceType.deletedAt ? (
@@ -72,11 +83,11 @@ export function ServiceTypeDetail({ serviceTypeId, open, onOpenChange }: Service
           <DetailSection title="Precio Particular">
             <DetailRow
               label="USD"
-              value={`$ ${Number(serviceType.particularPriceUsd).toFixed(2)}`}
-            />
-            <DetailRow
-              label="EUR"
-              value={`€ ${Number(serviceType.particularPriceEur).toFixed(2)}`}
+              value={
+                serviceType.particularPriceUsd != null
+                  ? `$ ${formatMoney(serviceType.particularPriceUsd)}`
+                  : '—'
+              }
             />
           </DetailSection>
           {(serviceType.createdAt || serviceType.updatedAt) && (

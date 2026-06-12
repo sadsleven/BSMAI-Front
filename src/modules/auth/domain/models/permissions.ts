@@ -1,6 +1,5 @@
 function buildResource<T extends string>(resource: T) {
   return {
-    VIEW: `${resource}.view`,
     LIST: `${resource}.list`,
     CREATE: `${resource}.create`,
     UPDATE: `${resource}.update`,
@@ -13,7 +12,6 @@ function buildResource<T extends string>(resource: T) {
 
 export const PERMISSIONS = {
   USERS: {
-    VIEW: 'users.view',
     LIST: 'users.list',
     CREATE: 'users.create',
     UPDATE: 'users.update',
@@ -24,7 +22,6 @@ export const PERMISSIONS = {
     RESTORE: 'users.restore',
   },
   ROLES: {
-    VIEW: 'roles.view',
     LIST: 'roles.list',
     CREATE: 'roles.create',
     UPDATE: 'roles.update',
@@ -39,17 +36,24 @@ export const PERMISSIONS = {
   },
   SPECIALTIES: buildResource('specialties'),
   PATIENTS: buildResource('patients'),
-  DOCTORS: buildResource('doctors'),
-  CARE_CENTERS: buildResource('care-centers'),
+  DOCTORS: {
+    ...buildResource('doctors'),
+    CHANGE_PASSWORD: 'doctors.change-password',
+  },
+  CARE_CENTERS: {
+    ...buildResource('care-centers'),
+    CHANGE_PASSWORD: 'care-centers.change-password',
+  },
   INSURANCES: buildResource('insurances'),
   PATHOLOGIES: buildResource('pathologies'),
   SERVICE_TYPES: buildResource('service-types'),
   CONTRACTORS: buildResource('contractors'),
   EXCHANGE_RATES: buildResource('exchange-rates'),
   BRANCHES: buildResource('branches'),
+  TAX_UNITS: buildResource('tax-units'),
+  PAYMENT_ACCOUNTS: buildResource('payment-accounts'),
   ORDERS: {
     LIST: 'orders.list',
-    VIEW: 'orders.view',
     CREATE: 'orders.create',
     UPDATE: 'orders.update',
     SOFT_DELETE: 'orders.soft-delete',
@@ -63,23 +67,24 @@ export const PERMISSIONS = {
   },
   ACCOUNTS_PAYABLE: {
     LIST: 'accounts-payable.list',
-    VIEW: 'accounts-payable.view',
     UPDATE: 'accounts-payable.update',
   },
   ACCOUNTS_RECEIVABLE: {
     LIST: 'accounts-receivable.list',
-    VIEW: 'accounts-receivable.view',
     UPDATE: 'accounts-receivable.update',
-  },
-  CREDITS_RECEIVABLE: {
-    LIST: 'credits-receivable.list',
-    VIEW: 'credits-receivable.view',
-    UPDATE: 'credits-receivable.update',
   },
   TAXES_PAYABLE: {
     LIST: 'taxes-payable.list',
-    VIEW: 'taxes-payable.view',
     UPDATE: 'taxes-payable.update',
+  },
+  APP_CONFIG: {
+    VIEW: 'app-config.view',
+    UPDATE: 'app-config.update',
+  },
+  FILES: {
+    LIST: 'files.list',
+    CREATE: 'files.create',
+    SOFT_DELETE: 'files.soft-delete',
   },
   REPORTS: {
     RECEIVABLES_LIST: 'reports.receivables.list',
@@ -96,5 +101,6 @@ export const PERMISSIONS = {
     EXECUTIVE_PANEL_LIST: 'reports.executive-panel.list',
     ORDERS_ANALYTICS_LIST: 'reports.orders-analytics.list',
     INSURER_COLLECTIONS_LIST: 'reports.insurer-collections.list',
+    PAYMENT_ACCOUNT_INFLOWS_LIST: 'reports.payment-account-inflows.list',
   },
 } as const;

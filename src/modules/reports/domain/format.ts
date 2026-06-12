@@ -1,44 +1,31 @@
 /** VE locale formatters for reports. */
+import {
+  formatBs as fmtBs,
+  formatBsCompact as fmtBsCompact,
+  formatMoney,
+  formatPercent as fmtPercent,
+  formatUsd as fmtUsd,
+} from '@/lib/format/money';
 
 export function formatBs(n: number | null | undefined, decimals = 2): string {
-  if (n === null || n === undefined || !Number.isFinite(Number(n))) return '—';
-  return `Bs. ${Number(n).toLocaleString('es-VE', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  })}`;
+  return fmtBs(n, { decimals, prefix: true });
 }
 
 export function formatUsd(n: number | null | undefined, decimals = 2): string {
-  if (n === null || n === undefined || !Number.isFinite(Number(n))) return '—';
-  return `$${Number(n).toLocaleString('es-VE', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  })}`;
+  return fmtUsd(n, { decimals });
 }
 
 /** Bs en notación compacta para ejes/etiquetas de gráficos (p.ej. "Bs. 1,2 M"). */
 export function formatBsCompact(n: number | null | undefined): string {
-  if (n === null || n === undefined || !Number.isFinite(Number(n))) return '—';
-  return `Bs. ${Number(n).toLocaleString('es-VE', {
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  })}`;
+  return fmtBsCompact(n);
 }
 
 export function formatNumber(n: number | null | undefined, decimals = 0): string {
-  if (n === null || n === undefined || !Number.isFinite(Number(n))) return '—';
-  return Number(n).toLocaleString('es-VE', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  });
+  return formatMoney(n, { decimals });
 }
 
 export function formatPercent(n: number | null | undefined, decimals = 1): string {
-  if (n === null || n === undefined || !Number.isFinite(Number(n))) return '—';
-  return `${Number(n).toLocaleString('es-VE', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  })}%`;
+  return fmtPercent(n, { decimals });
 }
 
 export function formatDate(iso: string | null | undefined): string {
