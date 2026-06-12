@@ -311,9 +311,10 @@ export function RoleList() {
           </div>
         ) : null}
 
+        <div className="m-4 rounded-lg border overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-[oklch(0.985_0.003_250)] hover:bg-[oklch(0.985_0.003_250)]">
+            <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 <SortableHeader<SortBy>
                   column="name"
@@ -336,7 +337,7 @@ export function RoleList() {
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Creación
               </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-center">
                 Acciones
               </TableHead>
             </TableRow>
@@ -398,7 +399,7 @@ export function RoleList() {
                       {formatCreated(role.createdAt)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-right">
-                      <div className="inline-flex items-center gap-0.5">
+                      <div className="flex items-center justify-center gap-0.5">
                         <Can permission={PERMISSIONS.ROLES.LIST}>
                           <Button
                             variant="ghost"
@@ -517,6 +518,7 @@ export function RoleList() {
           onPageSizeChange={(limit) => updateParam({ limit: String(limit) })}
           itemLabel="roles"
         />
+        </div>
       </div>
 
       <ConfirmDialog

@@ -22,6 +22,15 @@ function mapUser(data: unknown): AuthUser {
   const branches = branchesRaw
     .map((b) => ({ id: String(b.id ?? ''), name: String(b.name ?? '') }))
     .filter((b) => b.id && b.name);
+  const pl = o.providerLink as Record<string, unknown> | null | undefined;
+  const providerLink =
+    pl && (pl.type === 'doctor' || pl.type === 'care_center') && pl.id
+      ? {
+          type: pl.type as 'doctor' | 'care_center',
+          id: String(pl.id),
+          name: String(pl.name ?? ''),
+        }
+      : null;
   return {
     id,
     email,
@@ -35,6 +44,7 @@ function mapUser(data: unknown): AuthUser {
     roles,
     permissions,
     branches,
+    providerLink,
   };
 }
 

@@ -29,7 +29,6 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { Can } from '@/modules/auth/presentation/components/Can';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
-import { notify } from '@/lib/notifications/toast';
 import { getHttpErrorMessage } from '@/lib/api';
 import { formatMoney } from '@/lib/format/money';
 import { accountsPayableGateway } from '../../infrastructure/accountsPayableGateway';
@@ -177,10 +176,6 @@ export function AccountsPayableList() {
   );
 
   const goRegister = () => {
-    if (selectedAccounts.length === 0) {
-      notify.warning('Seleccioná al menos una cuenta');
-      return;
-    }
     navigate('/accounts-payable/register-payment', {
       state: { payableIds: selectedAccounts.map((a) => a.id) },
     });
@@ -199,7 +194,7 @@ export function AccountsPayableList() {
           </p>
         </div>
         <Can permission={PERMISSIONS.ACCOUNTS_PAYABLE.UPDATE}>
-          <Button onClick={goRegister} disabled={selectedAccounts.length === 0}>
+          <Button onClick={goRegister}>
             <Plus className="w-4 h-4 mr-1.5" />
             Registrar pago
             {selectedAccounts.length > 0 && (
@@ -283,9 +278,10 @@ export function AccountsPayableList() {
           </div>
         ) : null}
 
+        <div className="m-4 rounded-lg border overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-[oklch(0.985_0.003_250)] hover:bg-[oklch(0.985_0.003_250)]">
+            <TableRow>
               <TableHead className="w-10"></TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 N° cuenta
@@ -328,7 +324,7 @@ export function AccountsPayableList() {
                   Creación
                 </SortableHeader>
               </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-center">
                 Acciones
               </TableHead>
             </TableRow>
@@ -444,7 +440,7 @@ export function AccountsPayableList() {
                     <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
                       {formatCreated(a.createdAt)}
                     </TableCell>
-                    <TableCell className="py-3.5 px-4 text-right">
+                    <TableCell className="py-3.5 px-4 text-center">
                       <Button
                         type="button"
                         variant="ghost"
@@ -477,6 +473,7 @@ export function AccountsPayableList() {
           onPageSizeChange={(limit) => updateParam({ limit })}
           itemLabel="cuentas"
         />
+        </div>
       </div>
     </div>
   );

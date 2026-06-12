@@ -20,6 +20,7 @@ export interface AccountsPayablePayment {
   amountCurrency: PaymentCurrency;
   amountValue: string | number;
   amountInUsd: string | number;
+  amountInBs: string | number;
   createdAt?: string;
 }
 
@@ -124,6 +125,25 @@ export function amountToReceiveUsd(a: AccountsPayable): number | null {
 /** Suma USD de los pagos asociados a la cuenta. */
 export function paidUsd(a: AccountsPayable): number {
   return (a.payments ?? []).reduce((s, p) => s + Number(p.amountInUsd || 0), 0);
+}
+
+/** Suma Bs de los pagos asociados a la cuenta. */
+export function paidBs(a: AccountsPayable): number {
+  return (a.payments ?? []).reduce((s, p) => s + Number(p.amountInBs || 0), 0);
+}
+
+/**
+ * Bs ya pagado (parcial) en un grupo de cuentas, deduplicando pagos que estén
+ * ligados a varias cuentas del grupo (un mismo pago aparece en cada cuenta).
+ */
+export function groupPaidBs(accounts: AccountsPayable[]): number {
+  const byId = new Map<string, number>();
+  for (const a of accounts) {
+    for (const p of a.payments ?? []) byId.set(p.id, Number(p.amountInBs || 0));
+  }
+  let total = 0;
+  for (const v of byId.values()) total += v;
+  return Math.round(total * 100) / 100;
 }
 
 /** Pendiente USD bruto. Nunca negativo. */

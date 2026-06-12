@@ -55,7 +55,7 @@ export function PatientCreateModal({ open, onOpenChange, onCreated }: PatientCre
       const dto: CreatePatientDto = {
         personType: values.personType,
         email: values.email,
-        birthDate: values.birthDate,
+        birthDate: values.birthDate || undefined,
         address: values.address,
         phones: values.phones.map((p) => ({ number: p.number, label: p.label || undefined })),
         contractorIds: values.contractorIds ?? [],

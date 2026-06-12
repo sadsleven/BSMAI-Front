@@ -36,8 +36,14 @@ export const PERMISSIONS = {
   },
   SPECIALTIES: buildResource('specialties'),
   PATIENTS: buildResource('patients'),
-  DOCTORS: buildResource('doctors'),
-  CARE_CENTERS: buildResource('care-centers'),
+  DOCTORS: {
+    ...buildResource('doctors'),
+    CHANGE_PASSWORD: 'doctors.change-password',
+  },
+  CARE_CENTERS: {
+    ...buildResource('care-centers'),
+    CHANGE_PASSWORD: 'care-centers.change-password',
+  },
   INSURANCES: buildResource('insurances'),
   PATHOLOGIES: buildResource('pathologies'),
   SERVICE_TYPES: buildResource('service-types'),
@@ -45,6 +51,7 @@ export const PERMISSIONS = {
   EXCHANGE_RATES: buildResource('exchange-rates'),
   BRANCHES: buildResource('branches'),
   TAX_UNITS: buildResource('tax-units'),
+  PAYMENT_ACCOUNTS: buildResource('payment-accounts'),
   ORDERS: {
     LIST: 'orders.list',
     CREATE: 'orders.create',
@@ -94,5 +101,6 @@ export const PERMISSIONS = {
     EXECUTIVE_PANEL_LIST: 'reports.executive-panel.list',
     ORDERS_ANALYTICS_LIST: 'reports.orders-analytics.list',
     INSURER_COLLECTIONS_LIST: 'reports.insurer-collections.list',
+    PAYMENT_ACCOUNT_INFLOWS_LIST: 'reports.payment-account-inflows.list',
   },
 } as const;

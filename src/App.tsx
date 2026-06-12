@@ -23,10 +23,12 @@ import { PatientDetailPage } from './modules/patients/presentation/pages/Patient
 import { DoctorList } from './modules/doctors/presentation/pages/DoctorList';
 import { DoctorCreate } from './modules/doctors/presentation/pages/DoctorCreate';
 import { DoctorEdit } from './modules/doctors/presentation/pages/DoctorEdit';
+import { DoctorChangePassword } from './modules/doctors/presentation/pages/DoctorChangePassword';
 import { DoctorDetailPage } from './modules/doctors/presentation/pages/DoctorDetailPage';
 import { CareCenterList } from './modules/care-centers/presentation/pages/CareCenterList';
 import { CareCenterCreate } from './modules/care-centers/presentation/pages/CareCenterCreate';
 import { CareCenterEdit } from './modules/care-centers/presentation/pages/CareCenterEdit';
+import { CareCenterChangePassword } from './modules/care-centers/presentation/pages/CareCenterChangePassword';
 import { CareCenterDetailPage } from './modules/care-centers/presentation/pages/CareCenterDetailPage';
 import { InsuranceList } from './modules/insurances/presentation/pages/InsuranceList';
 import { InsuranceCreate } from './modules/insurances/presentation/pages/InsuranceCreate';
@@ -50,6 +52,9 @@ import { TaxUnitEdit } from './modules/tax-units/presentation/pages/TaxUnitEdit'
 import { BranchList } from './modules/branches/presentation/pages/BranchList';
 import { BranchCreate } from './modules/branches/presentation/pages/BranchCreate';
 import { BranchEdit } from './modules/branches/presentation/pages/BranchEdit';
+import { PaymentAccountList } from './modules/payment-accounts/presentation/pages/PaymentAccountList';
+import { PaymentAccountCreate } from './modules/payment-accounts/presentation/pages/PaymentAccountCreate';
+import { PaymentAccountEdit } from './modules/payment-accounts/presentation/pages/PaymentAccountEdit';
 import { OrderList } from './modules/orders/presentation/pages/OrderList';
 import { OrderCreate } from './modules/orders/presentation/pages/OrderCreate';
 import { OrderEdit } from './modules/orders/presentation/pages/OrderEdit';
@@ -74,6 +79,7 @@ import { ReportTaxesRetained } from './modules/reports/presentation/pages/Report
 import { ReportExecutivePanel } from './modules/reports/presentation/pages/ReportExecutivePanel';
 import { ReportOrdersAnalytics } from './modules/reports/presentation/pages/ReportOrdersAnalytics';
 import { ReportInsurerCollections } from './modules/reports/presentation/pages/ReportInsurerCollections';
+import { ReportPaymentAccountInflows } from './modules/reports/presentation/pages/ReportPaymentAccountInflows';
 import { AppConfigPage } from './modules/app-config/presentation/pages/AppConfigPage';
 import { GuidePage } from './modules/guide/presentation/pages/GuidePage';
 import { RequirePermission } from './modules/auth/presentation/components/RequirePermission';
@@ -131,12 +137,14 @@ function App() {
             <Route index element={<DoctorList />} />
             <Route path="create" element={<DoctorCreate />} />
             <Route path="edit/:id" element={<DoctorEdit />} />
+            <Route path=":id/change-password" element={<DoctorChangePassword />} />
             <Route path=":id" element={<DoctorDetailPage />} />
           </Route>
           <Route path="care-centers">
             <Route index element={<CareCenterList />} />
             <Route path="create" element={<CareCenterCreate />} />
             <Route path="edit/:id" element={<CareCenterEdit />} />
+            <Route path=":id/change-password" element={<CareCenterChangePassword />} />
             <Route path=":id" element={<CareCenterDetailPage />} />
           </Route>
           <Route path="insurances">
@@ -174,6 +182,11 @@ function App() {
             <Route index element={<BranchList />} />
             <Route path="create" element={<BranchCreate />} />
             <Route path="edit/:id" element={<BranchEdit />} />
+          </Route>
+          <Route path="payment-accounts">
+            <Route index element={<PaymentAccountList />} />
+            <Route path="create" element={<PaymentAccountCreate />} />
+            <Route path="edit/:id" element={<PaymentAccountEdit />} />
           </Route>
           <Route path="orders">
             <Route index element={<OrderList />} />
@@ -296,6 +309,14 @@ function App() {
               element={
                 <RequirePermission permission={PERMISSIONS.REPORTS.COLLECTIONS_LIST}>
                   <ReportCollections />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="payment-account-inflows"
+              element={
+                <RequirePermission permission={PERMISSIONS.REPORTS.PAYMENT_ACCOUNT_INFLOWS_LIST}>
+                  <ReportPaymentAccountInflows />
                 </RequirePermission>
               }
             />

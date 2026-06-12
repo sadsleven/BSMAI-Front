@@ -21,8 +21,9 @@ import {
   paymentInBs,
   paymentInUsd,
 } from '@/modules/orders/presentation/components/OrderPaymentForm';
-import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
 import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchangeRate';
+import { useUsdRates } from '@/modules/exchange-rates/presentation/hooks/useUsdRates';
+import { UsdRateSelect } from '@/modules/exchange-rates/presentation/components/UsdRateSelect';
 import { Badge } from '@/components/ui/badge';
 import { accountsReceivableGateway } from '../../infrastructure/accountsReceivableGateway';
 import {
@@ -58,7 +59,8 @@ export function AccountsReceivableRegisterCollection() {
 
   const [accounts, setAccounts] = useState<AccountsReceivable[]>([]);
   const [loading, setLoading] = useState(true);
-  const [usdRate, setUsdRate] = useState<ExchangeRate | null>(null);
+  const { usdRates, currentRateId } = useUsdRates();
+  const [selectedUsdRateId, setSelectedUsdRateId] = useState<string>('');
   const [eurRatesById, setEurRatesById] = useState<Record<string, ExchangeRate>>({});
   const [candidates, setCandidates] = useState<AccountsReceivable[]>([]);
   const [candidateSearch, setCandidateSearch] = useState('');
@@ -71,15 +73,42 @@ export function AccountsReceivableRegisterCollection() {
   });
   const { handleSubmit, formState, control } = methods;
 
+  // Auto-selecciona la tasa vigente (la más actual) cuando carga el listado.
   useEffect(() => {
-    if (initialIds.length === 0) {
-      notify.warning('No hay cuentas seleccionadas');
-      navigate('/accounts-receivable', { replace: true });
-    }
-  }, [initialIds, navigate]);
+    if (!selectedUsdRateId && currentRateId) setSelectedUsdRateId(currentRateId);
+  }, [currentRateId, selectedUsdRateId]);
+
+  /**
+   * Al cambiar la tasa seleccionada, re-apunta los pagos basados en Bs
+   * (cash_bs/pago móvil/transferencia) a la nueva tasa, para que el snapshot
+   * guardado coincida con la conversión mostrada.
+   */
+  const handleSelectRate = (id: string) => {
+    setSelectedUsdRateId(id);
+    const current = methods.getValues('payments') ?? [];
+    let dirty = false;
+    const next = current.map((p) => {
+      if (
+        p.type === 'cash_bs' ||
+        p.type === 'mobile_payment' ||
+        p.type === 'bank_transfer'
+      ) {
+        if (p.exchangeRateId !== id) {
+          dirty = true;
+          return { ...p, exchangeRateId: id };
+        }
+      }
+      return p;
+    });
+    if (dirty) methods.setValue('payments', next, { shouldDirty: true });
+  };
 
   const load = useCallback(async () => {
-    if (receivableIds.length === 0) return;
+    if (receivableIds.length === 0) {
+      setAccounts([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const items = await Promise.all(
@@ -96,21 +125,6 @@ export function AccountsReceivableRegisterCollection() {
   useEffect(() => {
     load();
   }, [load]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const rate = await exchangeRateGateway.getCurrent('USD');
-        if (!cancelled) setUsdRate(rate);
-      } catch {
-        if (!cancelled) setUsdRate(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const grouping = useMemo(() => {
     const insuranceIds = new Set(
@@ -140,6 +154,29 @@ export function AccountsReceivableRegisterCollection() {
     [accounts],
   );
 
+  /**
+   * Tasa efectiva para convertir los cobros:
+   * - Modo tasa fija (seguro): la fija el snapshot de la orden, NO editable.
+   * - Resto: la tasa USD seleccionada (default = más actual).
+   */
+  const fixedRate = useMemo<ExchangeRate | null>(() => {
+    if (!useFixedRateMode) return null;
+    const fr = accounts[0]?.order?.fixedExchangeRate;
+    if (!fr) return null;
+    return {
+      id: fr.id,
+      currency: fr.currency,
+      amountBs: String(fr.amountBs),
+      effectiveDate: fr.effectiveDate,
+      isActive: true,
+    };
+  }, [useFixedRateMode, accounts]);
+  const selectedMarketRate = useMemo(
+    () => usdRates.find((r) => r.id === selectedUsdRateId) ?? null,
+    [usdRates, selectedUsdRateId],
+  );
+  const usdRate = useFixedRateMode ? fixedRate : selectedMarketRate;
+
   const debtorType = useMemo(
     () => (accounts[0] ? debtorTypeOf(accounts[0]) : 'insurance'),
     [accounts],
@@ -156,15 +193,13 @@ export function AccountsReceivableRegisterCollection() {
   }, [accounts, debtorType]);
 
   useEffect(() => {
-    if (!sharedDebtorId) {
-      setCandidates([]);
-      return;
-    }
     let cancelled = false;
     (async () => {
       try {
         const res = await accountsReceivableGateway.list({
-          [debtorType === 'insurance' ? 'insuranceId' : 'holderId']: sharedDebtorId,
+          ...(sharedDebtorId
+            ? { [debtorType === 'insurance' ? 'insuranceId' : 'holderId']: sharedDebtorId }
+            : {}),
           limit: 100,
           sortBy: 'createdAt',
           sortDir: 'DESC',
@@ -234,7 +269,7 @@ export function AccountsReceivableRegisterCollection() {
 
   const watchedPayments = methods.watch('payments') ?? [];
   const lookupRate = (id: string): ExchangeRate | null =>
-    eurRatesById[id] ?? (usdRate && usdRate.id === id ? usdRate : null);
+    eurRatesById[id] ?? usdRates.find((r) => r.id === id) ?? null;
   const totalPaymentsUsd = useMemo(() => {
     return watchedPayments.reduce(
       (sum, p) => sum + paymentInUsd(p, usdRate, lookupRate),
@@ -276,7 +311,7 @@ export function AccountsReceivableRegisterCollection() {
     }
   };
 
-  if (loading || accounts.length === 0) {
+  if (loading) {
     return (
       <div className="max-w-4xl mx-auto p-6 text-sm text-muted-foreground">
         Cargando cuentas...
@@ -331,7 +366,7 @@ export function AccountsReceivableRegisterCollection() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    disabled={!sharedDebtorId}
+                    disabled={accounts.length > 0 && !sharedDebtorId}
                   >
                     <Plus className="w-3.5 h-3.5 mr-1" />
                     Agregar cuentas
@@ -360,7 +395,9 @@ export function AccountsReceivableRegisterCollection() {
                   <div className="max-h-72 overflow-y-auto py-1">
                     {eligibleCandidates.length === 0 ? (
                       <p className="px-3 py-4 text-xs text-muted-foreground text-center">
-                        Sin cuentas disponibles para este {debtorLabel}.
+                        {sharedDebtorId
+                          ? `Sin cuentas disponibles para este ${debtorLabel}.`
+                          : 'No hay cuentas por cobrar disponibles.'}
                       </p>
                     ) : (
                       eligibleCandidates.map((c) => (
@@ -452,6 +489,11 @@ export function AccountsReceivableRegisterCollection() {
             {(() => {
               const unit = useFixedRateMode ? 'Bs' : 'USD';
               const fmt = (n: number) => formatMoney(n);
+              // Diferencia en vivo: descuenta los cobros que se están cargando.
+              // En modo tasa fija es exacta en Bs; en USD es exacta en USD y el
+              // Bs es aproximado (cada cobro puede usar una tasa distinta).
+              const liveForm = useFixedRateMode ? totalPaymentsBs : totalPaymentsUsd;
+              const liveRemaining = totals.totalPending - liveForm;
               return (
                 <>
                   <div className="border-t pt-3 mt-1 flex items-center justify-between text-sm font-semibold">
@@ -492,30 +534,40 @@ export function AccountsReceivableRegisterCollection() {
                         Diferencia
                       </div>
                       <div className="text-lg font-semibold flex items-center gap-2">
-                        {Math.abs(totals.totalPending) <= 0.01 ? (
+                        {Math.abs(liveRemaining) <= 0.01 ? (
                           <Badge variant="default" className="bg-success text-white">
                             Cuadrado
                           </Badge>
-                        ) : totals.totalPending < 0 ? (
+                        ) : liveRemaining < 0 ? (
                           <Badge variant="default" className="bg-brand-blue text-white">
-                            Excede {fmt(Math.abs(totals.totalPending))} {unit}
+                            Excede {fmt(Math.abs(liveRemaining))} {unit}
                           </Badge>
                         ) : (
                           <Badge variant="default" className="bg-warning text-white">
-                            Faltan {fmt(totals.totalPending)} {unit}
+                            Faltan {fmt(liveRemaining)} {unit}
                           </Badge>
                         )}
                       </div>
-                      {Math.abs(totals.totalPending) > 0.01 && !useFixedRateMode && usdRate ? (
-                        <div className="text-xs text-muted-foreground">
-                          {totals.totalPending < 0 ? 'Excede' : 'Faltan'}{' '}
-                          <span className="font-mono">
-                            Bs{' '}
-                            {formatMoney(
-                              Math.abs(totals.totalPending) * Number(usdRate.amountBs),
-                            )}
-                          </span>
-                        </div>
+                      {Math.abs(liveRemaining) > 0.01 ? (
+                        useFixedRateMode ? (
+                          <div className="text-[11px] text-muted-foreground">
+                            Incluye los cobros cargados abajo (tasa fija).
+                          </div>
+                        ) : usdRate ? (
+                          <div className="text-xs text-muted-foreground">
+                            ≈{' '}
+                            <span className="font-mono">
+                              Bs{' '}
+                              {formatMoney(
+                                Math.abs(liveRemaining) * Number(usdRate.amountBs),
+                              )}
+                            </span>{' '}
+                            a tasa seleccionada
+                            <div className="text-[11px] italic">
+                              El Bs exacto varía según la tasa de cada cobro.
+                            </div>
+                          </div>
+                        ) : null
                       ) : null}
                     </div>
                   </div>
@@ -582,12 +634,20 @@ export function AccountsReceivableRegisterCollection() {
                       : `${formatMoney(totalPaymentsUsd)} USD`}
                   </div>
                 </div>
-                <div className="rounded-md border p-2 bg-muted/30">
-                  <div className="text-xs text-muted-foreground">Tasa USD actual</div>
-                  <div className="font-mono">
-                    1 USD = {formatMoney(usdRate.amountBs)} Bs.
-                  </div>
-                </div>
+                <UsdRateSelect
+                  rates={useFixedRateMode && fixedRate ? [fixedRate] : usdRates}
+                  selectedId={
+                    useFixedRateMode ? fixedRate?.id ?? '' : selectedUsdRateId
+                  }
+                  currentRateId={currentRateId}
+                  onSelect={handleSelectRate}
+                  disabled={useFixedRateMode}
+                  lockNote={
+                    useFixedRateMode
+                      ? 'Tasa fija del seguro — no editable.'
+                      : undefined
+                  }
+                />
               </div>
             ) : (
               <p className="mt-4 text-xs italic text-muted-foreground">

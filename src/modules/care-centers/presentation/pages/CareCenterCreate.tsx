@@ -51,6 +51,8 @@ export function CareCenterCreate() {
       paymentMethods: [],
       servicePrices: [],
       isActive: true,
+      password: '',
+      confirmPassword: '',
     },
   });
 
@@ -60,7 +62,7 @@ export function CareCenterCreate() {
     try {
       await careCenterGateway.create({
         businessName: values.businessName,
-        email: values.email?.trim() || undefined,
+        email: values.email.trim(),
         rif: values.rif?.trim() || undefined,
         phones: values.phones.map((p) => ({
           number: p.number,
@@ -70,6 +72,7 @@ export function CareCenterCreate() {
         paymentMethods: (values.paymentMethods ?? []).map(cleanPaymentMethod),
         servicePrices: servicePricesToPayload(values.servicePrices ?? []),
         isActive: values.isActive,
+        password: values.password?.trim() || undefined,
       });
       notify.success('Centro creado exitosamente');
       navigate('/care-centers');

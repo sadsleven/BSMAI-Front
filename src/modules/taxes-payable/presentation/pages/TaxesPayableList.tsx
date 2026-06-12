@@ -30,7 +30,6 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { Can } from '@/modules/auth/presentation/components/Can';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
-import { notify } from '@/lib/notifications/toast';
 import { getHttpErrorMessage } from '@/lib/api';
 import { taxesPayableGateway } from '../../infrastructure/taxesPayableGateway';
 import {
@@ -178,10 +177,6 @@ export function TaxesPayableList() {
   );
 
   const goRegister = () => {
-    if (selectedAccounts.length === 0) {
-      notify.warning('Seleccioná al menos una cuenta');
-      return;
-    }
     navigate('/taxes-payable/register-payment', {
       state: { taxPayableIds: selectedAccounts.map((a) => a.id) },
     });
@@ -200,7 +195,7 @@ export function TaxesPayableList() {
           </p>
         </div>
         <Can permission={PERMISSIONS.TAXES_PAYABLE.UPDATE}>
-          <Button onClick={goRegister} disabled={selectedAccounts.length === 0}>
+          <Button onClick={goRegister}>
             <Plus className="w-4 h-4 mr-1.5" />
             Registrar pago al SENIAT
             {selectedAccounts.length > 0 && (
@@ -285,9 +280,10 @@ export function TaxesPayableList() {
           </div>
         ) : null}
 
+        <div className="m-4 rounded-lg border overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-[oklch(0.985_0.003_250)] hover:bg-[oklch(0.985_0.003_250)]">
+            <TableRow>
               <TableHead className="w-10"></TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 <SortableHeader<SortBy>
@@ -344,7 +340,7 @@ export function TaxesPayableList() {
                   Creación
                 </SortableHeader>
               </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-center">
                 Acciones
               </TableHead>
             </TableRow>
@@ -504,6 +500,7 @@ export function TaxesPayableList() {
           onPageSizeChange={(limit) => updateParam({ limit })}
           itemLabel="cuentas"
         />
+        </div>
       </div>
     </div>
   );

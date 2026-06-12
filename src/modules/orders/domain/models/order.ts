@@ -44,15 +44,26 @@ export interface OrderRefSummary {
   phones?: Array<{ id?: string; number: string; label?: string | null }>;
 }
 
+/** Observaciones del informe (Paso 3) de un proveedor. Mapea OrderProviderReport. */
+export interface OrderProviderReportRow {
+  id?: string;
+  providerType: ProviderType;
+  doctorId?: string | null;
+  careCenterId?: string | null;
+  observations?: string | null;
+}
+
 /** Fila ST + proveedor dentro de una orden (mapea OrderServiceType del BE). */
 export interface OrderServiceTypeRow {
   serviceTypeId: string;
-  serviceType?: { id: string; name: string };
+  serviceType?: { id: string; name: string; allowsQuantity?: boolean };
   providerType: ProviderType;
   doctorId?: string | null;
   doctor?: (OrderRefSummary & { isLegalEntity?: boolean }) | null;
   careCenterId?: string | null;
   careCenter?: OrderRefSummary | null;
+  /** Cantidad del ST (≥1). Sólo > 1 si el ST tiene `allowsQuantity`. */
+  quantity?: number;
 }
 
 export interface Order {
@@ -89,11 +100,12 @@ export interface Order {
   appointmentDate: string;
   priceAmount: string | number;
   /**
-   * Snapshot del % de comisión Cashea al crear la orden (fracción 0..1).
-   * Sólo presente cuando `type='cashea'`. Preserva el % aunque el admin
-   * cambie el valor global en Configuración después.
+   * Comisión Cashea snapshot (dos tramos) al crear la orden. Sólo presentes
+   * cuando `type='cashea'`. Comisión = primeraCuota × firstRate + total × totalRate.
    */
-  casheaCommissionRate?: string | number | null;
+  casheaFirstInstallmentAmount?: string | number | null;
+  casheaFirstInstallmentRate?: string | number | null;
+  casheaTotalRate?: string | number | null;
   /**
    * Modo tasa fija para órdenes seguro. Cuando true, la cuenta por cobrar del
    * seguro se compara en Bs usando `fixedExchangeRate` (snapshot).
@@ -132,7 +144,10 @@ export interface Order {
   // Pasos 2-4
   attended?: boolean;
   attendedAt?: string | null;
+  /** Nota general de la orden (nivel orden, staff). */
   otherStudies?: string | null;
+  /** Observaciones del informe segmentadas por proveedor (Paso 3). */
+  providerReports?: OrderProviderReportRow[];
   doctorAmount?: string | number | null;
   billingExchangeRateId?: string | null;
   billingExchangeRate?: {
@@ -158,8 +173,16 @@ export interface AuthorizeOrderAmountDto {
   observation: string;
 }
 
+export interface ReportProviderInput {
+  providerType: ProviderType;
+  doctorId?: string;
+  careCenterId?: string;
+  observations?: string | null;
+}
+
 export interface ReportOrderDto {
   otherStudies?: string | null;
+  providerReports?: ReportProviderInput[];
 }
 
 export interface BillingProviderInput {
@@ -179,6 +202,7 @@ export interface OrderServiceTypeRowInput {
   providerType: ProviderType;
   doctorId?: string;
   careCenterId?: string;
+  quantity?: number;
 }
 
 export interface CreateOrderDto {
@@ -196,6 +220,8 @@ export interface CreateOrderDto {
   orderDate: string;
   appointmentDate: string;
   priceAmount: number;
+  /** Monto de la primera cuota (inicial) Cashea, USD. Requerido si type='cashea'. */
+  casheaFirstInstallmentAmount?: number;
   useFixedRate?: boolean;
   fixedExchangeRateId?: string;
   payments?: OrderPaymentInput[];

@@ -4,6 +4,7 @@ import type {
   OrderRefSummary,
   PaymentCurrency,
 } from '@/modules/orders/domain/models/order';
+import { casheaCommissionCents } from '@/lib/money/cashea';
 
 export type AccountsReceivableStatus =
   | 'collected'
@@ -143,26 +144,33 @@ export function isCasheaAccount(a: AccountsReceivable): boolean {
   return a.order?.type === 'cashea';
 }
 
-/** Comisión Cashea snapshot (fracción 0..1). 0 si no aplica. */
+/**
+ * Comisión Cashea total (USD) snapshot, en dos tramos = primeraCuota × firstRate
+ * + total × totalRate. 0 si no aplica. Cálculo exacto en centavos enteros
+ * (redondeo mitad-arriba) para evitar el drift de `toFixed`. Espeja
+ * `casheaCommissionForOrder` del backend.
+ */
 export function casheaCommissionOf(a: AccountsReceivable): number {
   if (!isCasheaAccount(a)) return 0;
-  const raw = a.order?.casheaCommissionRate;
-  if (raw == null) return 0;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : 0;
+  const order = a.order;
+  if (!order) return 0;
+  const price = Number(order.priceAmount) || 0;
+  const firstAmount = Number(order.casheaFirstInstallmentAmount) || 0;
+  const firstRate = Number(order.casheaFirstInstallmentRate) || 0;
+  const totalRate = Number(order.casheaTotalRate) || 0;
+  return casheaCommissionCents(firstAmount, price, firstRate, totalRate) / 100;
 }
 
 /**
  * Target USD a cobrar. Para órdenes Cashea descuenta la comisión snapshot —
- * el comercio sólo espera el monto neto (precio × (1 − comisión)). Para el
- * resto de tipos el target es priceAmount íntegro.
+ * el comercio sólo espera el monto neto (precio − comisión). Para el resto de
+ * tipos el target es priceAmount íntegro.
  */
 export function targetUsd(a: AccountsReceivable): number | null {
   const amount = Number(a.order.priceAmount);
   if (!Number.isFinite(amount)) return null;
   if (isCasheaAccount(a)) {
-    const rate = casheaCommissionOf(a);
-    return +(amount * (1 - rate)).toFixed(2);
+    return +(amount - casheaCommissionOf(a)).toFixed(2);
   }
   return amount;
 }

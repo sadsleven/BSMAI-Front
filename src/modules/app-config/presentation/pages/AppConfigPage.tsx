@@ -20,14 +20,66 @@ function isValidPercent(input: string): boolean {
   return Number.isFinite(n) && n >= MIN_PERCENT && n <= MAX_PERCENT;
 }
 
+/** Campo de porcentaje con sufijo % y validación inline. */
+function PercentField(props: {
+  id: string;
+  label: string;
+  hint: string;
+  value: string;
+  onChange: (v: string) => void;
+  disabled: boolean;
+  loading: boolean;
+}) {
+  const { id, label, hint, value, onChange, disabled, loading } = props;
+  const valid = isValidPercent(value.trim());
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id} className="text-sm font-medium">
+        {label} <span className="text-destructive">*</span>
+      </Label>
+      {loading ? (
+        <Skeleton className="h-9 w-full" />
+      ) : (
+        <div className="relative">
+          <Input
+            id={id}
+            type="number"
+            inputMode="decimal"
+            min={MIN_PERCENT}
+            max={MAX_PERCENT}
+            step="0.01"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            disabled={disabled}
+            aria-invalid={!valid}
+            className="pr-8"
+          />
+          <Percent className="w-4 h-4 absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+        </div>
+      )}
+      {!valid && !loading ? (
+        <p className="text-xs text-destructive flex items-center gap-1 mt-1">
+          <AlertTriangle className="w-3 h-3" />
+          Ingresá un valor entre {MIN_PERCENT} y {MAX_PERCENT}
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      )}
+    </div>
+  );
+}
+
 export function AppConfigPage() {
   const { has } = usePermissions();
   const canUpdate = has(PERMISSIONS.APP_CONFIG.UPDATE);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [percentInput, setPercentInput] = useState('');
-  const [initialPercent, setInitialPercent] = useState<number | null>(null);
+  const [firstInput, setFirstInput] = useState('');
+  const [totalInput, setTotalInput] = useState('');
+  const [initial, setInitial] = useState<{ first: number; total: number } | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -36,9 +88,11 @@ export function AppConfigPage() {
       try {
         const cfg = await appConfigGateway.getCasheaCommission();
         if (cancelled) return;
-        const pct = +(cfg.commissionRate * 100).toFixed(2);
-        setInitialPercent(pct);
-        setPercentInput(pct.toString());
+        const first = +(cfg.firstInstallmentRate * 100).toFixed(2);
+        const total = +(cfg.totalRate * 100).toFixed(2);
+        setInitial({ first, total });
+        setFirstInput(first.toString());
+        setTotalInput(total.toString());
       } catch (e) {
         if (!cancelled) {
           setError('No se pudo cargar la configuración');
@@ -53,23 +107,30 @@ export function AppConfigPage() {
     };
   }, []);
 
-  const trimmed = percentInput.trim();
-  const valid = isValidPercent(trimmed);
-  const parsedPercent = valid ? Number(trimmed.replace(',', '.')) : NaN;
+  const firstValid = isValidPercent(firstInput.trim());
+  const totalValid = isValidPercent(totalInput.trim());
+  const valid = firstValid && totalValid;
+  const parsedFirst = firstValid ? Number(firstInput.trim().replace(',', '.')) : NaN;
+  const parsedTotal = totalValid ? Number(totalInput.trim().replace(',', '.')) : NaN;
   const dirty =
-    initialPercent !== null && valid && Math.abs(parsedPercent - initialPercent) > 0.0001;
+    initial !== null &&
+    valid &&
+    (Math.abs(parsedFirst - initial.first) > 0.0001 ||
+      Math.abs(parsedTotal - initial.total) > 0.0001);
 
   const onSave = async () => {
     if (!valid) return;
     try {
       setSaving(true);
-      const rate = +(parsedPercent / 100).toFixed(4);
       const updated = await appConfigGateway.updateCasheaCommission({
-        commissionRate: rate,
+        firstInstallmentRate: +(parsedFirst / 100).toFixed(4),
+        totalRate: +(parsedTotal / 100).toFixed(4),
       });
-      const pct = +(updated.commissionRate * 100).toFixed(2);
-      setInitialPercent(pct);
-      setPercentInput(pct.toString());
+      const first = +(updated.firstInstallmentRate * 100).toFixed(2);
+      const total = +(updated.totalRate * 100).toFixed(2);
+      setInitial({ first, total });
+      setFirstInput(first.toString());
+      setTotalInput(total.toString());
       notify.success('Comisión Cashea actualizada');
     } catch (e) {
       notify.fromError(e, 'No se pudo guardar la configuración.');
@@ -99,44 +160,27 @@ export function AppConfigPage() {
 
         <FormSection
           title="Cashea"
-          description="Comisión que descuenta Cashea por orden. Aplica a la generación de la cuenta por cobrar — el monto a cobrar al cliente se calcula como precio × (1 − comisión)."
+          description="Comisión que retiene Cashea por orden, en dos tramos. La cuenta por cobrar se genera por el neto: precio − (primera cuota × % primera cuota) − (precio × % total)."
         >
           <FormGrid>
-            <div className="space-y-1.5">
-              <Label htmlFor="commission" className="text-sm font-medium">
-                % de comisión <span className="text-destructive">*</span>
-              </Label>
-              {loading ? (
-                <Skeleton className="h-9 w-full" />
-              ) : (
-                <div className="relative">
-                  <Input
-                    id="commission"
-                    type="number"
-                    inputMode="decimal"
-                    min={MIN_PERCENT}
-                    max={MAX_PERCENT}
-                    step="0.01"
-                    value={percentInput}
-                    onChange={(e) => setPercentInput(e.target.value)}
-                    disabled={!canUpdate || saving}
-                    aria-invalid={!valid}
-                    className="pr-8"
-                  />
-                  <Percent className="w-4 h-4 absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                </div>
-              )}
-              {!valid && !loading ? (
-                <p className="text-xs text-destructive flex items-center gap-1 mt-1">
-                  <AlertTriangle className="w-3 h-3" />
-                  Ingresá un valor entre {MIN_PERCENT} y {MAX_PERCENT}
-                </p>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  Valor entre {MIN_PERCENT}% y {MAX_PERCENT}%. Ej: 10 para 10%.
-                </p>
-              )}
-            </div>
+            <PercentField
+              id="firstInstallmentRate"
+              label="% sobre la primera cuota"
+              hint="Aplica al monto de la primera cuota (inicial). Ej: 4 para 4%."
+              value={firstInput}
+              onChange={setFirstInput}
+              disabled={!canUpdate || saving}
+              loading={loading}
+            />
+            <PercentField
+              id="totalRate"
+              label="% sobre el total"
+              hint="Aplica al total de la orden. Ej: 6 para 6%."
+              value={totalInput}
+              onChange={setTotalInput}
+              disabled={!canUpdate || saving}
+              loading={loading}
+            />
           </FormGrid>
         </FormSection>
 

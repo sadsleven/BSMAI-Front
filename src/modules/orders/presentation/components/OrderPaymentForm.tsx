@@ -23,6 +23,11 @@ import {
 } from '../../domain/models/order';
 import { cn } from '@/lib/utils';
 import { formatMoney } from '@/lib/format/money';
+import { PaymentAccountSelect } from '@/modules/payment-accounts/presentation/components/PaymentAccountSelect';
+import {
+  paymentAccountSummary,
+  type PaymentAccount,
+} from '@/modules/payment-accounts/domain/models/paymentAccount';
 
 const ALL_TYPES: OrderPaymentType[] = [
   'mobile_payment',
@@ -39,6 +44,7 @@ export type PaymentItemErrors = {
   referenceNumber?: string;
   bankCode?: string;
   exchangeRateId?: string;
+  paymentAccountId?: string;
   amountCurrency?: string;
   amountValue?: string;
 };
@@ -77,6 +83,13 @@ export type OrderPaymentFormProps = {
   methodInfo?: (PaymentMethodInfo | null)[];
   /** Override del handler de quitar fila (sincroniza arrays paralelos). */
   onRemovePayment?: (idx: number) => void;
+  /**
+   * Cuando `true` (default), las filas mobile_payment/bank_transfer/other
+   * usan `<PaymentAccountSelect />` y exigen `paymentAccountId`. Pasar
+   * `false` para flujos de egreso (AP / impuestos) que usan el catálogo
+   * de bancos del beneficiario en lugar de cuentas propias.
+   */
+  usePaymentAccount?: boolean;
 };
 
 function defaultsForType(
@@ -91,6 +104,7 @@ function defaultsForType(
     referenceNumber: '',
     bankCode: '',
     exchangeRateId: '',
+    paymentAccountId: '',
     accountNumber: '',
     amountValue: 0,
   };
@@ -103,7 +117,7 @@ function defaultsForType(
   if (type === 'cash_eur') {
     return { ...base, exchangeRateId: eurRateId ?? '', amountCurrency: 'EUR' };
   }
-  // other → USD.
+  // other → USD por defecto, pero editable.
   return { ...base, amountCurrency: 'USD' };
 }
 
@@ -118,9 +132,13 @@ export function OrderPaymentForm({
   lockedFields,
   methodInfo,
   onRemovePayment,
+  usePaymentAccount = true,
 }: OrderPaymentFormProps) {
   const [banks, setBanks] = useState<Bank[]>([]);
   const [eurRate, setEurRate] = useState<ExchangeRate | null>(null);
+  const [paymentAccountsById, setPaymentAccountsById] = useState<
+    Record<string, PaymentAccount>
+  >({});
 
   useEffect(() => {
     bankGateway
@@ -294,7 +312,39 @@ export function OrderPaymentForm({
                     </div>
                   ) : null}
 
-                  {isMobileOrTransfer ? (
+                  {isMobileOrTransfer && usePaymentAccount ? (
+                    <div className="space-y-1">
+                      <Label className="text-xs">Cuenta de pago propia</Label>
+                      <PaymentAccountSelect
+                        value={p.paymentAccountId ?? ''}
+                        onChange={(id, account) => {
+                          if (account) {
+                            setPaymentAccountsById((prev) =>
+                              prev[account.id] ? prev : { ...prev, [account.id]: account },
+                            );
+                          }
+                          update(i, {
+                            paymentAccountId: id,
+                            bankCode: account?.bankCode ?? '',
+                            accountNumber: account?.accountNumber ?? '',
+                          });
+                        }}
+                        type={p.type as 'mobile_payment' | 'bank_transfer'}
+                        currentAccount={
+                          p.paymentAccountId
+                            ? paymentAccountsById[p.paymentAccountId] ?? null
+                            : null
+                        }
+                        disabled={disabled}
+                        error={!!err.paymentAccountId}
+                      />
+                      {err.paymentAccountId ? (
+                        <p className="text-xs text-destructive">{err.paymentAccountId}</p>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {isMobileOrTransfer && !usePaymentAccount ? (
                     <div className="space-y-1">
                       <Label className="text-xs">Banco</Label>
                       <Select
@@ -319,6 +369,34 @@ export function OrderPaymentForm({
                     </div>
                   ) : null}
 
+                  {isOther && usePaymentAccount ? (
+                    <div className="space-y-1">
+                      <Label className="text-xs">Cuenta de pago propia</Label>
+                      <PaymentAccountSelect
+                        value={p.paymentAccountId ?? ''}
+                        onChange={(id, account) => {
+                          if (account) {
+                            setPaymentAccountsById((prev) =>
+                              prev[account.id] ? prev : { ...prev, [account.id]: account },
+                            );
+                          }
+                          update(i, { paymentAccountId: id });
+                        }}
+                        type="other"
+                        currentAccount={
+                          p.paymentAccountId
+                            ? paymentAccountsById[p.paymentAccountId] ?? null
+                            : null
+                        }
+                        disabled={disabled}
+                        error={!!err.paymentAccountId}
+                      />
+                      {err.paymentAccountId ? (
+                        <p className="text-xs text-destructive">{err.paymentAccountId}</p>
+                      ) : null}
+                    </div>
+                  ) : null}
+
                   {(isMobileOrTransfer || isOther) ? (
                     <div className="space-y-1">
                       <Label className="text-xs">Referencia</Label>
@@ -335,7 +413,7 @@ export function OrderPaymentForm({
                     </div>
                   ) : null}
 
-                  {isOther ? (
+                  {isOther && !usePaymentAccount ? (
                     <div className="space-y-1">
                       <Label className="text-xs">Cuenta (opcional)</Label>
                       <Input
@@ -372,53 +450,79 @@ export function OrderPaymentForm({
                   </div>
                 </div>
 
-                {info ? (
-                  <div className="rounded-md border border-dashed bg-muted/30 px-3 py-2 text-xs space-y-1">
-                    {info.label ? (
-                      <div className="font-semibold text-foreground">
-                        {info.label}
+                {(() => {
+                  // Si usePaymentAccount y hay cuenta seleccionada, sintetizar info.
+                  let derivedInfo = info;
+                  if (
+                    !derivedInfo &&
+                    usePaymentAccount &&
+                    p.paymentAccountId &&
+                    paymentAccountsById[p.paymentAccountId]
+                  ) {
+                    const a = paymentAccountsById[p.paymentAccountId];
+                    const bankName =
+                      a.bankCode ? banks.find((b) => b.code === a.bankCode)?.name : null;
+                    derivedInfo = {
+                      label: a.name,
+                      bankName: bankName ?? a.bankCode ?? null,
+                      phoneNumber: a.phoneNumber,
+                      accountHolderName: a.accountHolderName,
+                      idDocument: a.idDocument,
+                      description:
+                        a.type === 'other'
+                          ? a.description
+                          : paymentAccountSummary(a) || null,
+                    };
+                  }
+                  if (!derivedInfo) return null;
+                  return (
+                    <div className="rounded-md border border-dashed bg-muted/30 px-3 py-2 text-xs space-y-1">
+                      {derivedInfo.label ? (
+                        <div className="font-semibold text-foreground">
+                          {derivedInfo.label}
+                        </div>
+                      ) : null}
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
+                        {derivedInfo.bankName ? (
+                          <span>
+                            <span className="font-medium text-foreground">Banco:</span>{' '}
+                            {derivedInfo.bankName}
+                          </span>
+                        ) : null}
+                        {derivedInfo.accountHolderName ? (
+                          <span>
+                            <span className="font-medium text-foreground">Titular:</span>{' '}
+                            {derivedInfo.accountHolderName}
+                          </span>
+                        ) : null}
+                        {derivedInfo.idDocument ? (
+                          <span>
+                            <span className="font-medium text-foreground">CI/RIF:</span>{' '}
+                            {derivedInfo.idDocument}
+                          </span>
+                        ) : null}
+                        {derivedInfo.phoneNumber ? (
+                          <span>
+                            <span className="font-medium text-foreground">Teléfono:</span>{' '}
+                            {derivedInfo.phoneNumber}
+                          </span>
+                        ) : null}
+                        {p.accountNumber && !isOther ? (
+                          <span>
+                            <span className="font-medium text-foreground">Cuenta:</span>{' '}
+                            {p.accountNumber}
+                          </span>
+                        ) : null}
+                        {derivedInfo.description ? (
+                          <span>
+                            <span className="font-medium text-foreground">Nota:</span>{' '}
+                            {derivedInfo.description}
+                          </span>
+                        ) : null}
                       </div>
-                    ) : null}
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
-                      {info.bankName ? (
-                        <span>
-                          <span className="font-medium text-foreground">Banco:</span>{' '}
-                          {info.bankName}
-                        </span>
-                      ) : null}
-                      {info.accountHolderName ? (
-                        <span>
-                          <span className="font-medium text-foreground">Titular:</span>{' '}
-                          {info.accountHolderName}
-                        </span>
-                      ) : null}
-                      {info.idDocument ? (
-                        <span>
-                          <span className="font-medium text-foreground">CI/RIF:</span>{' '}
-                          {info.idDocument}
-                        </span>
-                      ) : null}
-                      {info.phoneNumber ? (
-                        <span>
-                          <span className="font-medium text-foreground">Teléfono:</span>{' '}
-                          {info.phoneNumber}
-                        </span>
-                      ) : null}
-                      {p.accountNumber && !isOther ? (
-                        <span>
-                          <span className="font-medium text-foreground">Cuenta:</span>{' '}
-                          {p.accountNumber}
-                        </span>
-                      ) : null}
-                      {info.description ? (
-                        <span>
-                          <span className="font-medium text-foreground">Nota:</span>{' '}
-                          {info.description}
-                        </span>
-                      ) : null}
                     </div>
-                  </div>
-                ) : null}
+                  );
+                })()}
               </div>
             );
           })}

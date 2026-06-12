@@ -355,7 +355,10 @@ export async function downloadOrdenInternaPdfForProvider(
     group.providerType === 'doctor' ? 'Médico Tratante:' : 'Centro:';
   const centerAddress =
     group.providerType === 'care_center' ? group.providerName : '';
-  const sts = group.rows.map((r) => r.serviceType?.name ?? r.serviceTypeId);
+  const sts = group.rows.map((r) => {
+    const base = r.serviceType?.name ?? r.serviceTypeId;
+    return r.quantity && r.quantity > 1 ? `${base} (x${r.quantity})` : base;
+  });
 
   type Cell =
     | string

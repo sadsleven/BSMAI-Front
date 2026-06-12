@@ -1,8 +1,10 @@
 import { Controller, useFormContext } from 'react-hook-form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
 import { CedulaInput } from '@/components/ui/cedula-input';
 import { RifInput } from '@/components/ui/rif-input';
+import { PasswordInput } from '@/components/ui/password-input';
 import { PhoneListInput } from '@/components/ui/phone-list-input';
 import { SpecialtyMultiSelect } from '@/components/ui/specialty-multi-select';
 import {
@@ -14,7 +16,7 @@ import {
 } from '@/components/ui/service-prices-table';
 import { FormSwitch } from '@/components/ui/form-switch';
 import { FormSection, FormGrid } from '@/components/ui/form-section';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, KeyRound, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { DoctorValues, PaymentMethodValues } from '@/lib/validations/schemas';
 import type { Specialty } from '@/modules/specialties/domain/models/specialty';
@@ -32,9 +34,23 @@ function FieldError({ message }: { message?: string }) {
 export type DoctorFormProps = {
   /** Especialidades existentes para mantener chips deshabilitados quitables. */
   existingSpecialties?: Specialty[];
+  /** Modo del formulario; gobierna la sección de acceso. */
+  mode?: 'create' | 'edit';
+  /** En edición: si el doctor ya tiene cuenta de acceso (userId). */
+  accountExists?: boolean;
+  /** En edición: callback para abrir el cambio de contraseña. */
+  onChangePassword?: () => void;
+  /** Permiso para cambiar/establecer la contraseña (controla el botón en edición). */
+  canChangePassword?: boolean;
 };
 
-export function DoctorForm({ existingSpecialties }: DoctorFormProps) {
+export function DoctorForm({
+  existingSpecialties,
+  mode = 'create',
+  accountExists = false,
+  onChangePassword,
+  canChangePassword = false,
+}: DoctorFormProps) {
   const {
     register,
     control,
@@ -102,7 +118,7 @@ export function DoctorForm({ existingSpecialties }: DoctorFormProps) {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="email" className="text-sm font-medium">
-              Email <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
+              Email <span className="text-destructive">*</span>
             </Label>
             <Input
               id="email"
@@ -273,6 +289,70 @@ export function DoctorForm({ existingSpecialties }: DoctorFormProps) {
             );
           }}
         />
+      </FormSection>
+
+      <FormSection
+        title="Acceso al sistema"
+        description="Habilitá que el doctor inicie sesión como usuario proveedor para cargar el informe (Paso 3) de sus órdenes."
+      >
+        {mode === 'create' ? (
+          <FormGrid>
+            <div className="space-y-1.5">
+              <Label htmlFor="password" className="text-sm font-medium">
+                Contraseña{' '}
+                <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
+              </Label>
+              <PasswordInput
+                id="password"
+                {...register('password')}
+                className={cn('h-9', invalid('password'))}
+              />
+              <FieldError message={errors.password?.message} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="confirmPassword" className="text-sm font-medium">
+                Confirmar contraseña
+              </Label>
+              <PasswordInput
+                id="confirmPassword"
+                {...register('confirmPassword')}
+                className={cn('h-9', invalid('confirmPassword'))}
+              />
+              <FieldError message={errors.confirmPassword?.message} />
+            </div>
+            <p className="text-xs text-muted-foreground sm:col-span-2">
+              Dejá la contraseña vacía si el doctor no necesita acceso. Si la definís, el
+              email pasa a ser su usuario. Mínimo 8 caracteres con mayúscula, minúscula,
+              número y carácter especial.
+            </p>
+          </FormGrid>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm">
+              {accountExists ? (
+                <span className="inline-flex items-center gap-1.5 text-success">
+                  <ShieldCheck className="w-4 h-4" /> Acceso habilitado
+                </span>
+              ) : (
+                <span className="text-muted-foreground">
+                  Sin acceso. Establecé una contraseña para habilitarlo.
+                </span>
+              )}
+            </div>
+            {canChangePassword && onChangePassword ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onChangePassword}
+                className="gap-1.5"
+              >
+                <KeyRound className="w-4 h-4" />
+                {accountExists ? 'Cambiar contraseña' : 'Establecer contraseña'}
+              </Button>
+            ) : null}
+          </div>
+        )}
       </FormSection>
 
       <FormSection title="Estado">

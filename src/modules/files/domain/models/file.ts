@@ -1,6 +1,18 @@
 export type FileOwnerType = 'order';
 
+/** Adjuntos generales del informe (nivel orden). */
 export const ORDER_REPORT_KIND = 'order_report_attachment';
+
+/** Prefijo común de todos los `kind` de adjuntos de informe (Paso 3). */
+export const ORDER_REPORT_KIND_PREFIX = 'order_report';
+
+/** `kind` de los adjuntos del informe de un proveedor específico (espejado en BE). */
+export function orderReportProviderKind(
+  providerType: 'doctor' | 'care_center',
+  providerId: string,
+): string {
+  return `${ORDER_REPORT_KIND_PREFIX}:${providerType}:${providerId}`;
+}
 
 /**
  * Tope global por archivo: 4 MB. Espejado con `MAX_UPLOAD_SIZE_BYTES` del BE.

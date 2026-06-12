@@ -32,7 +32,7 @@ export function DataTableToolbar({
   return (
     <div
       className={cn(
-        'p-4 border-b flex items-center gap-3 flex-wrap',
+        'px-4 pt-4 pb-0 flex items-center gap-3 flex-wrap',
         className,
       )}
     >

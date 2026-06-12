@@ -313,9 +313,10 @@ export function DoctorList() {
           </div>
         ) : null}
 
+        <div className="m-4 rounded-lg border overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-[oklch(0.985_0.003_250)] hover:bg-[oklch(0.985_0.003_250)]">
+            <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 <SortableHeader<SortBy>
                   column="firstName"
@@ -345,7 +346,7 @@ export function DoctorList() {
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Creación
               </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-center">
                 Acciones
               </TableHead>
             </TableRow>
@@ -429,7 +430,7 @@ export function DoctorList() {
                     {formatCreated(d.createdAt)}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-right">
-                    <div className="inline-flex items-center gap-0.5">
+                    <div className="flex items-center justify-center gap-0.5">
                       <Can permission={PERMISSIONS.DOCTORS.LIST}>
                         <Link to={`/doctors/${d.id}`}>
                           <Button
@@ -519,6 +520,7 @@ export function DoctorList() {
           onPageSizeChange={(limit) => updateParam({ limit: String(limit) })}
           itemLabel="doctores"
         />
+        </div>
       </div>
 
       <ConfirmDialog

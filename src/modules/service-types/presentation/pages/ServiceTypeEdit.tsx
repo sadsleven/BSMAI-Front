@@ -39,10 +39,12 @@ export function ServiceTypeEdit() {
       description: '',
       isActive: true,
       particularPriceUsd: undefined,
+      allowsQuantity: false,
     },
   });
 
   const isActive = watch('isActive') ?? true;
+  const allowsQuantity = watch('allowsQuantity') ?? false;
 
   useEffect(() => {
     if (!id) return;
@@ -54,6 +56,7 @@ export function ServiceTypeEdit() {
           description: p.description ?? '',
           isActive: p.isActive ?? true,
           particularPriceUsd: p.particularPriceUsd != null ? Number(p.particularPriceUsd) : undefined,
+          allowsQuantity: p.allowsQuantity ?? false,
         });
         setDisplayName(p.name);
       } catch (e) {
@@ -73,6 +76,7 @@ export function ServiceTypeEdit() {
         description: values.description ?? undefined,
         isActive: values.isActive,
         particularPriceUsd: values.particularPriceUsd,
+        allowsQuantity: values.allowsQuantity,
       });
       notify.success('Tipo de servicio actualizado');
       navigate('/service-types');
@@ -169,6 +173,20 @@ export function ServiceTypeEdit() {
               ) : null}
             </div>
           </FormGrid>
+        </FormSection>
+
+        <FormSection
+          title="Cantidad"
+          description="Activá si este servicio puede facturarse por cantidad en una orden (ej. sesiones de fisioterapia)."
+        >
+          <FormSwitch
+            label="Permite cantidad"
+            description="Al añadir este servicio a una orden, podrás indicar cuántas unidades."
+            checked={allowsQuantity}
+            onCheckedChange={(v) =>
+              setValue('allowsQuantity', v, { shouldDirty: true, shouldValidate: true })
+            }
+          />
         </FormSection>
 
         <FormSection title="Estado">

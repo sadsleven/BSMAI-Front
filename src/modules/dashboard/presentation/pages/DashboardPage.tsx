@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import {
   Activity,
   CalendarClock,
@@ -276,11 +276,16 @@ export function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const { has } = usePermissions();
 
-  const canListPatients = has(PERMISSIONS.PATIENTS.LIST);
-  const canListOrders = has(PERMISSIONS.ORDERS.LIST);
-  const canListAr = has(PERMISSIONS.ACCOUNTS_RECEIVABLE.LIST);
-  const canListAp = has(PERMISSIONS.ACCOUNTS_PAYABLE.LIST);
-  const canListTp = has(PERMISSIONS.TAXES_PAYABLE.LIST);
+  // Usuario proveedor (doctor/centro): su única tarea es el informe de sus
+  // órdenes. Las métricas del dashboard quedan deshabilitadas y se redirige
+  // al listado de órdenes (tras correr los hooks, por reglas de hooks).
+  const isProvider = !!user?.providerLink;
+
+  const canListPatients = has(PERMISSIONS.PATIENTS.LIST) && !isProvider;
+  const canListOrders = has(PERMISSIONS.ORDERS.LIST) && !isProvider;
+  const canListAr = has(PERMISSIONS.ACCOUNTS_RECEIVABLE.LIST) && !isProvider;
+  const canListAp = has(PERMISSIONS.ACCOUNTS_PAYABLE.LIST) && !isProvider;
+  const canListTp = has(PERMISSIONS.TAXES_PAYABLE.LIST) && !isProvider;
   const canSeeBilled = canListAp && canListAr;
 
   const now = new Date();
@@ -298,6 +303,10 @@ export function DashboardPage() {
   const tpTotal = useAmountUsd(canListTp, dashboardGateway.taxesPayableTotalUsd);
   const recent = useRecentOrders(canListOrders);
   const upcoming = useUpcomingAppointments(canListOrders);
+
+  if (isProvider) {
+    return <Navigate to="/orders" replace />;
+  }
 
   return (
     <div className="space-y-6">

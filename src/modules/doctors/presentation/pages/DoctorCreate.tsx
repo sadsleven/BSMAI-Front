@@ -54,6 +54,8 @@ export function DoctorCreate() {
       paymentMethods: [],
       servicePrices: [],
       isActive: true,
+      password: '',
+      confirmPassword: '',
     },
   });
 
@@ -63,7 +65,7 @@ export function DoctorCreate() {
     try {
       await doctorGateway.create({
         cedula: values.cedula,
-        email: values.email?.trim() || undefined,
+        email: values.email.trim(),
         firstName: values.firstName,
         lastName: values.lastName,
         isLegalEntity: values.isLegalEntity,
@@ -76,6 +78,7 @@ export function DoctorCreate() {
         paymentMethods: (values.paymentMethods ?? []).map(cleanPaymentMethod),
         servicePrices: servicePricesToPayload(values.servicePrices ?? []),
         isActive: values.isActive,
+        password: values.password?.trim() || undefined,
       });
       notify.success('Doctor creado exitosamente');
       navigate('/doctors');

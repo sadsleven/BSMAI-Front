@@ -1,14 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, AlertTriangle } from 'lucide-react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Plus, Trash2, AlertTriangle, Search, ChevronDown, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { ProviderSearchSelect, type ProviderSelectValue } from './ProviderSearchSelect';
 import type { ServiceType } from '@/modules/service-types/domain/models/serviceType';
@@ -20,6 +15,7 @@ export type ServiceProviderRowValue = {
   providerType: 'doctor' | 'care_center';
   doctorId?: string;
   careCenterId?: string;
+  quantity?: number;
 };
 
 export type ServiceProviderRowErrors = {
@@ -27,6 +23,7 @@ export type ServiceProviderRowErrors = {
   providerType?: string;
   doctorId?: string;
   careCenterId?: string;
+  quantity?: string;
 };
 
 export type ServiceProviderTableProps = {
@@ -62,6 +59,12 @@ export function ServiceProviderTable({
   const usedIds = useMemo(
     () => new Set(value.map((r) => r.serviceTypeId).filter(Boolean)),
     [value],
+  );
+
+  // Mostrar columna Cantidad sólo si algún ST disponible la permite.
+  const showQuantityColumn = useMemo(
+    () => serviceTypes.some((s) => s.allowsQuantity),
+    [serviceTypes],
   );
 
   // Cache per-row del objeto provider para mostrar chip en ProviderSearchSelect.
@@ -173,6 +176,11 @@ export function ServiceProviderTable({
                 <th className="px-4 py-2 font-semibold text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
                   Proveedor
                 </th>
+                {showQuantityColumn ? (
+                  <th className="px-4 py-2 font-semibold text-[11px] uppercase tracking-[0.06em] text-muted-foreground w-28">
+                    Cantidad
+                  </th>
+                ) : null}
                 <th className="px-2 py-2 w-10" />
               </tr>
             </thead>
@@ -187,34 +195,19 @@ export function ServiceProviderTable({
                 return (
                   <tr key={idx} className="border-t align-top">
                     <td className="px-4 py-3">
-                      <Select
+                      <ServiceTypeSelect
                         value={row.serviceTypeId || ''}
-                        onValueChange={(v) =>
-                          updateRow(idx, { serviceTypeId: v })
-                        }
+                        options={available.map((s) => ({ id: s.id, label: s.name }))}
+                        onChange={(v) => {
+                          const st = stById.get(v);
+                          updateRow(idx, {
+                            serviceTypeId: v,
+                            quantity: st?.allowsQuantity ? row.quantity ?? 1 : undefined,
+                          });
+                        }}
                         disabled={disabled}
-                      >
-                        <SelectTrigger
-                          className={cn('h-9', rowError?.serviceTypeId && 'border-destructive')}
-                        >
-                          <SelectValue placeholder="Seleccioná un servicio">
-                            {currentST?.name ?? ''}
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent>
-                          {available.length === 0 ? (
-                            <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                              Sin más servicios disponibles.
-                            </div>
-                          ) : (
-                            available.map((s) => (
-                              <SelectItem key={s.id} value={s.id}>
-                                {s.name}
-                              </SelectItem>
-                            ))
-                          )}
-                        </SelectContent>
-                      </Select>
+                        invalid={!!rowError?.serviceTypeId}
+                      />
                       {rowError?.serviceTypeId && (
                         <p className="text-xs text-destructive mt-1 flex items-center gap-1">
                           <AlertTriangle className="w-3 h-3" />
@@ -253,6 +246,39 @@ export function ServiceProviderTable({
                         />
                       </div>
                     </td>
+                    {showQuantityColumn ? (
+                      <td className="px-4 py-3 align-top">
+                        {currentST?.allowsQuantity ? (
+                          <>
+                            <Input
+                              type="number"
+                              min={1}
+                              step={1}
+                              value={row.quantity ?? 1}
+                              onChange={(e) => {
+                                const n = Math.trunc(Number(e.target.value));
+                                updateRow(idx, {
+                                  quantity: Number.isFinite(n) && n >= 1 ? n : 1,
+                                });
+                              }}
+                              disabled={disabled}
+                              className={cn(
+                                'h-9 w-24',
+                                rowError?.quantity && 'border-destructive',
+                              )}
+                            />
+                            {rowError?.quantity && (
+                              <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3" />
+                                {rowError.quantity}
+                              </p>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">—</span>
+                        )}
+                      </td>
+                    ) : null}
                     <td className="px-2 py-3 text-right align-top">
                       <button
                         type="button"
@@ -281,6 +307,172 @@ export function ServiceProviderTable({
       >
         <Plus className="w-3.5 h-3.5 mr-1" /> Agregar Tipo de Servicio
       </Button>
+    </div>
+  );
+}
+
+/**
+ * Selector de Tipo de Servicio con buscador (combobox single-select).
+ * Mismo patrón que `ProviderSearchSelect`/`ChipMultiSelect`: trigger + dropdown
+ * en portal anclado (evita recorte dentro del overflow de la tabla) + filtro local.
+ */
+function ServiceTypeSelect({
+  value,
+  options,
+  onChange,
+  disabled,
+  invalid,
+}: {
+  value: string;
+  options: Array<{ id: string; label: string }>;
+  onChange: (id: string) => void;
+  disabled?: boolean;
+  invalid?: boolean;
+}) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      const t = e.target as Node;
+      if (wrapRef.current?.contains(t) || dropdownRef.current?.contains(t)) return;
+      setOpen(false);
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
+
+  // Posiciona el dropdown (portal fixed) anclado al trigger. Recalcula en scroll/resize.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const update = () => {
+      const el = anchorRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setRect({ top: r.bottom + 4, left: r.left, width: r.width });
+    };
+    update();
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('resize', update);
+    };
+  }, [open]);
+
+  const toggleOpen = () => {
+    if (disabled) return;
+    setOpen((v) => {
+      const next = !v;
+      if (next) setQuery(''); // arranca la búsqueda limpia en cada apertura
+      return next;
+    });
+  };
+
+  const selectedLabel = useMemo(
+    () => options.find((o) => o.id === value)?.label ?? '',
+    [options, value],
+  );
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((o) => o.label.toLowerCase().includes(q));
+  }, [options, query]);
+
+  return (
+    <div ref={wrapRef}>
+      <div ref={anchorRef}>
+        <button
+          type="button"
+          onClick={toggleOpen}
+          disabled={disabled}
+          className={cn(
+            'flex h-9 w-full items-center justify-between gap-1.5 rounded-md border border-input bg-transparent py-2 pr-2 pl-2.5 text-sm shadow-xs outline-none transition-[color,box-shadow] disabled:cursor-not-allowed disabled:opacity-50',
+            'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]',
+            invalid && 'border-destructive',
+          )}
+        >
+          <span
+            className={cn(
+              'line-clamp-1 truncate text-left',
+              !selectedLabel && 'text-muted-foreground',
+            )}
+          >
+            {selectedLabel || 'Seleccioná un servicio'}
+          </span>
+          <ChevronDown
+            className={cn(
+              'size-4 shrink-0 text-muted-foreground transition-transform',
+              open && 'rotate-180',
+            )}
+          />
+        </button>
+      </div>
+      {open && rect
+        ? createPortal(
+            <div
+              ref={dropdownRef}
+              style={{ position: 'fixed', top: rect.top, left: rect.left, width: rect.width }}
+              className="z-50 overflow-hidden rounded-lg border bg-card shadow-md"
+            >
+              <div className="relative border-b p-1.5">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  type="search"
+                  autoFocus
+                  placeholder="Buscar servicio…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  className="h-8 pl-9"
+                />
+              </div>
+              <div className="max-h-[232px] overflow-y-auto py-1">
+                {filtered.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-muted-foreground">
+                    {options.length === 0
+                      ? 'Sin más servicios disponibles.'
+                      : 'Sin resultados.'}
+                  </div>
+                ) : (
+                  <ul>
+                    {filtered.map((o) => {
+                      const selected = o.id === value;
+                      return (
+                        <li key={o.id}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onChange(o.id);
+                              setOpen(false);
+                            }}
+                            className={cn(
+                              'w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-accent',
+                              selected && 'bg-accent/60',
+                            )}
+                          >
+                            <Check
+                              className={cn(
+                                'size-4 shrink-0',
+                                selected ? 'opacity-100' : 'opacity-0',
+                              )}
+                            />
+                            <span className="flex-1 truncate">{o.label}</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

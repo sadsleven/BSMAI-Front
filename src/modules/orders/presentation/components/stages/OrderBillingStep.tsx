@@ -1,8 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Download, FileSpreadsheet, HandCoins, Wallet } from 'lucide-react';
+import { ArrowRight, Download, FileSpreadsheet, HandCoins, ListTree, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CurrencyAmountInput } from '@/components/ui/currency-amount-input';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
 import { FormSection } from '@/components/ui/form-section';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
@@ -357,31 +363,58 @@ export function OrderBillingStep({
                     </div>
                   </div>
 
-                  <details className="rounded border bg-muted/20 p-2 text-xs">
-                    <summary className="cursor-pointer font-medium">
-                      Desglose por servicio
-                    </summary>
-                    <ul className="mt-2 space-y-0.5">
-                      {p.breakdown.map((l) => (
-                        <li key={l.stName} className="flex justify-between">
-                          <span>{l.stName}</span>
-                          {l.amount !== null ? (
-                            <span className="font-mono">
-                              {formatMoney(l.amount)} USD
+                  <Accordion
+                    type="single"
+                    collapsible
+                    className="rounded-lg border bg-muted/20 px-3"
+                  >
+                    <AccordionItem value="breakdown" className="border-b-0">
+                      <AccordionTrigger className="text-xs">
+                        <span className="flex items-center gap-2">
+                          <ListTree className="w-3.5 h-3.5 text-muted-foreground" />
+                          Desglose por servicio
+                          <span className="text-[11px] font-normal text-muted-foreground">
+                            · {p.breakdown.length} servicio
+                            {p.breakdown.length === 1 ? '' : 's'}
+                          </span>
+                        </span>
+                      </AccordionTrigger>
+                      <AccordionContent>
+                        <ul className="divide-y rounded-md border bg-card overflow-hidden">
+                          {p.breakdown.map((l) => (
+                            <li
+                              key={l.stName}
+                              className="flex items-center justify-between px-3 py-2 text-xs gap-2"
+                            >
+                              <span className="truncate">{l.stName}</span>
+                              {l.amount !== null ? (
+                                <span className="font-mono shrink-0">
+                                  {formatMoney(l.amount)} USD
+                                </span>
+                              ) : (
+                                <span className="text-warning italic shrink-0">
+                                  Sin precio
+                                </span>
+                              )}
+                            </li>
+                          ))}
+                          <li className="flex items-center justify-between px-3 py-2 text-xs font-semibold bg-muted/40 gap-2">
+                            <span>Sugerido</span>
+                            <span className="font-mono shrink-0">
+                              {formatMoney(p.suggested)} USD
                             </span>
-                          ) : (
-                            <span className="text-warning italic">Sin precio</span>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                    {missing.length > 0 && (
-                      <p className="mt-2 text-warning">
-                        El proveedor no tiene precio definido para{' '}
-                        <strong>{missing.join(', ')}</strong>. Ingresá el monto manualmente.
-                      </p>
-                    )}
-                  </details>
+                          </li>
+                        </ul>
+                        {missing.length > 0 && (
+                          <p className="mt-2 text-[11px] text-warning">
+                            El proveedor no tiene precio definido para{' '}
+                            <strong>{missing.join(', ')}</strong>. Ingresá el monto
+                            manualmente.
+                          </p>
+                        )}
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
 
                 </div>
               );

@@ -33,7 +33,7 @@ import { formatCreatedDateTime } from '@/lib/dates';
 import { formatMoney } from '@/lib/format/money';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
-import { Plus, Trash2, Eye, Undo2, ListChecks } from 'lucide-react';
+import { Plus, Trash2, Eye, Undo2, ListChecks, FileText } from 'lucide-react';
 import { useOrderStore } from '../../domain/store/orderStore';
 import { orderGateway } from '../../infrastructure/orderGateway';
 import {
@@ -103,6 +103,9 @@ export function OrderList() {
 
   const branches = useMemo(() => getUserBranches(me), [me]);
   const canSeeDeleted = has(PERMISSIONS.ORDERS.HARD_DELETE) || has(PERMISSIONS.ORDERS.RESTORE);
+  // Usuario proveedor: oculta montos/sucursal y muestra sólo el acceso al informe.
+  const isProvider = !!me?.providerLink;
+  const colCount = isProvider ? 8 : 10;
 
   useEffect(() => {
     setQuery({
@@ -317,22 +320,24 @@ export function OrderList() {
                 </SelectContent>
               </Select>
 
-              <Select
-                value={filters.branchId || 'all'}
-                onValueChange={(v) => updateParam({ branchId: v === 'all' ? undefined : v })}
-              >
-                <SelectTrigger className="h-9 w-48">
-                  <SelectValue placeholder="Sucursal" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Sucursal: todas</SelectItem>
-                  {branches.map((b) => (
-                    <SelectItem key={b.id} value={b.id}>
-                      {b.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {!isProvider ? (
+                <Select
+                  value={filters.branchId || 'all'}
+                  onValueChange={(v) => updateParam({ branchId: v === 'all' ? undefined : v })}
+                >
+                  <SelectTrigger className="h-9 w-48">
+                    <SelectValue placeholder="Sucursal" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Sucursal: todas</SelectItem>
+                    {branches.map((b) => (
+                      <SelectItem key={b.id} value={b.id}>
+                        {b.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : null}
 
               {canSeeDeleted ? (
                 <Select
@@ -359,9 +364,10 @@ export function OrderList() {
           </div>
         ) : null}
 
+        <div className="m-4 rounded-lg border overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-[oklch(0.985_0.003_250)] hover:bg-[oklch(0.985_0.003_250)]">
+            <TableRow className="bg-brand-blue-soft hover:bg-brand-blue-soft">
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 <SortableHeader<SortBy>
                   column="orderNumber"
@@ -382,9 +388,11 @@ export function OrderList() {
                   Fecha
                 </SortableHeader>
               </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                Sucursal
-              </TableHead>
+              {!isProvider ? (
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                  Sucursal
+                </TableHead>
+              ) : null}
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Tipo
               </TableHead>
@@ -397,16 +405,18 @@ export function OrderList() {
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Estado
               </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                <SortableHeader<SortBy>
-                  column="priceAmount"
-                  activeColumn={filters.sortBy}
-                  direction={filters.sortDir}
-                  onSort={onSort}
-                >
-                  Monto
-                </SortableHeader>
-              </TableHead>
+              {!isProvider ? (
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                  <SortableHeader<SortBy>
+                    column="priceAmount"
+                    activeColumn={filters.sortBy}
+                    direction={filters.sortDir}
+                    onSort={onSort}
+                  >
+                    Monto
+                  </SortableHeader>
+                </TableHead>
+              ) : null}
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 <SortableHeader<SortBy>
                   column="createdAt"
@@ -417,17 +427,17 @@ export function OrderList() {
                   Creación
                 </SortableHeader>
               </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-center">
                 Acciones
               </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <SkeletonTableRows rows={5} columns={10} />
+              <SkeletonTableRows rows={5} columns={colCount} />
             ) : orders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="p-0">
+                <TableCell colSpan={colCount} className="p-0">
                   <EmptyState
                     title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay órdenes'}
                     description={
@@ -456,9 +466,11 @@ export function OrderList() {
                     <TableCell className="py-3.5 px-4 text-sm">
                       {order.orderDate.slice(0, 10)}
                     </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm">
-                      {order.branch?.name ?? '—'}
-                    </TableCell>
+                    {!isProvider ? (
+                      <TableCell className="py-3.5 px-4 text-sm">
+                        {order.branch?.name ?? '—'}
+                      </TableCell>
+                    ) : null}
                     <TableCell className="py-3.5 px-4">
                       <Badge variant="secondary">
                         {ORDER_TYPE_LABEL[order.type]}
@@ -478,14 +490,29 @@ export function OrderList() {
                     <TableCell className="py-3.5 px-4">
                       <StatusBadge status={order.status} />
                     </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm font-mono">
-                      {formatMoney(order.priceAmount)} USD
-                    </TableCell>
+                    {!isProvider ? (
+                      <TableCell className="py-3.5 px-4 text-sm font-mono">
+                        {formatMoney(order.priceAmount)} USD
+                      </TableCell>
+                    ) : null}
                     <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
                       {formatCreatedDateTime(order.createdAt)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-right">
-                      <div className="inline-flex items-center gap-0.5">
+                      <div className="flex items-center justify-center gap-0.5">
+                        {isProvider ? (
+                          <Link to={`/orders/edit/${order.id}`}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Cargar informe"
+                              className="w-8 h-8"
+                            >
+                              <FileText className="w-4 h-4" />
+                            </Button>
+                          </Link>
+                        ) : (
+                          <>
                         <Can permission={PERMISSIONS.ORDERS.LIST}>
                           <Link to={`/orders/${order.id}`}>
                             <Button
@@ -552,6 +579,8 @@ export function OrderList() {
                             </Can>
                           </>
                         )}
+                          </>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -570,6 +599,7 @@ export function OrderList() {
           onPageSizeChange={(limit) => updateParam({ limit: String(limit) })}
           itemLabel="órdenes"
         />
+        </div>
       </div>
 
       <ConfirmDialog

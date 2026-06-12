@@ -24,6 +24,9 @@ export function Navbar({ onMenuClick }: NavbarProps) {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
+  // Proveedores (doctor/centro) sólo gestionan sus informes: sin búsqueda
+  // global ni creación de órdenes.
+  const isProvider = !!user?.providerLink;
 
   const initials = user
     ? `${user.firstName?.[0] ?? ''}${user.lastName?.[0] ?? ''}`.toUpperCase() || 'U'
@@ -61,28 +64,34 @@ export function Navbar({ onMenuClick }: NavbarProps) {
       </div>
 
       {/* Left cluster: search + create order (desktop) */}
-      <NavbarSearch />
-      <Button
-        size="sm"
-        className="hidden md:inline-flex h-10 px-4 shrink-0"
-        onClick={handleCreateOrder}
-      >
-        <Plus className="w-4 h-4 mr-1.5" />
-        Crear orden
-      </Button>
+      {!isProvider && (
+        <>
+          <NavbarSearch />
+          <Button
+            size="sm"
+            className="hidden md:inline-flex h-10 px-4 shrink-0"
+            onClick={handleCreateOrder}
+          >
+            <Plus className="w-4 h-4 mr-1.5" />
+            Crear orden
+          </Button>
+        </>
+      )}
 
       {/* Right cluster */}
       <div className="ml-auto flex items-center gap-1 sm:gap-2">
         {/* Compact "Crear orden" on mobile (icon only) */}
-        <Button
-          size="icon"
-          className="md:hidden h-10 w-10 shrink-0"
-          onClick={handleCreateOrder}
-          title="Crear orden"
-          aria-label="Crear orden"
-        >
-          <Plus className="w-5 h-5" />
-        </Button>
+        {!isProvider && (
+          <Button
+            size="icon"
+            className="md:hidden h-10 w-10 shrink-0"
+            onClick={handleCreateOrder}
+            title="Crear orden"
+            aria-label="Crear orden"
+          >
+            <Plus className="w-5 h-5" />
+          </Button>
+        )}
         <ExchangeRatesBadge />
         <button
           type="button"

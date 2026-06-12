@@ -121,10 +121,8 @@ export function AccountsReceivableDetail({
             {isCasheaAccount(account) ? (
               <>
                 <DetailRow
-                  label={`Comisión Cashea (${formatMoney(casheaCommissionOf(account) * 100)}%)`}
-                  value={`-${formatMoney(
-                    Number(account.order.priceAmount) * casheaCommissionOf(account),
-                  )} USD`}
+                  label="Comisión Cashea"
+                  value={`-${formatMoney(casheaCommissionOf(account))} USD`}
                   mono
                 />
                 <DetailRow

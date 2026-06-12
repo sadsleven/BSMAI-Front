@@ -593,7 +593,10 @@ export async function downloadOrdenInternaForProvider(
   ws.getCell('A11').alignment = center;
 
   // R12+ — STs: 2 por fila (A:D y E:G)
-  const sts = group.rows.map((row) => row.serviceType?.name ?? row.serviceTypeId);
+  const sts = group.rows.map((row) => {
+    const base = row.serviceType?.name ?? row.serviceTypeId;
+    return row.quantity && row.quantity > 1 ? `${base} (x${row.quantity})` : base;
+  });
   let r = 12;
   for (let i = 0; i < sts.length; i += 2) {
     ws.mergeCells(`A${r}:D${r}`);

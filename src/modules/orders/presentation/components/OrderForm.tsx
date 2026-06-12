@@ -21,6 +21,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { AlertTriangle, Building, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatMoney } from '@/lib/format/money';
+import { casheaCommissionCents } from '@/lib/money/cashea';
 import { useAuthStore } from '@/modules/auth/domain/store/authStore';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
@@ -83,7 +84,7 @@ function buildOrderSteps(
     {
       id: 'attention',
       label: '2. Atención del paciente',
-      description: 'Marcar atendido + órdenes internas',
+      description: 'Descargar e imprimir órdenes internas',
       available: savedOrderId && perms.attention,
       lockedReason: !perms.attention ? NO_STAGE_PERM : 'Guardá la orden primero',
     },
@@ -92,7 +93,7 @@ function buildOrderSteps(
       label: '3. Informe médico y estudios',
       description: 'Estudios y observaciones',
       available: savedOrderId && isAttendedOrLater && perms.report,
-      lockedReason: !perms.report ? NO_STAGE_PERM : 'Marcá atendido primero',
+      lockedReason: !perms.report ? NO_STAGE_PERM : 'Confirmá las órdenes internas primero',
     },
     {
       id: 'billing',
@@ -436,32 +437,64 @@ export function OrderForm({
     [fixedExchangeRateIdVal, usdRates],
   );
 
-  // Comisión Cashea: snapshot persistido si la orden ya existe, sino el valor
-  // global actual cargado on-demand. Default 0.10 hasta que el fetch resuelva.
-  const [globalCasheaRate, setGlobalCasheaRate] = useState<number | null>(null);
+  // Comisión Cashea (dos tramos): tasas snapshot si la orden ya tiene snapshot,
+  // sino la config global cargada on-demand. El monto de la primera cuota es un
+  // campo del form (editable en borrador).
+  const casheaFirstInstallmentAmount = useWatch({
+    control,
+    name: 'casheaFirstInstallmentAmount',
+  }) as number | undefined;
+  const [globalCasheaConfig, setGlobalCasheaConfig] = useState<{
+    firstInstallmentRate: number;
+    totalRate: number;
+  } | null>(null);
   useEffect(() => {
-    if (!isCashea || savedOrder) return;
+    if (!isCashea) return;
+    // Sólo necesitamos la config global cuando la orden aún no tiene snapshot.
+    if (savedOrder?.casheaTotalRate != null) return;
     let cancelled = false;
     appConfigGateway
       .getCasheaCommission()
-      .then((cfg) => !cancelled && setGlobalCasheaRate(cfg.commissionRate))
-      .catch(() => !cancelled && setGlobalCasheaRate(null));
+      .then(
+        (cfg) =>
+          !cancelled &&
+          setGlobalCasheaConfig({
+            firstInstallmentRate: cfg.firstInstallmentRate,
+            totalRate: cfg.totalRate,
+          }),
+      )
+      .catch(() => !cancelled && setGlobalCasheaConfig(null));
     return () => {
       cancelled = true;
     };
   }, [isCashea, savedOrder]);
-  const casheaRate = isCashea
-    ? savedOrder?.casheaCommissionRate != null
-      ? Number(savedOrder.casheaCommissionRate)
-      : globalCasheaRate ?? 0.1
+  const casheaFirstRate = isCashea
+    ? savedOrder?.casheaFirstInstallmentRate != null
+      ? Number(savedOrder.casheaFirstInstallmentRate)
+      : globalCasheaConfig?.firstInstallmentRate ?? 0.04
     : 0;
+  const casheaTotalRate = isCashea
+    ? savedOrder?.casheaTotalRate != null
+      ? Number(savedOrder.casheaTotalRate)
+      : globalCasheaConfig?.totalRate ?? 0.06
+    : 0;
+  const casheaFirstAmount = isCashea ? casheaFirstInstallmentAmount ?? 0 : 0;
+  // Comisión exacta en centavos enteros (espeja el backend) → sin drift toFixed.
   const casheaCommissionAmount = isCashea
-    ? +((priceAmount ?? 0) * casheaRate).toFixed(2)
+    ? casheaCommissionCents(
+        casheaFirstAmount,
+        priceAmount ?? 0,
+        casheaFirstRate,
+        casheaTotalRate,
+      ) / 100
     : 0;
   const casheaNet = isCashea
-    ? +((priceAmount ?? 0) * (1 - casheaRate)).toFixed(2)
+    ? (Math.round((priceAmount ?? 0) * 100) -
+        Math.round(casheaCommissionAmount * 100)) /
+      100
     : 0;
-  const casheaRatePct = +(casheaRate * 100).toFixed(2);
+  const casheaFirstRatePct = +(casheaFirstRate * 100).toFixed(2);
+  const casheaTotalRatePct = +(casheaTotalRate * 100).toFixed(2);
 
   // Price breakdown derived from selected service types + insurance/Particular.
   const orderServiceTypeRows = (useWatch({ control, name: 'serviceTypes' }) ?? []) as Array<{
@@ -469,8 +502,17 @@ export function OrderForm({
     providerType: 'doctor' | 'care_center';
     doctorId?: string;
     careCenterId?: string;
+    quantity?: number;
   }>;
   const serviceTypeIds = orderServiceTypeRows.map((r) => r.serviceTypeId).filter(Boolean);
+  // Cantidad por ST (sólo > 1 si el ST permite cantidad). Default 1.
+  const qtyByST = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of orderServiceTypeRows) {
+      if (r.serviceTypeId) m.set(r.serviceTypeId, Math.max(1, Math.trunc(r.quantity ?? 1)));
+    }
+    return m;
+  }, [orderServiceTypeRows]);
   const insuranceId = useWatch({ control, name: 'insuranceId' }) as string | '' | undefined;
   const isInsuranceOrder = type === 'insurance';
 
@@ -499,7 +541,11 @@ export function OrderForm({
   type PriceLine = {
     id: string;
     name: string;
-    /** null si el ST no tiene precio definido para esta combinación. */
+    /** Cantidad del ST (≥1). */
+    qty: number;
+    /** Precio unitario USD, o null si no hay precio definido. */
+    unit: number | null;
+    /** unit × qty, o null si no hay precio definido. */
     amount: number | null;
   };
 
@@ -509,28 +555,22 @@ export function OrderForm({
     );
     return serviceTypeIds.map((id) => {
       const st = serviceTypes.find((s) => s.id === id);
-      if (!st) return { id, name: '—', amount: null };
-      if (isInsuranceOrder) {
-        const row = ispByST.get(id);
-        if (!row) return { id, name: st.name, amount: null };
-        const raw = row.priceUsd;
-        const num = raw === null || raw === undefined ? null : Number(raw);
-        return {
-          id,
-          name: st.name,
-          amount: num !== null && Number.isFinite(num) && num > 0 ? num : null,
-        };
-      }
-      // Particular: lee `particularPriceUsd` del ST.
-      const raw = st.particularPriceUsd;
+      const qty = qtyByST.get(id) ?? 1;
+      if (!st) return { id, name: '—', qty, unit: null, amount: null };
+      const raw = isInsuranceOrder
+        ? ispByST.get(id)?.priceUsd
+        : st.particularPriceUsd;
       const num = raw === null || raw === undefined ? null : Number(raw);
+      const unit = num !== null && Number.isFinite(num) && num > 0 ? num : null;
       return {
         id,
         name: st.name,
-        amount: num !== null && Number.isFinite(num) && num > 0 ? num : null,
+        qty,
+        unit,
+        amount: unit !== null ? +(unit * qty).toFixed(2) : null,
       };
     });
-  }, [serviceTypeIds, serviceTypes, insuranceServicePrices, isInsuranceOrder]);
+  }, [serviceTypeIds, serviceTypes, insuranceServicePrices, isInsuranceOrder, qtyByST]);
 
   const computedPriceSum = useMemo(
     () => priceLines.reduce((acc, l) => acc + (l.amount ?? 0), 0),
@@ -598,6 +638,7 @@ export function OrderForm({
 
       {!renderStep1 && currentStep === 'report' && savedOrder ? (
         <OrderReportStep
+          key={savedOrder.id}
           order={savedOrder}
           onSaved={() => onOrderRefresh?.()}
           onAdvance={canBilling ? () => setCurrentStep('billing') : undefined}
@@ -613,36 +654,42 @@ export function OrderForm({
 
       {!renderStep1 ? null : (
       <>
-      <FormSection title="Sucursal" description="Sucursal donde se emite la orden.">
-        <div className="space-y-1.5">
-          <RequiredLabel required>
-            <Building className="w-4 h-4 inline mr-1.5 text-muted-foreground" />
-            Sucursal
-          </RequiredLabel>
-          {branchSelect}
-          <FieldError message={errors.branchId?.message} />
-        </div>
-      </FormSection>
+      <FormSection
+        title="Sucursal y tipo de orden"
+        description="Sucursal donde se emite la orden y su modalidad."
+      >
+        <div className="space-y-5">
+          <div className="space-y-1.5">
+            <RequiredLabel required>
+              <Building className="w-4 h-4 inline mr-1.5 text-muted-foreground" />
+              Sucursal
+            </RequiredLabel>
+            {branchSelect}
+            <FieldError message={errors.branchId?.message} />
+          </div>
 
-      <FormSection title="Tipo de orden" description="Define la modalidad y los datos requeridos.">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {(['cash', 'credit', 'insurance', 'cashea'] as OrderType[]).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => requestTypeChange(t)}
-              className={cn(
-                'rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors',
-                type === t
-                  ? 'border-brand-blue bg-brand-blue-soft'
-                  : 'border-border hover:bg-accent',
-              )}
-            >
-              {ORDER_TYPE_LABEL[t]}
-            </button>
-          ))}
+          <div className="space-y-2">
+            <RequiredLabel required>Tipo de orden</RequiredLabel>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {(['cash', 'credit', 'insurance', 'cashea'] as OrderType[]).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => requestTypeChange(t)}
+                  className={cn(
+                    'rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors',
+                    type === t
+                      ? 'border-brand-blue bg-brand-blue-soft'
+                      : 'border-border hover:bg-accent',
+                  )}
+                >
+                  {ORDER_TYPE_LABEL[t]}
+                </button>
+              ))}
+            </div>
+            <FieldError message={errors.type?.message} />
+          </div>
         </div>
-        <FieldError message={errors.type?.message} />
       </FormSection>
 
       <FormSection
@@ -884,8 +931,8 @@ export function OrderForm({
       </FormSection>
 
       <FormSection
-        title="Servicio"
-        description="Especialidad y patologías de la orden."
+        title="Servicio y proveedores"
+        description="Especialidad, patologías y el proveedor que atiende cada tipo de servicio."
         allowOverflow
       >
         <FormGrid>
@@ -944,13 +991,13 @@ export function OrderForm({
             />
           </div>
         </FormGrid>
-      </FormSection>
 
-      <FormSection
-        title="Tipos de Servicio y Proveedores"
-        description="Cada Tipo de Servicio se atiende por su propio proveedor (doctor o centro)."
-        allowOverflow
-      >
+        <div className="mt-5 pt-5 border-t border-dashed space-y-1">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+            Tipos de servicio y proveedores
+          </p>
+        </div>
+        <div className="mt-3">
         <Controller
           control={control}
           name="serviceTypes"
@@ -962,6 +1009,7 @@ export function OrderForm({
                     providerType?: { message?: string };
                     doctorId?: { message?: string };
                     careCenterId?: { message?: string };
+                    quantity?: { message?: string };
                   }
                 | undefined
               >
@@ -970,6 +1018,7 @@ export function OrderForm({
               providerType: e?.providerType?.message,
               doctorId: e?.doctorId?.message,
               careCenterId: e?.careCenterId?.message,
+              quantity: e?.quantity?.message,
             }));
             return (
               <ServiceProviderTable
@@ -978,6 +1027,7 @@ export function OrderForm({
                   providerType: 'doctor' | 'care_center';
                   doctorId?: string;
                   careCenterId?: string;
+                  quantity?: number;
                 }>}
                 onChange={field.onChange}
                 serviceTypes={serviceTypes}
@@ -993,6 +1043,7 @@ export function OrderForm({
             {errors.serviceTypes.message}
           </p>
         )}
+        </div>
       </FormSection>
 
       <FormSection title="Fechas" description="Fecha de emisión y fecha del servicio.">
@@ -1125,12 +1176,21 @@ export function OrderForm({
               {priceLines.map((l) => (
                 <div
                   key={l.id}
-                  className="flex items-center justify-between px-3 py-2 text-sm"
+                  className="flex items-center justify-between px-3 py-2 text-sm gap-2"
                 >
-                  <span className="truncate">{l.name}</span>
+                  <span className="truncate">
+                    {l.name}
+                    {l.qty > 1 ? (
+                      <span className="text-muted-foreground">
+                        {' '}
+                        · {l.qty} ×{' '}
+                        {l.unit !== null ? formatMoney(l.unit) : '—'}
+                      </span>
+                    ) : null}
+                  </span>
                   <span
                     className={cn(
-                      'font-mono',
+                      'font-mono shrink-0',
                       l.amount === null && 'text-warning',
                     )}
                   >
@@ -1156,7 +1216,27 @@ export function OrderForm({
           </div>
         ) : null}
         {isCashea ? (
-          <div className="mt-4 space-y-2">
+          <div className="mt-4 space-y-3">
+            <div className="space-y-1.5 max-w-xs">
+              <RequiredLabel required>Primera cuota (inicial)</RequiredLabel>
+              <Controller
+                control={control}
+                name="casheaFirstInstallmentAmount"
+                render={({ field }) => (
+                  <CurrencyAmountInput
+                    value={typeof field.value === 'number' ? field.value : undefined}
+                    onChange={(v) => field.onChange(v ?? 0)}
+                    currencyPrefix="USD"
+                    disabled={!!savedOrder && savedOrder.status !== 'draft'}
+                    className={cn(
+                      errors.casheaFirstInstallmentAmount?.message &&
+                        'border-destructive',
+                    )}
+                  />
+                )}
+              />
+              <FieldError message={errors.casheaFirstInstallmentAmount?.message} />
+            </div>
             <div className="rounded-lg border border-dashed bg-warning-soft/40 px-4 py-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1">
                 <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
@@ -1168,10 +1248,13 @@ export function OrderForm({
               </div>
               <div className="space-y-1">
                 <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
-                  Comisión Cashea ({casheaRatePct}%)
+                  Comisión Cashea
                 </div>
                 <div className="text-sm font-semibold text-destructive">
                   -{formatMoney(casheaCommissionAmount)} USD
+                </div>
+                <div className="text-[10px] text-muted-foreground leading-tight">
+                  {casheaFirstRatePct}% primera cuota + {casheaTotalRatePct}% total
                 </div>
               </div>
               <div className="space-y-1">
@@ -1184,9 +1267,9 @@ export function OrderForm({
               </div>
             </div>
             <p className="text-[11px] text-muted-foreground">
-              {savedOrder?.casheaCommissionRate != null
-                ? 'Comisión fija — snapshot al crear la orden.'
-                : 'Comisión vigente al momento de crear la orden. Configurable en Administración → Configuración.'}
+              {savedOrder?.casheaTotalRate != null
+                ? 'Comisión fija — porcentajes snapshot al crear la orden.'
+                : 'Porcentajes vigentes al momento de crear la orden. Configurables en Administración → Configuración.'}
             </p>
           </div>
         ) : null}
@@ -1263,16 +1346,12 @@ export function OrderForm({
                   </Badge>
                 ) : (
                   <Badge variant="default" className="bg-warning text-white">
-                    {diff > 0 ? `Faltan ${formatMoney(diff)}` : `Excede ${formatMoney(Math.abs(diff))}`}
+                    {diff > 0 ? `Faltan ${formatMoney(diff)}` : `Excede ${formatMoney(Math.abs(diff))}`} USD
                   </Badge>
                 )}
               </div>
               {Math.abs(diff) >= 0.01 ? (
                 <div className="text-xs text-muted-foreground space-y-0.5">
-                  <div>
-                    {diff > 0 ? 'Faltan' : 'Excede'}{' '}
-                    <span className="font-mono">USD {formatMoney(Math.abs(diff))}</span>
-                  </div>
                   {currentRate ? (
                     <div>
                       {diff > 0 ? 'Faltan' : 'Excede'}{' '}

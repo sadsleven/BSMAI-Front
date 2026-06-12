@@ -223,9 +223,10 @@ export const patientSchema = z
     rif: z.string().optional().or(z.literal('')),
     email: optionalEmailSchema,
     birthDate: z
-      .string({ error: 'La fecha de nacimiento es obligatoria' })
-      .min(1, 'La fecha de nacimiento es obligatoria')
-      .refine(isoDateNotFuture, {
+      .string()
+      .optional()
+      .or(z.literal(''))
+      .refine((v) => !v || isoDateNotFuture(v), {
         message: 'La fecha no puede ser posterior a hoy',
       }),
     address: z
@@ -352,6 +353,7 @@ export const serviceTypeSchema = z.object({
     .positive('Debe ser > 0')
     .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' })
     .optional(),
+  allowsQuantity: z.boolean().optional(),
 });
 export type ServiceTypeValues = z.infer<typeof serviceTypeSchema>;
 
@@ -549,10 +551,105 @@ export const paymentMethodsArraySchema = z
   .max(20, 'Máximo 20 métodos de pago')
   .optional();
 
+// ---- PaymentAccount (cuenta propia del negocio donde se recibe dinero) ----
+export const paymentAccountSchema = z
+  .object({
+    name: z
+      .string({ error: 'El nombre es obligatorio' })
+      .min(1, 'El nombre es obligatorio')
+      .max(200, 'El nombre no puede superar 200 caracteres'),
+    type: z.enum(PAYMENT_METHOD_TYPES, { error: 'Seleccioná un tipo' }),
+    isActive: z.boolean().optional(),
+    bankCode: optString(8),
+    phoneNumber: optString(11),
+    idDocument: optString(24),
+    accountNumber: optString(20),
+    accountHolderName: optString(200),
+    description: optString(500),
+  })
+  .superRefine((val, ctx) => {
+    const trim = (v?: string) => (v ?? '').trim();
+    if (val.type === 'mobile_payment') {
+      if (!trim(val.bankCode))
+        ctx.addIssue({ code: 'custom', path: ['bankCode'], message: 'Banco requerido' });
+      if (!/^\d{11}$/.test(trim(val.phoneNumber)))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['phoneNumber'],
+          message: 'Teléfono de 11 dígitos',
+        });
+      if (!trim(val.idDocument))
+        ctx.addIssue({ code: 'custom', path: ['idDocument'], message: 'Cédula/RIF requerido' });
+      if (!trim(val.accountHolderName))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['accountHolderName'],
+          message: 'Titular requerido',
+        });
+    } else if (val.type === 'bank_transfer') {
+      if (!trim(val.bankCode))
+        ctx.addIssue({ code: 'custom', path: ['bankCode'], message: 'Banco requerido' });
+      if (!/^\d{20}$/.test(trim(val.accountNumber)))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['accountNumber'],
+          message: 'Cuenta de 20 dígitos',
+        });
+      if (!trim(val.accountHolderName))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['accountHolderName'],
+          message: 'Titular requerido',
+        });
+      if (!trim(val.idDocument))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['idDocument'],
+          message: 'Cédula/RIF del titular',
+        });
+    } else if (val.type === 'other') {
+      if (trim(val.description).length < 3)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['description'],
+          message: 'Descripción mínima 3 caracteres',
+        });
+    }
+  });
+export type PaymentAccountValues = z.infer<typeof paymentAccountSchema>;
+
+/**
+ * Valida el par contraseña/confirmación opcional de proveedores (doctor/centro).
+ * Si `password` viene no vacío: exige fuerza (PASSWORD_REGEX) y que coincida con
+ * `confirmPassword`. Vacío → sin acceso, no valida nada.
+ */
+function refineOptionalPassword(
+  val: { password?: string; confirmPassword?: string },
+  ctx: z.RefinementCtx,
+): void {
+  const pwd = (val.password ?? '').trim();
+  if (!pwd) return;
+  if (!PASSWORD_REGEX.test(pwd)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['password'],
+      message:
+        'La contraseña debe tener mín. 8 caracteres con mayúscula, minúscula, número y carácter especial',
+    });
+  }
+  if (val.password !== val.confirmPassword) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['confirmPassword'],
+      message: 'Las contraseñas no coinciden',
+    });
+  }
+}
+
 export const doctorSchema = z
   .object({
     cedula: cedulaSchema,
-    email: optionalEmailSchema,
+    email: emailSchema,
     firstName: nameSchema('El nombre'),
     lastName: nameSchema('El apellido'),
     isLegalEntity: z.boolean(),
@@ -565,6 +662,9 @@ export const doctorSchema = z
     paymentMethods: paymentMethodsArraySchema,
     servicePrices: servicePricesArraySchema,
     isActive: z.boolean().optional(),
+    /** Acceso al sistema (opcional). Si se define, habilita login del proveedor. */
+    password: z.string().optional().or(z.literal('')),
+    confirmPassword: z.string().optional().or(z.literal('')),
   })
   .superRefine((val, ctx) => {
     if (val.isLegalEntity) {
@@ -588,25 +688,33 @@ export const doctorSchema = z
         message: 'No se admite RIF para persona natural',
       });
     }
+    refineOptionalPassword(val, ctx);
   });
 export type DoctorValues = z.infer<typeof doctorSchema>;
 
-export const careCenterSchema = z.object({
-  businessName: z
-    .string({ error: 'La razón social es obligatoria' })
-    .min(2, 'La razón social debe tener al menos 2 caracteres')
-    .max(200, 'La razón social no puede superar 200 caracteres'),
-  email: optionalEmailSchema,
-  rif: optionalRifSchema,
-  phones: phonesArraySchema,
-  specialtyIds: z
-    .array(z.string().uuid())
-    .min(1, 'Asigná al menos una especialidad')
-    .max(50, 'Máximo 50 especialidades'),
-  paymentMethods: paymentMethodsArraySchema,
-  servicePrices: servicePricesArraySchema,
-  isActive: z.boolean().optional(),
-});
+export const careCenterSchema = z
+  .object({
+    businessName: z
+      .string({ error: 'La razón social es obligatoria' })
+      .min(2, 'La razón social debe tener al menos 2 caracteres')
+      .max(200, 'La razón social no puede superar 200 caracteres'),
+    email: emailSchema,
+    rif: optionalRifSchema,
+    phones: phonesArraySchema,
+    specialtyIds: z
+      .array(z.string().uuid())
+      .min(1, 'Asigná al menos una especialidad')
+      .max(50, 'Máximo 50 especialidades'),
+    paymentMethods: paymentMethodsArraySchema,
+    servicePrices: servicePricesArraySchema,
+    isActive: z.boolean().optional(),
+    /** Acceso al sistema (opcional). Si se define, habilita login del proveedor. */
+    password: z.string().optional().or(z.literal('')),
+    confirmPassword: z.string().optional().or(z.literal('')),
+  })
+  .superRefine((val, ctx) => {
+    refineOptionalPassword(val, ctx);
+  });
 export type CareCenterValues = z.infer<typeof careCenterSchema>;
 
 // re-export phoneNumberSchema for convenience
@@ -625,92 +733,119 @@ const PAYMENT_TYPES_ORDER = [
   'other',
 ] as const;
 
-export const orderPaymentSchema = z
-  .object({
-    id: z.string().uuid().optional(),
-    type: z.enum(PAYMENT_TYPES_ORDER, { error: 'Tipo de pago requerido' }),
-    paymentDate: z.string().min(1, 'Fecha requerida'),
-    referenceNumber: z.string().max(20).optional().or(z.literal('')),
-    bankCode: z.string().max(8).optional().or(z.literal('')),
-    exchangeRateId: z.string().uuid().optional().or(z.literal('')),
-    accountNumber: z.string().max(40).optional().or(z.literal('')),
-    amountCurrency: z.enum(['USD', 'EUR', 'BS'], { error: 'Moneda requerida' }),
-    amountValue: z
-      .number({ error: 'Monto requerido' })
-      .positive('Monto debe ser > 0')
-      .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' }),
-  })
-  .superRefine((val, ctx) => {
-    const trim = (v?: string) => (v ?? '').trim();
-    if (val.type === 'mobile_payment' || val.type === 'bank_transfer') {
-      if (!trim(val.bankCode))
-        ctx.addIssue({ code: 'custom', path: ['bankCode'], message: 'Banco requerido' });
-      if (!trim(val.referenceNumber))
+/**
+ * Factory del schema de pago. `requirePaymentAccount` exige una cuenta propia
+ * de AFMI (`paymentAccountId`) para los tipos mobile_payment/bank_transfer/other.
+ * Aplica a pagos ENTRANTES (órdenes, cuentas por cobrar). Los flujos de EGRESO
+ * (cuentas por pagar, retenciones) no usan cuenta propia → `false`.
+ */
+function makeOrderPaymentSchema(requirePaymentAccount: boolean) {
+  return z
+    .object({
+      id: z.string().uuid().optional(),
+      type: z.enum(PAYMENT_TYPES_ORDER, { error: 'Tipo de pago requerido' }),
+      paymentDate: z.string().min(1, 'Fecha requerida'),
+      referenceNumber: z.string().max(20).optional().or(z.literal('')),
+      bankCode: z.string().max(8).optional().or(z.literal('')),
+      exchangeRateId: z.string().uuid().optional().or(z.literal('')),
+      paymentAccountId: z.string().uuid().optional().or(z.literal('')),
+      accountNumber: z.string().max(40).optional().or(z.literal('')),
+      amountCurrency: z.enum(['USD', 'EUR', 'BS'], { error: 'Moneda requerida' }),
+      amountValue: z
+        .number({ error: 'Monto requerido' })
+        .positive('Monto debe ser > 0')
+        .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' }),
+    })
+    .superRefine((val, ctx) => {
+      const trim = (v?: string) => (v ?? '').trim();
+      const needsAccount =
+        val.type === 'mobile_payment' ||
+        val.type === 'bank_transfer' ||
+        val.type === 'other';
+      if (requirePaymentAccount && needsAccount && !trim(val.paymentAccountId)) {
         ctx.addIssue({
           code: 'custom',
-          path: ['referenceNumber'],
-          message: 'Referencia requerida',
+          path: ['paymentAccountId'],
+          message: 'Cuenta de pago requerida',
         });
-      if (!trim(val.exchangeRateId))
-        ctx.addIssue({
-          code: 'custom',
-          path: ['exchangeRateId'],
-          message: 'Tasa requerida',
-        });
-      if (val.amountCurrency !== 'BS')
-        ctx.addIssue({
-          code: 'custom',
-          path: ['amountCurrency'],
-          message: 'Debe ser BS',
-        });
-    } else if (val.type === 'cash_bs') {
-      if (!trim(val.exchangeRateId))
-        ctx.addIssue({
-          code: 'custom',
-          path: ['exchangeRateId'],
-          message: 'Tasa requerida',
-        });
-      if (val.amountCurrency !== 'BS')
-        ctx.addIssue({
-          code: 'custom',
-          path: ['amountCurrency'],
-          message: 'Debe ser BS',
-        });
-    } else if (val.type === 'cash_usd') {
-      if (!trim(val.exchangeRateId))
-        ctx.addIssue({
-          code: 'custom',
-          path: ['exchangeRateId'],
-          message: 'Tasa USD requerida',
-        });
-      if (val.amountCurrency !== 'USD')
-        ctx.addIssue({
-          code: 'custom',
-          path: ['amountCurrency'],
-          message: 'Debe ser USD',
-        });
-    } else if (val.type === 'cash_eur') {
-      if (!trim(val.exchangeRateId))
-        ctx.addIssue({
-          code: 'custom',
-          path: ['exchangeRateId'],
-          message: 'Tasa EUR requerida',
-        });
-      if (val.amountCurrency !== 'EUR')
-        ctx.addIssue({
-          code: 'custom',
-          path: ['amountCurrency'],
-          message: 'Debe ser EUR',
-        });
-    } else if (val.type === 'other') {
-      if (!trim(val.referenceNumber))
-        ctx.addIssue({
-          code: 'custom',
-          path: ['referenceNumber'],
-          message: 'Referencia requerida',
-        });
-    }
-  });
+      }
+      if (val.type === 'mobile_payment' || val.type === 'bank_transfer') {
+        if (!trim(val.referenceNumber))
+          ctx.addIssue({
+            code: 'custom',
+            path: ['referenceNumber'],
+            message: 'Referencia requerida',
+          });
+        if (!trim(val.exchangeRateId))
+          ctx.addIssue({
+            code: 'custom',
+            path: ['exchangeRateId'],
+            message: 'Tasa requerida',
+          });
+        if (val.amountCurrency !== 'BS')
+          ctx.addIssue({
+            code: 'custom',
+            path: ['amountCurrency'],
+            message: 'Debe ser BS',
+          });
+      } else if (val.type === 'cash_bs') {
+        if (!trim(val.exchangeRateId))
+          ctx.addIssue({
+            code: 'custom',
+            path: ['exchangeRateId'],
+            message: 'Tasa requerida',
+          });
+        if (val.amountCurrency !== 'BS')
+          ctx.addIssue({
+            code: 'custom',
+            path: ['amountCurrency'],
+            message: 'Debe ser BS',
+          });
+      } else if (val.type === 'cash_usd') {
+        if (val.amountCurrency !== 'USD')
+          ctx.addIssue({
+            code: 'custom',
+            path: ['amountCurrency'],
+            message: 'Debe ser USD',
+          });
+      } else if (val.type === 'cash_eur') {
+        if (!trim(val.exchangeRateId))
+          ctx.addIssue({
+            code: 'custom',
+            path: ['exchangeRateId'],
+            message: 'Tasa EUR requerida',
+          });
+        if (val.amountCurrency !== 'EUR')
+          ctx.addIssue({
+            code: 'custom',
+            path: ['amountCurrency'],
+            message: 'Debe ser EUR',
+          });
+      } else if (val.type === 'other') {
+        if (!trim(val.referenceNumber))
+          ctx.addIssue({
+            code: 'custom',
+            path: ['referenceNumber'],
+            message: 'Referencia requerida',
+          });
+        if (
+          (val.amountCurrency === 'BS' || val.amountCurrency === 'EUR') &&
+          !trim(val.exchangeRateId)
+        ) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['exchangeRateId'],
+            message: 'Tasa requerida',
+          });
+        }
+      }
+    });
+}
+
+/** Pagos ENTRANTES (órdenes, cuentas por cobrar): requieren cuenta propia. */
+export const orderPaymentSchema = makeOrderPaymentSchema(true);
+/** Pagos de EGRESO (cuentas por pagar, retenciones): sin cuenta propia. */
+export const egressPaymentSchema = makeOrderPaymentSchema(false);
 export type OrderPaymentValues = z.infer<typeof orderPaymentSchema>;
 
 export const orderSchema = z
@@ -738,6 +873,12 @@ export const orderSchema = z
           providerType: z.enum(PROVIDER_TYPES, { error: 'Proveedor requerido' }),
           doctorId: z.string().uuid().optional().or(z.literal('')),
           careCenterId: z.string().uuid().optional().or(z.literal('')),
+          quantity: z
+            .number()
+            .int('La cantidad debe ser un entero')
+            .min(1, 'La cantidad debe ser ≥ 1')
+            .max(100000, 'Cantidad demasiado alta')
+            .optional(),
         }),
       )
       .min(1, 'Asigná al menos un tipo de servicio')
@@ -757,6 +898,11 @@ export const orderSchema = z
       .number({ error: 'Monto requerido' })
       .positive('Debe ser > 0')
       .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' }),
+    casheaFirstInstallmentAmount: z
+      .number()
+      .min(0, 'No puede ser negativo')
+      .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' })
+      .optional(),
     useFixedRate: z.boolean().optional(),
     fixedExchangeRateId: z.string().uuid().optional().or(z.literal('')),
     payments: z.array(orderPaymentSchema).max(50).optional(),
@@ -848,6 +994,24 @@ export const orderSchema = z
           path: ['appointmentDate'],
           message: 'Fecha de atención debe ser ≥ fecha de orden',
         });
+    }
+    if (val.type === 'cashea') {
+      if (val.casheaFirstInstallmentAmount == null) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['casheaFirstInstallmentAmount'],
+          message: 'Ingresá el monto de la primera cuota',
+        });
+      } else if (
+        typeof val.priceAmount === 'number' &&
+        val.casheaFirstInstallmentAmount > val.priceAmount
+      ) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['casheaFirstInstallmentAmount'],
+          message: 'La primera cuota no puede superar el precio total',
+        });
+      }
     }
     if (val.useFixedRate) {
       if (val.type !== 'insurance') {

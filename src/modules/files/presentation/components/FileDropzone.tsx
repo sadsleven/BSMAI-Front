@@ -24,6 +24,7 @@ export function FileDropzone({
   accept,
   multiple = true,
   disabled = false,
+  readOnly = false,
   maxSizeBytes = MAX_UPLOAD_SIZE_BYTES,
   onChange,
 }: {
@@ -33,6 +34,8 @@ export function FileDropzone({
   accept?: string;
   multiple?: boolean;
   disabled?: boolean;
+  /** Vista de sólo lectura: oculta el dropzone y el botón de eliminar; sólo abrir. */
+  readOnly?: boolean;
   maxSizeBytes?: number;
   onChange?: (files: UploadedFile[]) => void;
 }) {
@@ -125,36 +128,44 @@ export function FileDropzone({
 
   return (
     <div className="space-y-2">
-      <label
-        className={`flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border p-6 transition-colors ${
-          disabled
-            ? 'opacity-50 cursor-not-allowed'
-            : 'cursor-pointer hover:bg-muted/40'
-        }`}
-        onDragOver={(e) => {
-          if (!disabled) e.preventDefault();
-        }}
-        onDrop={(e) => {
-          if (disabled) return;
-          e.preventDefault();
-          void handleFiles(e.dataTransfer.files);
-        }}
-      >
-        <Upload className="w-6 h-6 text-muted-foreground" />
-        <span className="text-sm">Arrastrá o haz click para subir</span>
-        <span className="text-xs text-muted-foreground">
-          Máximo {formatBytes(maxSizeBytes)} por archivo
-        </span>
-        <input
-          ref={inputRef}
-          type="file"
-          multiple={multiple}
-          accept={accept}
-          disabled={disabled}
-          className="hidden"
-          onChange={(e) => void handleFiles(e.target.files)}
-        />
-      </label>
+      {!readOnly && (
+        <label
+          className={`flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border p-6 transition-colors ${
+            disabled
+              ? 'opacity-50 cursor-not-allowed'
+              : 'cursor-pointer hover:bg-muted/40'
+          }`}
+          onDragOver={(e) => {
+            if (!disabled) e.preventDefault();
+          }}
+          onDrop={(e) => {
+            if (disabled) return;
+            e.preventDefault();
+            void handleFiles(e.dataTransfer.files);
+          }}
+        >
+          <Upload className="w-6 h-6 text-muted-foreground" />
+          <span className="text-sm">Arrastrá o haz click para subir</span>
+          <span className="text-xs text-muted-foreground">
+            Máximo {formatBytes(maxSizeBytes)} por archivo
+          </span>
+          <input
+            ref={inputRef}
+            type="file"
+            multiple={multiple}
+            accept={accept}
+            disabled={disabled}
+            className="hidden"
+            onChange={(e) => void handleFiles(e.target.files)}
+          />
+        </label>
+      )}
+
+      {readOnly && !loading && files.length === 0 && (
+        <p className="text-xs text-muted-foreground italic">
+          Sin archivos adjuntos.
+        </p>
+      )}
 
       {(loading || files.length > 0 || pending.length > 0) && (
         <ul className="space-y-1.5 mt-2">
@@ -212,7 +223,7 @@ export function FileDropzone({
                   <Eye className="w-3.5 h-3.5" />
                 )}
               </button>
-              {!disabled && (
+              {!disabled && !readOnly && (
                 <button
                   type="button"
                   onClick={() => void onRemove(f.id)}

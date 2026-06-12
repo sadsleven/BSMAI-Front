@@ -35,7 +35,6 @@ import {
   LineChart,
   PiggyBank,
   Settings,
-  BookOpen,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -79,11 +78,14 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
     navigate('/login', { replace: true });
   };
 
+  // Proveedores (doctor/centro) no ven Inicio — el dashboard redirige a /orders.
+  const isProvider = !!user?.providerLink;
+
   const sections: NavSection[] = [
     {
       title: 'Principal',
       items: [
-        { icon: Home, label: 'Inicio', href: '/', show: true },
+        { icon: Home, label: 'Inicio', href: '/', show: !isProvider },
         {
           icon: ClipboardList,
           label: 'Órdenes',
@@ -134,12 +136,12 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
         },
       ],
     },
-    {
+    /*{
       title: 'Guías',
       items: [
         { icon: BookOpen, label: 'Guía del sistema', href: '/guide', show: true },
       ],
-    },
+    },*/
     {
       title: 'Catálogos',
       items: [
@@ -239,6 +241,12 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
           show: has(PERMISSIONS.REPORTS.COLLECTIONS_LIST),
         },
         {
+          icon: Wallet,
+          label: 'Dinero por cuenta',
+          href: '/reports/payment-account-inflows',
+          show: has(PERMISSIONS.REPORTS.PAYMENT_ACCOUNT_INFLOWS_LIST),
+        },
+        {
           icon: ArrowUpCircle,
           label: 'Pagos emitidos',
           href: '/reports/disbursements',
@@ -278,6 +286,12 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
           label: 'Sucursales',
           href: '/branches',
           show: has(PERMISSIONS.BRANCHES.LIST),
+        },
+        {
+          icon: Wallet,
+          label: 'Cuentas de pago',
+          href: '/payment-accounts',
+          show: has(PERMISSIONS.PAYMENT_ACCOUNTS.LIST),
         },
         {
           icon: TrendingUp,

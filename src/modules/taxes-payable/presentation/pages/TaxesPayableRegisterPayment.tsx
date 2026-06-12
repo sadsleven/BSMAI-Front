@@ -14,14 +14,14 @@ import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { getHttpErrorMessage } from '@/lib/api';
 import { formatMoney } from '@/lib/format/money';
-import { orderPaymentSchema, type OrderPaymentValues } from '@/lib/validations/schemas';
+import { egressPaymentSchema, type OrderPaymentValues } from '@/lib/validations/schemas';
 import {
   OrderPaymentForm,
   paymentInBs,
   type PaymentItemErrors,
 } from '@/modules/orders/presentation/components/OrderPaymentForm';
-import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
 import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchangeRate';
+import { UsdRateSelect } from '@/modules/exchange-rates/presentation/components/UsdRateSelect';
 import { taxesPayableGateway } from '../../infrastructure/taxesPayableGateway';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -38,7 +38,7 @@ import {
 } from '@/modules/orders/domain/models/order';
 
 const registerPaymentSchema = z.object({
-  payments: z.array(orderPaymentSchema).min(1, 'Registrá al menos un pago'),
+  payments: z.array(egressPaymentSchema).min(1, 'Registrá al menos un pago'),
 });
 type RegisterPaymentValues = z.infer<typeof registerPaymentSchema>;
 
@@ -65,7 +65,6 @@ export function TaxesPayableRegisterPayment() {
 
   const [accounts, setAccounts] = useState<TaxPayable[]>([]);
   const [loading, setLoading] = useState(true);
-  const [usdRate, setUsdRate] = useState<ExchangeRate | null>(null);
   const [eurRatesById, setEurRatesById] = useState<Record<string, ExchangeRate>>({});
 
   const methods = useForm<RegisterPaymentValues>({
@@ -75,15 +74,26 @@ export function TaxesPayableRegisterPayment() {
   });
   const { handleSubmit, formState, control, setValue, getValues } = methods;
 
-  useEffect(() => {
-    if (initialIds.length === 0) {
-      notify.warning('No hay cuentas seleccionadas');
-      navigate('/taxes-payable', { replace: true });
-    }
-  }, [initialIds, navigate]);
+  // La conversión USD→Bs usa la tasa de facturación de la orden (igual que el
+  // backend). El impuesto está denominado en Bs; la tasa no es editable.
+  const usdRate = useMemo<ExchangeRate | null>(() => {
+    const fr = accounts[0]?.orders?.[0]?.billingExchangeRate;
+    if (!fr) return null;
+    return {
+      id: fr.id,
+      currency: fr.currency,
+      amountBs: String(fr.amountBs),
+      effectiveDate: fr.effectiveDate,
+      isActive: true,
+    };
+  }, [accounts]);
 
   const load = useCallback(async () => {
-    if (taxPayableIds.length === 0) return;
+    if (taxPayableIds.length === 0) {
+      setAccounts([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const items = await Promise.all(
@@ -117,15 +127,13 @@ export function TaxesPayableRegisterPayment() {
   }, [accounts]);
 
   useEffect(() => {
-    if (!recipient) {
-      setCandidates([]);
-      return;
-    }
     let cancelled = false;
     (async () => {
       try {
         const res = await taxesPayableGateway.list({
-          [recipient.kind === 'doctor' ? 'doctorId' : 'careCenterId']: recipient.id,
+          ...(recipient
+            ? { [recipient.kind === 'doctor' ? 'doctorId' : 'careCenterId']: recipient.id }
+            : {}),
           limit: 100,
           sortBy: 'createdAt',
           sortDir: 'DESC',
@@ -170,21 +178,6 @@ export function TaxesPayableRegisterPayment() {
     }
     setTaxPayableIds((prev) => prev.filter((x) => x !== id));
   };
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const rate = await exchangeRateGateway.getCurrent('USD');
-        if (!cancelled) setUsdRate(rate);
-      } catch {
-        if (!cancelled) setUsdRate(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const grouping = useMemo(() => {
     const doctorIds = new Set(accounts.map((a) => a.doctorId).filter(Boolean));
@@ -255,6 +248,9 @@ export function TaxesPayableRegisterPayment() {
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchedPayments, usdRate, eurRatesById]);
+  // Diferencia en vivo: el target es Bs y cada pago se convierte a Bs con su
+  // propia tasa, así que el faltante en Bs es exacto aunque mezclen tasas.
+  const liveRemainingBs = totals.totalPending - totalPaymentsBs;
 
   const onSubmit = async (values: RegisterPaymentValues) => {
     if (!grouping.ok) {
@@ -282,7 +278,7 @@ export function TaxesPayableRegisterPayment() {
     }
   };
 
-  if (loading || accounts.length === 0) {
+  if (loading) {
     return (
       <div className="max-w-4xl mx-auto p-6 text-sm text-muted-foreground">
         Cargando cuentas...
@@ -335,7 +331,7 @@ export function TaxesPayableRegisterPayment() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    disabled={!recipient}
+                    disabled={accounts.length > 0 && !recipient}
                   >
                     <Plus className="w-3.5 h-3.5 mr-1" />
                     Agregar cuentas
@@ -364,7 +360,9 @@ export function TaxesPayableRegisterPayment() {
                   <div className="max-h-72 overflow-y-auto py-1">
                     {eligibleCandidates.length === 0 ? (
                       <p className="px-3 py-4 text-xs text-muted-foreground text-center">
-                        Sin cuentas disponibles para este destinatario.
+                        {recipient
+                          ? 'Sin cuentas disponibles para este destinatario.'
+                          : 'No hay retenciones por pagar disponibles.'}
                       </p>
                     ) : (
                       eligibleCandidates.map((c) => {
@@ -472,16 +470,25 @@ export function TaxesPayableRegisterPayment() {
                   Diferencia
                 </div>
                 <div className="text-lg font-semibold flex items-center gap-2">
-                  {totals.totalPending <= 0.01 ? (
+                  {Math.abs(liveRemainingBs) <= 0.01 ? (
                     <Badge variant="default" className="bg-success text-white">
                       Cuadrado
                     </Badge>
+                  ) : liveRemainingBs < 0 ? (
+                    <Badge variant="default" className="bg-brand-blue text-white">
+                      Excede {formatMoney(Math.abs(liveRemainingBs))} Bs.
+                    </Badge>
                   ) : (
                     <Badge variant="default" className="bg-warning text-white">
-                      Faltan {formatMoney(totals.totalPending)} Bs.
+                      Faltan {formatMoney(liveRemainingBs)} Bs.
                     </Badge>
                   )}
                 </div>
+                {Math.abs(liveRemainingBs) > 0.01 ? (
+                  <div className="text-[11px] text-muted-foreground">
+                    Incluye los pagos cargados abajo.
+                  </div>
+                ) : null}
               </div>
             </div>
           </FormSection>
@@ -529,6 +536,7 @@ export function TaxesPayableRegisterPayment() {
                     errors={paymentsErrors}
                     hideAddButtons
                     onRemovePayment={removePaymentAt}
+                    usePaymentAccount={false}
                   />
                 );
               }}
@@ -554,12 +562,14 @@ export function TaxesPayableRegisterPayment() {
                   <div className="text-xs text-muted-foreground">Total pagos</div>
                   <div className="font-mono">{formatMoney(totalPaymentsBs)} Bs.</div>
                 </div>
-                <div className="rounded-md border p-2 bg-muted/30">
-                  <div className="text-xs text-muted-foreground">Tasa USD</div>
-                  <div className="font-mono">
-                    1 USD = {formatMoney(usdRate.amountBs)} Bs.
-                  </div>
-                </div>
+                <UsdRateSelect
+                  rates={usdRate ? [usdRate] : []}
+                  selectedId={usdRate?.id ?? ''}
+                  onSelect={() => {}}
+                  disabled
+                  label="Tasa de facturación"
+                  lockNote="Tasa de la orden — el impuesto está en Bs."
+                />
               </div>
             ) : (
               <p className="mt-4 text-xs italic text-muted-foreground">

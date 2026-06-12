@@ -22,7 +22,7 @@ import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { getHttpErrorMessage } from '@/lib/api';
 import { formatMoney } from '@/lib/format/money';
-import { orderPaymentSchema, type OrderPaymentValues } from '@/lib/validations/schemas';
+import { egressPaymentSchema, type OrderPaymentValues } from '@/lib/validations/schemas';
 import {
   OrderPaymentForm,
   paymentInBs,
@@ -31,13 +31,14 @@ import {
   type PaymentLockedFields,
   type PaymentMethodInfo,
 } from '@/modules/orders/presentation/components/OrderPaymentForm';
-import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
 import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchangeRate';
+import { UsdRateSelect } from '@/modules/exchange-rates/presentation/components/UsdRateSelect';
 import { accountsPayableGateway } from '../../infrastructure/accountsPayableGateway';
 import { Badge } from '@/components/ui/badge';
 import {
   amountToReceiveUsd,
   canSelectForPayment,
+  groupPaidBs,
   paidUsd,
   pendingUsd,
   recipientName,
@@ -57,7 +58,7 @@ import type { CareCenterPaymentMethod } from '@/modules/care-centers/domain/mode
 import type { Bank } from '@/modules/banks/domain/models/bank';
 
 const registerPaymentSchema = z.object({
-  payments: z.array(orderPaymentSchema).min(1, 'Registrá al menos un pago'),
+  payments: z.array(egressPaymentSchema).min(1, 'Registrá al menos un pago'),
 });
 type RegisterPaymentValues = z.infer<typeof registerPaymentSchema>;
 
@@ -86,7 +87,6 @@ export function AccountsPayableRegisterPayment() {
 
   const [accounts, setAccounts] = useState<AccountsPayable[]>([]);
   const [loading, setLoading] = useState(true);
-  const [usdRate, setUsdRate] = useState<ExchangeRate | null>(null);
   const [eurRatesById, setEurRatesById] = useState<Record<string, ExchangeRate>>({});
   const [savedMethods, setSavedMethods] = useState<SavedPaymentMethod[]>([]);
   const [banks, setBanks] = useState<Bank[]>([]);
@@ -105,15 +105,26 @@ export function AccountsPayableRegisterPayment() {
   });
   const { handleSubmit, formState, control, setValue, getValues } = methods;
 
-  useEffect(() => {
-    if (initialIds.length === 0) {
-      notify.warning('No hay cuentas seleccionadas');
-      navigate('/accounts-payable', { replace: true });
-    }
-  }, [initialIds, navigate]);
+  // La conversión USD→Bs usa la tasa de FACTURACIÓN de la orden (igual que el
+  // backend): el neto al proveedor está denominado por esa tasa. No es editable.
+  const usdRate = useMemo<ExchangeRate | null>(() => {
+    const fr = accounts[0]?.order?.billingExchangeRate;
+    if (!fr) return null;
+    return {
+      id: fr.id,
+      currency: fr.currency,
+      amountBs: String(fr.amountBs),
+      effectiveDate: fr.effectiveDate,
+      isActive: true,
+    };
+  }, [accounts]);
 
   const load = useCallback(async () => {
-    if (payableIds.length === 0) return;
+    if (payableIds.length === 0) {
+      setAccounts([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const items = await Promise.all(
@@ -154,15 +165,13 @@ export function AccountsPayableRegisterPayment() {
   }, [accounts]);
 
   useEffect(() => {
-    if (!recipient) {
-      setCandidates([]);
-      return;
-    }
     let cancelled = false;
     (async () => {
       try {
         const res = await accountsPayableGateway.list({
-          [recipient.kind === 'doctor' ? 'doctorId' : 'careCenterId']: recipient.id,
+          ...(recipient
+            ? { [recipient.kind === 'doctor' ? 'doctorId' : 'careCenterId']: recipient.id }
+            : {}),
           limit: 100,
           sortBy: 'createdAt',
           sortDir: 'DESC',
@@ -271,21 +280,6 @@ export function AccountsPayableRegisterPayment() {
     },
     [bankName],
   );
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const rate = await exchangeRateGateway.getCurrent('USD');
-        if (!cancelled) setUsdRate(rate);
-      } catch {
-        if (!cancelled) setUsdRate(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const grouping = useMemo(() => {
     const doctorIds = new Set(accounts.map((a) => a.doctorId).filter(Boolean));
@@ -406,19 +400,46 @@ export function AccountsPayableRegisterPayment() {
    * el NETO; el monto retenido se entrega al SENIAT vía `taxes_payable`.
    */
   const retentionPreview = useMemo(() => {
-    const usdBs = Number(usdRate?.amountBs ?? 0);
     const utBs = Number(taxUnit?.amountBs ?? 0);
-    if (!usdBs || usdBs <= 0 || !utBs || utBs <= 0 || !personType) return null;
+    if (!utBs || utBs <= 0 || !personType || accounts.length === 0) return null;
+    // Bruto Bs con la tasa de FACTURACIÓN de cada orden (igual que el backend),
+    // no la tasa seleccionable. Así el neto mostrado coincide con el validado.
+    let totalGrossBs = 0;
+    let missingRate = false;
+    for (const a of accounts) {
+      const amt = amountToReceiveUsd(a);
+      const rateBs = Number(
+        a.order?.billingExchangeRate?.amountBs ?? usdRate?.amountBs ?? 0,
+      );
+      if (amt === null || !rateBs || rateBs <= 0) {
+        missingRate = true;
+        continue;
+      }
+      totalGrossBs += Math.round(amt * rateBs * 100) / 100;
+    }
+    totalGrossBs = Math.round(totalGrossBs * 100) / 100;
+    if (missingRate || totalGrossBs <= 0) return null;
     const totalGrossUsd = totals.totalToReceive;
-    const totalGrossBs = Math.round(totalGrossUsd * usdBs * 100) / 100;
     const r = calcRetention({ grossBs: totalGrossBs, personType, taxUnitBs: utBs });
     const netBs = Math.round((totalGrossBs - r.taxAmountBs) * 100) / 100;
     return { totalGrossUsd, totalGrossBs, netBs, retention: r };
-  }, [usdRate, taxUnit, personType, totals.totalToReceive]);
+  }, [accounts, usdRate, taxUnit, personType, totals.totalToReceive]);
 
-  const paymentsMatchNet =
+  // Acumulación de pagos parciales: previos (Bs) + los que se cargan ahora.
+  const priorPaidBs = useMemo(() => groupPaidBs(accounts), [accounts]);
+  const cumulativeBs = priorPaidBs + totalPaymentsBs;
+  const remainingBs =
+    retentionPreview !== null
+      ? Math.round((retentionPreview.netBs - priorPaidBs) * 100) / 100
+      : 0;
+  const isOver =
+    retentionPreview !== null && cumulativeBs - retentionPreview.netBs > 0.01;
+  const isComplete =
     retentionPreview !== null &&
-    Math.abs(totalPaymentsBs - retentionPreview.netBs) <= 0.01;
+    Math.abs(cumulativeBs - retentionPreview.netBs) <= 0.01;
+  // Permite registrar parcial: basta con cargar monto > 0 sin exceder el neto.
+  const canRegister =
+    retentionPreview !== null && totalPaymentsBs > 0.01 && !isOver;
 
   const onSubmit = async (values: RegisterPaymentValues) => {
     if (!grouping.ok) {
@@ -439,7 +460,11 @@ export function AccountsPayableRegisterPayment() {
           amountValue: p.amountValue,
         })),
       });
-      notify.success(`Pago registrado en ${accounts.length} cuenta(s)`);
+      notify.success(
+        isComplete
+          ? `Pago registrado en ${accounts.length} cuenta(s)`
+          : `Pago parcial registrado en ${accounts.length} cuenta(s). La retención se generará al cuadrar el neto.`,
+      );
       navigate('/accounts-payable');
     } catch (err) {
       notify.fromError(err, 'No se pudo registrar el pago');
@@ -490,7 +515,7 @@ export function AccountsPayableRegisterPayment() {
 
           <FormSection
             title="Cuentas seleccionadas"
-            description="Resumen de los montos USD a saldar."
+            description="Bruto, retención de ISLR (Decreto 1.808) y el neto exacto a pagar al proveedor."
           >
             <div className="flex justify-end mb-2">
               <Popover open={candidatesOpen} onOpenChange={setCandidatesOpen}>
@@ -499,7 +524,7 @@ export function AccountsPayableRegisterPayment() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    disabled={!recipient}
+                    disabled={accounts.length > 0 && !recipient}
                   >
                     <Plus className="w-3.5 h-3.5 mr-1" />
                     Agregar cuentas
@@ -528,7 +553,9 @@ export function AccountsPayableRegisterPayment() {
                   <div className="max-h-72 overflow-y-auto py-1">
                     {eligibleCandidates.length === 0 ? (
                       <p className="px-3 py-4 text-xs text-muted-foreground text-center">
-                        Sin cuentas disponibles para este destinatario.
+                        {recipient
+                          ? 'Sin cuentas disponibles para este destinatario.'
+                          : 'No hay cuentas por pagar disponibles.'}
                       </p>
                     ) : (
                       eligibleCandidates.map((c) => {
@@ -606,53 +633,158 @@ export function AccountsPayableRegisterPayment() {
               })}
             </ul>
             <div className="border-t pt-3 mt-1 flex items-center justify-between text-sm font-semibold">
-              <span>Total a pagar</span>
+              <span>Bruto a facturar</span>
               <span className="font-mono">{formatMoney(totals.totalToReceive)} USD</span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 pt-3 border-t">
-              <div className="space-y-1">
-                <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
-                  Total a pagar
+            {/* Retención de ISLR + neto exacto a pagar, integrado en esta card */}
+            {!taxUnit ? (
+              <p className="mt-4 text-sm text-destructive">
+                No hay Unidad Tributaria vigente. Cargá una en{' '}
+                <a href="/tax-units" className="underline">
+                  /tax-units
+                </a>{' '}
+                antes de registrar el pago.
+              </p>
+            ) : !retentionPreview || !personType ? (
+              <p className="mt-4 text-sm text-muted-foreground">
+                Cargando datos del proveedor para calcular la retención…
+              </p>
+            ) : (
+              <div className="mt-4 pt-4 border-t space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+                    Retención de ISLR (Decreto 1.808)
+                  </div>
+                  {usdRate ? (
+                    <div className="text-[11px] font-mono text-muted-foreground">
+                      1 USD = {formatMoney(usdRate.amountBs)} Bs.
+                    </div>
+                  ) : null}
                 </div>
-                <div className="text-lg font-semibold">
-                  {formatMoney(totals.totalToReceive)} USD
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                  <div className="rounded-md border p-2 bg-muted/30">
+                    <div className="text-[11px] text-muted-foreground">Régimen</div>
+                    <div className="font-medium">
+                      {personType === 'legal_entity'
+                        ? 'Persona Jurídica (5%)'
+                        : 'Persona Natural (3%)'}
+                    </div>
+                  </div>
+                  <div className="rounded-md border p-2 bg-muted/30">
+                    <div className="text-[11px] text-muted-foreground">UT vigente</div>
+                    <div className="font-mono">Bs. {formatMoney(taxUnit.amountBs)}</div>
+                  </div>
+                  <div className="rounded-md border p-2 bg-muted/30">
+                    <div className="text-[11px] text-muted-foreground">Rebaja fija</div>
+                    <div className="font-mono">
+                      {formatMoney(retentionPreview.retention.subtrahendBs)} Bs.
+                    </div>
+                  </div>
+                  <div className="rounded-md border p-2 bg-muted/30">
+                    <div className="text-[11px] text-muted-foreground">Mínimo exento</div>
+                    <div className="font-mono">
+                      {formatMoney(retentionPreview.retention.thresholdBs)} Bs.
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="space-y-1">
-                <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
-                  Ya pagado
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="rounded-md border p-3 bg-muted/30">
+                    <div className="text-[11px] text-muted-foreground uppercase tracking-[0.06em]">
+                      Bruto a facturar
+                    </div>
+                    <div className="text-lg font-semibold font-mono">
+                      {formatMoney(retentionPreview.totalGrossBs)} Bs.
+                    </div>
+                    <div className="text-[11px] text-muted-foreground font-mono">
+                      ({formatMoney(retentionPreview.totalGrossUsd)} USD)
+                    </div>
+                  </div>
+                  <div className="rounded-md border p-3 bg-warning-soft text-warning-strong">
+                    <div className="text-[11px] uppercase tracking-[0.06em]">
+                      Retención al SENIAT
+                    </div>
+                    <div className="text-lg font-semibold font-mono">
+                      {formatMoney(retentionPreview.retention.taxAmountBs)} Bs.
+                    </div>
+                    <div className="text-[11px] font-mono">
+                      tasa{' '}
+                      {formatMoney(retentionPreview.retention.taxRate * 100, {
+                        decimals: 0,
+                      })}
+                      %
+                      {retentionPreview.retention.belowThreshold
+                        ? ' · bajo umbral'
+                        : retentionPreview.retention.subtrahendBs > 0
+                          ? ` − ${formatMoney(retentionPreview.retention.subtrahendBs)} Bs.`
+                          : ''}
+                    </div>
+                  </div>
+                  <div className="rounded-md border-2 border-success p-3 bg-success-soft text-success-strong">
+                    <div className="text-[11px] uppercase tracking-[0.06em] font-semibold">
+                      A pagar al proveedor (neto)
+                    </div>
+                    <div className="text-2xl font-bold font-mono leading-tight">
+                      {formatMoney(retentionPreview.netBs)} Bs.
+                    </div>
+                    <div className="text-[11px] font-mono">= bruto − retención</div>
+                  </div>
                 </div>
-                <div className="text-lg font-semibold">
-                  {formatMoney(totals.totalPaid)} USD
-                </div>
-              </div>
-              <div className="space-y-1">
-                <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
-                  Diferencia
-                </div>
-                <div className="text-lg font-semibold flex items-center gap-2">
-                  {totals.totalPending <= 0.01 ? (
-                    <Badge variant="default" className="bg-success text-white">
-                      Cuadrado
+
+                {priorPaidBs > 0.01 ? (
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="flex items-center justify-between rounded-md border p-2 bg-muted/20">
+                      <span className="text-muted-foreground">
+                        Ya pagado (parcial)
+                      </span>
+                      <span className="font-mono">
+                        {formatMoney(priorPaidBs)} Bs.
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-md border p-2 bg-muted/20">
+                      <span className="text-muted-foreground">Falta del neto</span>
+                      <span className="font-mono">
+                        {formatMoney(Math.max(0, remainingBs))} Bs.
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="rounded-md border p-3 flex items-center justify-between text-sm gap-3">
+                  <div>
+                    <div className="text-[11px] text-muted-foreground uppercase tracking-[0.06em]">
+                      Validación
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Podés pagar parcial. La retención al SENIAT se genera sólo al
+                      cuadrar el neto.
+                    </div>
+                    <div className="text-[11px] text-muted-foreground font-mono mt-0.5">
+                      Acumulado {formatMoney(cumulativeBs)} / neto{' '}
+                      {formatMoney(retentionPreview.netBs)} Bs.
+                    </div>
+                  </div>
+                  {isComplete ? (
+                    <Badge className="bg-success text-white shrink-0">Cuadrado</Badge>
+                  ) : isOver ? (
+                    <Badge className="bg-destructive text-white shrink-0">
+                      Excede {formatMoney(cumulativeBs - retentionPreview.netBs)} Bs.
+                    </Badge>
+                  ) : totalPaymentsBs > 0.01 ? (
+                    <Badge className="bg-brand-blue text-white shrink-0">
+                      Parcial · falta{' '}
+                      {formatMoney(retentionPreview.netBs - cumulativeBs)} Bs.
                     </Badge>
                   ) : (
-                    <Badge variant="default" className="bg-warning text-white">
-                      Faltan {formatMoney(totals.totalPending)} USD
+                    <Badge className="bg-warning text-white shrink-0">
+                      Falta {formatMoney(Math.max(0, remainingBs))} Bs.
                     </Badge>
                   )}
                 </div>
-                {totals.totalPending > 0.01 && usdRate ? (
-                  <div className="text-xs text-muted-foreground">
-                    Faltan{' '}
-                    <span className="font-mono">
-                      Bs{' '}
-                      {formatMoney(totals.totalPending * Number(usdRate.amountBs))}
-                    </span>
-                  </div>
-                ) : null}
               </div>
-            </div>
+            )}
           </FormSection>
 
           <FormSection
@@ -742,6 +874,7 @@ export function AccountsPayableRegisterPayment() {
                     lockedFields={lockedFields}
                     methodInfo={snapshots}
                     onRemovePayment={removePaymentAt}
+                    usePaymentAccount={false}
                   />
                 );
               }}
@@ -772,127 +905,19 @@ export function AccountsPayableRegisterPayment() {
                     </span>
                   </div>
                 </div>
-                <div className="rounded-md border p-2 bg-muted/30">
-                  <div className="text-xs text-muted-foreground">Tasa USD</div>
-                  <div className="font-mono">
-                    1 USD = {formatMoney(usdRate.amountBs)} Bs.
-                  </div>
-                </div>
+                <UsdRateSelect
+                  rates={usdRate ? [usdRate] : []}
+                  selectedId={usdRate?.id ?? ''}
+                  onSelect={() => {}}
+                  disabled
+                  label="Tasa de facturación"
+                  lockNote="Tasa de la orden — define el neto en Bs."
+                />
               </div>
             ) : (
               <p className="mt-4 text-xs italic text-muted-foreground">
                 Sin tasa USD activa: registrá una en /exchange-rates antes de continuar.
               </p>
-            )}
-          </FormSection>
-
-          <FormSection
-            title="Retención de ISLR (Decreto 1.808)"
-            description="Cálculo SENIAT sobre el bruto del lote. El proveedor recibe el neto; lo retenido genera un impuesto por pagar al SENIAT."
-          >
-            {!taxUnit ? (
-              <p className="text-sm text-destructive">
-                No hay Unidad Tributaria vigente. Cargá una en{' '}
-                <a href="/tax-units" className="underline">
-                  /tax-units
-                </a>{' '}
-                antes de registrar el pago.
-              </p>
-            ) : !retentionPreview || !personType ? (
-              <p className="text-sm text-muted-foreground">
-                Cargando datos del proveedor para calcular la retención…
-              </p>
-            ) : (
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-                  <div className="rounded-md border p-2 bg-muted/30">
-                    <div className="text-[11px] text-muted-foreground">Régimen</div>
-                    <div className="font-medium">
-                      {personType === 'legal_entity'
-                        ? 'Persona Jurídica (5%)'
-                        : 'Persona Natural (3%)'}
-                    </div>
-                  </div>
-                  <div className="rounded-md border p-2 bg-muted/30">
-                    <div className="text-[11px] text-muted-foreground">UT vigente</div>
-                    <div className="font-mono">
-                      Bs. {formatMoney(taxUnit.amountBs)}
-                    </div>
-                  </div>
-                  <div className="rounded-md border p-2 bg-muted/30">
-                    <div className="text-[11px] text-muted-foreground">Sustraendo</div>
-                    <div className="font-mono">
-                      {formatMoney(retentionPreview.retention.subtrahendBs)} Bs.
-                    </div>
-                  </div>
-                  <div className="rounded-md border p-2 bg-muted/30">
-                    <div className="text-[11px] text-muted-foreground">Umbral PNR</div>
-                    <div className="font-mono">
-                      {formatMoney(retentionPreview.retention.thresholdBs)} Bs.
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="rounded-md border p-3 bg-muted/30">
-                    <div className="text-[11px] text-muted-foreground uppercase tracking-[0.06em]">
-                      Bruto a facturar
-                    </div>
-                    <div className="text-lg font-semibold font-mono">
-                      {formatMoney(retentionPreview.totalGrossBs)} Bs.
-                    </div>
-                    <div className="text-[11px] text-muted-foreground font-mono">
-                      ({formatMoney(retentionPreview.totalGrossUsd)} USD)
-                    </div>
-                  </div>
-                  <div className="rounded-md border p-3 bg-warning-soft text-warning-strong">
-                    <div className="text-[11px] uppercase tracking-[0.06em]">
-                      Retención al SENIAT
-                    </div>
-                    <div className="text-lg font-semibold font-mono">
-                      {formatMoney(retentionPreview.retention.taxAmountBs)} Bs.
-                    </div>
-                    <div className="text-[11px] font-mono">
-                      tasa {formatMoney(retentionPreview.retention.taxRate * 100, { decimals: 0 })}%
-                      {retentionPreview.retention.belowThreshold
-                        ? ' · bajo umbral'
-                        : retentionPreview.retention.subtrahendBs > 0
-                          ? ` − ${formatMoney(retentionPreview.retention.subtrahendBs)} Bs.`
-                          : ''}
-                    </div>
-                  </div>
-                  <div className="rounded-md border p-3 bg-success-soft text-success-strong">
-                    <div className="text-[11px] uppercase tracking-[0.06em]">
-                      Neto al proveedor
-                    </div>
-                    <div className="text-lg font-semibold font-mono">
-                      {formatMoney(retentionPreview.netBs)} Bs.
-                    </div>
-                    <div className="text-[11px] font-mono">
-                      = bruto − retención
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-md border p-3 flex items-center justify-between text-sm">
-                  <div>
-                    <div className="text-[11px] text-muted-foreground uppercase tracking-[0.06em]">
-                      Validación
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      La suma de pagos al proveedor debe igualar el neto en Bs.
-                    </div>
-                  </div>
-                  {paymentsMatchNet ? (
-                    <Badge className="bg-success text-white">Cuadrado</Badge>
-                  ) : (
-                    <Badge className="bg-warning text-white">
-                      Diferencia{' '}
-                      {formatMoney(totalPaymentsBs - retentionPreview.netBs)} Bs.
-                    </Badge>
-                  )}
-                </div>
-              </div>
             )}
           </FormSection>
 
@@ -916,10 +941,14 @@ export function AccountsPayableRegisterPayment() {
                   !usdRate ||
                   !taxUnit ||
                   watchedPayments.length === 0 ||
-                  !paymentsMatchNet
+                  !canRegister
                 }
               >
-                {formState.isSubmitting ? 'Guardando…' : 'Registrar pago'}
+                {formState.isSubmitting
+                  ? 'Guardando…'
+                  : isComplete
+                    ? 'Registrar pago'
+                    : 'Registrar pago parcial'}
               </Button>
             </div>
           </div>

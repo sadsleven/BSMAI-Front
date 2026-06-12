@@ -334,7 +334,8 @@ export function PatientForm({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="birthDate" className="text-sm font-medium">
-              Fecha de nacimiento <span className="text-destructive">*</span>
+              Fecha de nacimiento{' '}
+              <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
             </Label>
             <Controller
               name="birthDate"

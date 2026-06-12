@@ -229,9 +229,33 @@ export function OrderDetailBody({
         </DetailSection>
       )}
 
-      {order.otherStudies && (
+      {(order.otherStudies ||
+        (order.providerReports ?? []).some((r) => r.observations)) && (
         <DetailSection title="Informe">
-          <p className="text-sm whitespace-pre-wrap">{order.otherStudies}</p>
+          {order.otherStudies ? (
+            <div className="space-y-1">
+              <div className="text-xs font-medium text-muted-foreground">
+                Nota general
+              </div>
+              <p className="text-sm whitespace-pre-wrap">{order.otherStudies}</p>
+            </div>
+          ) : null}
+          {(order.providerReports ?? [])
+            .filter((r) => r.observations)
+            .map((r) => {
+              const pid = r.providerType === 'doctor' ? r.doctorId : r.careCenterId;
+              const label =
+                providers.find((p) => p.key === `${r.providerType}:${pid}`)?.label ??
+                (r.providerType === 'doctor' ? 'Doctor' : 'Centro');
+              return (
+                <div key={r.id ?? `${r.providerType}:${pid}`} className="space-y-1 mt-3">
+                  <div className="text-xs font-medium text-muted-foreground">
+                    {label}
+                  </div>
+                  <p className="text-sm whitespace-pre-wrap">{r.observations}</p>
+                </div>
+              );
+            })}
         </DetailSection>
       )}
 
