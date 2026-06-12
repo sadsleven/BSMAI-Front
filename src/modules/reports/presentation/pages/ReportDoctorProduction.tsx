@@ -21,11 +21,13 @@ import { SkeletonTableRows } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { accountsPayableGateway } from '@/modules/accounts-payable/infrastructure/accountsPayableGateway';
 import {
-  amountToReceiveUsd,
+  estimatedNetUsd,
   paidUsd,
+  pendingUsd as apPendingUsd,
   recipientName,
   type AccountsPayable,
 } from '@/modules/accounts-payable/domain/models/accountsPayable';
+import { useTaxUnit } from '@/lib/taxes/useTaxUnit';
 import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
@@ -63,6 +65,9 @@ export function ReportDoctorProduction() {
   const [error, setError] = useState<string | null>(null);
   const [overCap, setOverCap] = useState(false);
   const usdRate = useUsdRate();
+  // UT vigente: neto y pendiente descuentan la retención SENIAT estimada.
+  const { taxUnit } = useTaxUnit();
+  const taxUnitBs = taxUnit ? Number(taxUnit.amountBs) : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -129,12 +134,12 @@ export function ReportDoctorProduction() {
       }
       row.accountsCount += 1;
       const gross = Number(ap.providerAmount ?? 0);
-      const net = amountToReceiveUsd(ap) ?? 0;
+      const net = estimatedNetUsd(ap, taxUnitBs) ?? gross;
       const paid = paidUsd(ap);
       row.grossUsd += gross;
       row.netUsd += net;
       row.paidUsd += paid;
-      row.pendingUsd += Math.max(0, net - paid);
+      row.pendingUsd += apPendingUsd(ap, taxUnitBs) ?? 0;
     });
 
     // ordersCount derivado por orderId distintos por proveedor.
@@ -154,7 +159,7 @@ export function ReportDoctorProduction() {
     const s = filters.search.toLowerCase().trim();
     const filtered = s ? result.filter((r) => r.name.toLowerCase().includes(s)) : result;
     return filtered.sort((a, b) => b.grossUsd - a.grossUsd);
-  }, [rows, filters.from, filters.to, filters.providerType, filters.search]);
+  }, [rows, filters.from, filters.to, filters.providerType, filters.search, taxUnitBs]);
 
   const totals = useMemo(() => {
     let gross = 0;

@@ -13,12 +13,14 @@ import {
   amountToReceiveUsd,
   effectiveStatus,
   EFFECTIVE_STATUS_LABEL,
+  estimatedNetUsd,
   paidUsd,
   pendingUsd,
   recipientName,
   type AccountsPayable,
   type EffectiveAccountsPayableStatus,
 } from '../../domain/models/accountsPayable';
+import { useTaxUnit } from '@/lib/taxes/useTaxUnit';
 import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
 import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchangeRate';
 import { PaymentHistoryList } from './PaymentHistoryList';
@@ -72,9 +74,17 @@ export function AccountsPayableDetail({
     };
   }, [accountId, open]);
 
+  const { taxUnit } = useTaxUnit();
+  const taxUnitBs = taxUnit ? Number(taxUnit.amountBs) : null;
+
   const ar = account ? amountToReceiveUsd(account) : null;
   const pd = account ? paidUsd(account) : 0;
-  const pUsd = account ? pendingUsd(account) : null;
+  const pUsd = account ? pendingUsd(account, taxUnitBs) : null;
+  const netUsd = account ? estimatedNetUsd(account, taxUnitBs) : null;
+  const retentionUsd =
+    ar !== null && netUsd !== null && ar - netUsd > 0.005
+      ? Math.round((ar - netUsd) * 100) / 100
+      : null;
   const statusTone = (s: EffectiveAccountsPayableStatus) =>
     s === 'paid'
       ? 'success'
@@ -134,12 +144,35 @@ export function AccountsPayableDetail({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
               <div className="space-y-1">
                 <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
-                  Total a pagar
+                  Total a pagar (bruto)
                 </div>
                 <div className="text-lg font-semibold">
                   {ar !== null ? `${formatMoney(ar)} USD` : '—'}
                 </div>
               </div>
+              {retentionUsd !== null && (
+                <div className="space-y-1">
+                  <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+                    Retención SENIAT
+                  </div>
+                  <div className="text-lg font-semibold">
+                    −{formatMoney(retentionUsd)} USD
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Va al SENIAT como retención por pagar, no al proveedor.
+                  </div>
+                </div>
+              )}
+              {netUsd !== null && (
+                <div className="space-y-1">
+                  <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+                    Neto a entregar
+                  </div>
+                  <div className="text-lg font-semibold">
+                    {formatMoney(netUsd)} USD
+                  </div>
+                </div>
+              )}
               <div className="space-y-1">
                 <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
                   Total pagado
