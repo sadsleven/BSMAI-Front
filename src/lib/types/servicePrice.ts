@@ -10,6 +10,12 @@ export interface ServicePriceRow {
   /** Eager desde BE; opcional para nuevas filas. */
   serviceType?: Pick<ServiceType, 'id' | 'name'>;
   priceUsd: number | string;
+  /**
+   * Clave estable de fila para React (sólo cliente). Las filas nuevas (sin `id`
+   * del BE) la reciben al crearse para evitar remontajes al editar/paginar. Zod la
+   * descarta al validar y `servicePricesToPayload` la ignora; nunca llega al BE.
+   */
+  _rk?: string;
 }
 
 export interface ServicePricePayload {

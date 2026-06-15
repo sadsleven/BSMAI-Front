@@ -56,6 +56,7 @@ import type { Doctor } from '@/modules/doctors/domain/models/doctor';
 import type { CareCenter } from '@/modules/care-centers/domain/models/careCenter';
 import {
   OrderPaymentForm,
+  INCOMING_PAYMENT_TYPES,
   paymentInUsd,
   type PaymentItemErrors,
 } from './OrderPaymentForm';
@@ -1313,6 +1314,7 @@ export function OrderForm({
                     )
                   }
                   errors={paymentsErrors}
+                  allowedTypes={INCOMING_PAYMENT_TYPES}
                 />
               );
             }}

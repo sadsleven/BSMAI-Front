@@ -57,6 +57,7 @@ export function CareCenterEdit() {
       businessName: '',
       email: '',
       rif: '',
+      centerAddress: '',
       phones: [],
       specialtyIds: [],
       paymentMethods: [],
@@ -76,6 +77,7 @@ export function CareCenterEdit() {
           businessName: c.businessName,
           email: c.email ?? '',
           rif: c.rif ?? '',
+          centerAddress: c.centerAddress ?? '',
           phones:
             c.phones?.length > 0
               ? c.phones.map((ph) => ({ number: ph.number, label: ph.label ?? '' }))
@@ -122,6 +124,7 @@ export function CareCenterEdit() {
         businessName: values.businessName,
         email: values.email.trim(),
         rif: values.rif?.trim() || '',
+        centerAddress: values.centerAddress?.trim() ?? '',
         phones: values.phones.map((p) => ({
           number: p.number,
           label: p.label || undefined,

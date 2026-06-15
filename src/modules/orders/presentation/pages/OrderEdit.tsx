@@ -222,7 +222,15 @@ export function OrderEdit() {
     try {
       await orderGateway.update(id, buildDto(values));
       notify.success('Orden actualizada');
-      navigate('/orders');
+      // Tras guardar el Paso 1, avanzar al Paso 2 (Atención). Refresca la orden
+      // para que el paso refleje proveedores/servicios actualizados. Sin permiso
+      // de atención, vuelve al listado.
+      if (canAttention) {
+        await fetchOrder();
+        setCurrentStep('attention');
+      } else {
+        navigate('/orders');
+      }
     } catch (err) {
       notify.fromError(err, 'No se pudo actualizar la orden.');
     }

@@ -12,6 +12,8 @@ export type InsuranceSource = 'direct' | 'via_contractor';
 export type OrderPaymentType =
   | 'mobile_payment'
   | 'bank_transfer'
+  | 'bank_transfer_usd'
+  | 'card'
   | 'cash_usd'
   | 'cash_eur'
   | 'cash_bs'
@@ -291,6 +293,8 @@ export const ORDER_TYPE_LABEL: Record<OrderType, string> = {
 export const PAYMENT_TYPE_LABEL: Record<OrderPaymentType, string> = {
   mobile_payment: 'Pago móvil',
   bank_transfer: 'Transferencia',
+  bank_transfer_usd: 'Transferencia en dólares',
+  card: 'Punto (tarjeta)',
   cash_usd: 'Efectivo dólares',
   cash_eur: 'Efectivo euros',
   cash_bs: 'Efectivo bolívares',

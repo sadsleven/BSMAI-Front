@@ -102,6 +102,22 @@ export function PaymentAccountDetail({
             </DetailSection>
           )}
 
+          {account.type === 'bank_transfer_usd' && (
+            <DetailSection title="Datos de la cuenta (USD)">
+              <DetailRow label="Banco" value={account.bankCode} />
+              <DetailRow label="Número de cuenta" value={account.accountNumber} />
+              <DetailRow label="Titular" value={account.accountHolderName} />
+              <DetailRow label="Cédula/RIF del titular" value={account.idDocument} />
+            </DetailSection>
+          )}
+
+          {account.type === 'card' && (
+            <DetailSection title="Datos del Punto">
+              <DetailRow label="Banco" value={account.bankCode} />
+              <DetailRow label="Titular" value={account.accountHolderName} />
+            </DetailSection>
+          )}
+
           {account.type === 'other' && (
             <DetailSection title="Detalle">
               <DetailRow label="Descripción" value={account.description} />

@@ -33,6 +33,7 @@ export function InsuranceEdit() {
     mode: 'onBlur',
     defaultValues: {
       name: '',
+      shortName: '',
       description: '',
       email: '',
       fiscalAddress: '',
@@ -62,6 +63,7 @@ export function InsuranceEdit() {
         const i = await insuranceGateway.getById(id);
         reset({
           name: i.name,
+          shortName: i.shortName ?? '',
           description: i.description ?? '',
           email: i.email ?? '',
           fiscalAddress: i.fiscalAddress ?? '',
@@ -94,6 +96,7 @@ export function InsuranceEdit() {
     try {
       await insuranceGateway.update(id, {
         name: values.name,
+        shortName: values.shortName?.trim() ?? '',
         description: values.description ?? undefined,
         email: values.email?.trim() || '',
         fiscalAddress: values.fiscalAddress?.trim() ?? '',
@@ -117,7 +120,7 @@ export function InsuranceEdit() {
   }
 
   const invalid = (
-    k: 'name' | 'description' | 'email' | 'fiscalAddress' | 'rif',
+    k: 'name' | 'shortName' | 'description' | 'email' | 'fiscalAddress' | 'rif',
   ) => (errors[k] ? 'border-destructive focus-visible:ring-destructive/30' : '');
 
   const phoneErrors = (
@@ -156,6 +159,23 @@ export function InsuranceEdit() {
                   <p className="text-xs text-destructive flex items-center gap-1 mt-1">
                     <AlertTriangle className="w-3 h-3" />
                     {errors.name.message}
+                  </p>
+                ) : null}
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="shortName" className="text-sm font-medium">
+                  Nombre corto{' '}
+                  <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
+                </Label>
+                <Input
+                  id="shortName"
+                  {...register('shortName')}
+                  className={cn('h-9', invalid('shortName'))}
+                />
+                {errors.shortName ? (
+                  <p className="text-xs text-destructive flex items-center gap-1 mt-1">
+                    <AlertTriangle className="w-3 h-3" />
+                    {errors.shortName.message}
                   </p>
                 ) : null}
               </div>

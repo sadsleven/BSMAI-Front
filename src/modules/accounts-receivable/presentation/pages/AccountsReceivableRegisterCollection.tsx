@@ -17,6 +17,7 @@ import { formatMoney } from '@/lib/format/money';
 import { orderPaymentSchema, type OrderPaymentValues } from '@/lib/validations/schemas';
 import {
   OrderPaymentForm,
+  INCOMING_PAYMENT_TYPES,
   type PaymentItemErrors,
   paymentInBs,
   paymentInUsd,
@@ -618,6 +619,7 @@ export function AccountsReceivableRegisterCollection() {
                       )
                     }
                     errors={paymentsErrors}
+                    allowedTypes={INCOMING_PAYMENT_TYPES}
                   />
                 );
               }}

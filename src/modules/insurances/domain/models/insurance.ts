@@ -9,6 +9,8 @@ export interface InsurancePhone {
 export interface Insurance {
   id: string;
   name: string;
+  /** Nombre corto / abreviatura del seguro. Opcional. */
+  shortName?: string | null;
   description?: string | null;
   email?: string | null;
   fiscalAddress?: string | null;
@@ -24,6 +26,7 @@ export interface Insurance {
 
 export interface CreateInsuranceDto {
   name: string;
+  shortName?: string;
   description?: string;
   email?: string;
   fiscalAddress?: string;

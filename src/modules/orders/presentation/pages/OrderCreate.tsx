@@ -12,6 +12,8 @@ import type { CreateOrderDto } from '../../domain/models/order';
 import { orderSchema, type OrderValues } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
+import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
+import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -69,6 +71,8 @@ function buildDto(values: OrderValues): CreateOrderDto {
 
 export function OrderCreate() {
   const navigate = useNavigate();
+  const { has } = usePermissions();
+  const canAttention = has(PERMISSIONS.ORDERS.STAGE_ATTENTION);
   const [confirmCancel, setConfirmCancel] = useState(false);
 
   const methods = useForm<OrderValues>({
@@ -102,8 +106,13 @@ export function OrderCreate() {
     try {
       const dto = buildDto(values);
       const created = await orderGateway.create(dto);
-      notify.success('Orden creada en borrador.');
-      navigate(`/orders/edit/${created.id}`, { preventScrollReset: true });
+      notify.success('Orden creada.');
+      // Tras crear, avanzar directo al Paso 2 (Atención). Si el usuario no tiene
+      // permiso de atención, queda en el Paso 1 de la orden ya guardada.
+      const target = canAttention
+        ? `/orders/edit/${created.id}?step=attention`
+        : `/orders/edit/${created.id}`;
+      navigate(target, { preventScrollReset: true });
     } catch (err) {
       notify.fromError(err, 'No se pudo crear la orden.');
     }
@@ -125,8 +134,8 @@ export function OrderCreate() {
                 Nueva orden
               </h1>
               <p className="text-sm text-muted-foreground">
-                Paso 1: Registro de la orden. Los pasos posteriores aún no están
-                implementados.
+                Paso 1: Creación de la orden. Al crearla, pasás a la atención del
+                paciente.
               </p>
             </div>
             <button

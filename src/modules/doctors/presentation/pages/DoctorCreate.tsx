@@ -49,6 +49,7 @@ export function DoctorCreate() {
       lastName: '',
       isLegalEntity: false,
       rif: '',
+      centerAddress: '',
       phones: [],
       specialtyIds: [],
       paymentMethods: [],
@@ -70,6 +71,7 @@ export function DoctorCreate() {
         lastName: values.lastName,
         isLegalEntity: values.isLegalEntity,
         rif: values.isLegalEntity ? values.rif || undefined : undefined,
+        centerAddress: values.centerAddress?.trim() || undefined,
         phones: values.phones.map((p) => ({
           number: p.number,
           label: p.label || undefined,

@@ -27,6 +27,9 @@ function toUpdateDto(v: PaymentAccountValues): UpdatePaymentAccountDto {
     out.accountNumber = v.accountNumber?.trim();
     out.accountHolderName = v.accountHolderName?.trim();
     out.idDocument = v.idDocument?.trim();
+  } else if (v.type === 'card') {
+    out.bankCode = v.bankCode?.trim();
+    out.accountHolderName = v.accountHolderName?.trim();
   } else {
     out.description = v.description?.trim();
   }

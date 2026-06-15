@@ -46,6 +46,7 @@ export function CareCenterCreate() {
       businessName: '',
       email: '',
       rif: '',
+      centerAddress: '',
       phones: [],
       specialtyIds: [],
       paymentMethods: [],
@@ -64,6 +65,7 @@ export function CareCenterCreate() {
         businessName: values.businessName,
         email: values.email.trim(),
         rif: values.rif?.trim() || undefined,
+        centerAddress: values.centerAddress?.trim() || undefined,
         phones: values.phones.map((p) => ({
           number: p.number,
           label: p.label || undefined,

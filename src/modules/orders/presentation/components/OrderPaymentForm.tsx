@@ -38,6 +38,23 @@ const ALL_TYPES: OrderPaymentType[] = [
   'other',
 ];
 
+/**
+ * Tipos para pagos ENTRANTES (órdenes contado + cuentas por cobrar). Agrega
+ * `card` (Punto / POS de tarjeta), que sólo aplica a ingresos contra una cuenta
+ * propia. Los flujos de egreso (AP / impuestos) usan `ALL_TYPES` / subconjuntos
+ * propios y NO ofrecen `card`.
+ */
+export const INCOMING_PAYMENT_TYPES: OrderPaymentType[] = [
+  'mobile_payment',
+  'bank_transfer',
+  'bank_transfer_usd',
+  'card',
+  'cash_usd',
+  'cash_eur',
+  'cash_bs',
+  'other',
+];
+
 export type PaymentItemErrors = {
   type?: string;
   paymentDate?: string;
@@ -118,10 +135,16 @@ function defaultsForType(
     accountNumber: '',
     amountValue: 0,
   };
-  if (type === 'mobile_payment' || type === 'bank_transfer' || type === 'cash_bs') {
+  if (
+    type === 'mobile_payment' ||
+    type === 'bank_transfer' ||
+    type === 'card' ||
+    type === 'cash_bs'
+  ) {
     return { ...base, exchangeRateId: usdRateId ?? '', amountCurrency: 'BS' };
   }
-  if (type === 'cash_usd') {
+  if (type === 'cash_usd' || type === 'bank_transfer_usd') {
+    // bank_transfer_usd: cuenta propia en USD, sin tasa (como cash_usd).
     return { ...base, amountCurrency: 'USD' };
   }
   if (type === 'cash_eur') {
@@ -187,7 +210,8 @@ export function OrderPaymentForm({
         p.amountCurrency === 'BS' &&
         (p.type === 'cash_bs' ||
           p.type === 'mobile_payment' ||
-          p.type === 'bank_transfer');
+          p.type === 'bank_transfer' ||
+          p.type === 'card');
       const needsEur = p.amountCurrency === 'EUR' && p.type === 'cash_eur';
       if (needsUsd && usdRate?.id) {
         dirty = true;
@@ -246,6 +270,15 @@ export function OrderPaymentForm({
           {payments.map((p, i) => {
             const err = errors?.[i] ?? {};
             const isMobileOrTransfer = p.type === 'mobile_payment' || p.type === 'bank_transfer';
+            const isCard = p.type === 'card';
+            // Punto se comporta como pago móvil/transferencia: cuenta propia,
+            // referencia, Bs con tasa USD/Bs.
+            const isCardLike = isMobileOrTransfer || isCard;
+            // Transferencia en dólares: cuenta propia + referencia (como cardLike),
+            // pero monto en USD y sin tasa (como cash_usd).
+            const isTransferUsd = p.type === 'bank_transfer_usd';
+            // Tipos que eligen una cuenta de pago propia y snapshotean banco/cuenta.
+            const usesOwnAccount = isCardLike || isTransferUsd;
             const isBs = p.type === 'cash_bs';
             const isUsd = p.type === 'cash_usd';
             const isEur = p.type === 'cash_eur';
@@ -303,7 +336,7 @@ export function OrderPaymentForm({
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {!isUsd && !isOther && !hideExchangeRate ? (
+                  {!isUsd && !isOther && !isTransferUsd && !hideExchangeRate ? (
                     <div className="space-y-1">
                       <Label className="text-xs">Tasa de cambio</Label>
                       <Input
@@ -324,7 +357,7 @@ export function OrderPaymentForm({
                     </div>
                   ) : null}
 
-                  {isMobileOrTransfer && usePaymentAccount ? (
+                  {usesOwnAccount && usePaymentAccount ? (
                     <div className="space-y-1">
                       <Label className="text-xs">Cuenta de pago propia</Label>
                       <PaymentAccountSelect
@@ -341,7 +374,13 @@ export function OrderPaymentForm({
                             accountNumber: account?.accountNumber ?? '',
                           });
                         }}
-                        type={p.type as 'mobile_payment' | 'bank_transfer'}
+                        type={
+                          p.type as
+                            | 'mobile_payment'
+                            | 'bank_transfer'
+                            | 'bank_transfer_usd'
+                            | 'card'
+                        }
                         currentAccount={
                           p.paymentAccountId
                             ? paymentAccountsById[p.paymentAccountId] ?? null
@@ -409,7 +448,7 @@ export function OrderPaymentForm({
                     </div>
                   ) : null}
 
-                  {(isMobileOrTransfer || isOther) ? (
+                  {(isCardLike || isTransferUsd || isOther) ? (
                     <div className="space-y-1">
                       <Label className="text-xs">Referencia</Label>
                       <Input
@@ -446,9 +485,9 @@ export function OrderPaymentForm({
                       onChange={(v) => update(i, { amountValue: v ?? 0 })}
                       disabled={disabled}
                       currencyPrefix={
-                        isBs || isMobileOrTransfer
+                        isBs || isCardLike
                           ? 'Bs.'
-                          : isUsd || isOther
+                          : isUsd || isOther || isTransferUsd
                             ? 'USD'
                             : isEur
                               ? 'EUR'
