@@ -60,11 +60,11 @@ import { OrderCreate } from './modules/orders/presentation/pages/OrderCreate';
 import { OrderEdit } from './modules/orders/presentation/pages/OrderEdit';
 import { OrderDetailPage } from './modules/orders/presentation/pages/OrderDetailPage';
 import { AccountsPayableList } from './modules/accounts-payable/presentation/pages/AccountsPayableList';
-import { AccountsPayableRegisterPayment } from './modules/accounts-payable/presentation/pages/AccountsPayableRegisterPayment';
+import { AccountsPayableBatchPage } from './modules/accounts-payable/presentation/pages/AccountsPayableBatchPage';
 import { AccountsReceivableList } from './modules/accounts-receivable/presentation/pages/AccountsReceivableList';
-import { AccountsReceivableRegisterCollection } from './modules/accounts-receivable/presentation/pages/AccountsReceivableRegisterCollection';
+import { AccountsReceivableBatchPage } from './modules/accounts-receivable/presentation/pages/AccountsReceivableBatchPage';
 import { TaxesPayableList } from './modules/taxes-payable/presentation/pages/TaxesPayableList';
-import { TaxesPayableRegisterPayment } from './modules/taxes-payable/presentation/pages/TaxesPayableRegisterPayment';
+import { TaxesPayableBatchPage } from './modules/taxes-payable/presentation/pages/TaxesPayableBatchPage';
 import { ReportReceivablesList } from './modules/reports/presentation/pages/ReportReceivablesList';
 import { ReportPayablesList } from './modules/reports/presentation/pages/ReportPayablesList';
 import { ReportFinancialSummary } from './modules/reports/presentation/pages/ReportFinancialSummary';
@@ -196,24 +196,18 @@ function App() {
           </Route>
           <Route path="accounts-payable">
             <Route index element={<AccountsPayableList />} />
-            <Route
-              path="register-payment"
-              element={<AccountsPayableRegisterPayment />}
-            />
+            <Route path="new" element={<AccountsPayableBatchPage />} />
+            <Route path=":id" element={<AccountsPayableBatchPage />} />
           </Route>
           <Route path="accounts-receivable">
             <Route index element={<AccountsReceivableList />} />
-            <Route
-              path="register-collection"
-              element={<AccountsReceivableRegisterCollection />}
-            />
+            <Route path="new" element={<AccountsReceivableBatchPage />} />
+            <Route path=":id" element={<AccountsReceivableBatchPage />} />
           </Route>
           <Route path="taxes-payable">
             <Route index element={<TaxesPayableList />} />
-            <Route
-              path="register-payment"
-              element={<TaxesPayableRegisterPayment />}
-            />
+            <Route path="new" element={<TaxesPayableBatchPage />} />
+            <Route path=":id" element={<TaxesPayableBatchPage />} />
           </Route>
           <Route
             path="config"

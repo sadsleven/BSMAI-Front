@@ -7,6 +7,8 @@ type PaymentLike = {
   type:
     | 'mobile_payment'
     | 'bank_transfer'
+    | 'bank_transfer_usd'
+    | 'card'
     | 'cash_usd'
     | 'cash_eur'
     | 'cash_bs'

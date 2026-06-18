@@ -21,46 +21,47 @@ import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
-import { accountsReceivableGateway } from '@/modules/accounts-receivable/infrastructure/accountsReceivableGateway';
-import {
-  STATUS_LABEL,
-  type AccountsReceivable,
-  type AccountsReceivableStatus,
-  collectedUsd,
-  targetUsd,
-  pendingUsd,
-} from '@/modules/accounts-receivable/domain/models/accountsReceivable';
-import { orderGateway } from '@/modules/orders/infrastructure/orderGateway';
-import {
-  holderDisplayId,
-  holderDisplayName,
-  type Order,
-} from '@/modules/orders/domain/models/order';
 import { insuranceGateway } from '@/modules/insurances/infrastructure/insuranceGateway';
 import type { Insurance } from '@/modules/insurances/domain/models/insurance';
 import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
+import { formatUsd, formatBs, formatDate, formatNumber } from '../../domain/format';
 import {
-  formatUsd,
-  formatBs,
-  formatDate,
-  formatNumber,
-  inDateRange,
-} from '../../domain/format';
-import { useUsdRate, usdToBs } from '../../domain/useUsdRate';
-import { formatMoney } from '@/lib/format/money';
-import { REPORT_PAGE_SIZE } from '../../infrastructure/fetchAll';
+  reportsGateway,
+  type ReportReceivableRow,
+  type ReportReceivableSummary,
+  type ReceivableOrderState,
+} from '../../infrastructure/reportsGateway';
 import { getHttpErrorMessage } from '@/lib/api';
 
-const STATUS_TONE: Record<AccountsReceivableStatus, string> = {
-  collected: 'bg-success-soft text-success',
+const STATE_LABEL: Record<ReceivableOrderState, string> = {
+  sin_lote: 'Sin lote',
+  uncollected: 'Por cobrar',
+  partially_collected: 'Cobro parcial',
+  collected: 'Cobrado',
+  overcollected: 'Sobrecobrado',
+};
+
+const STATE_TONE: Record<ReceivableOrderState, string> = {
+  sin_lote: 'bg-muted text-muted-foreground',
   uncollected: 'bg-warning-soft text-warning',
   partially_collected: 'bg-brand-cyan-soft text-brand-blue-strong',
+  collected: 'bg-success-soft text-success',
   overcollected: 'bg-brand-blue-soft text-brand-blue-strong',
 };
 
-const COLUMNS = 16;
+const COLUMNS = 8;
+
+const EMPTY_SUMMARY: ReportReceivableSummary = {
+  count: 0,
+  targetUsd: 0,
+  targetBs: 0,
+  collectedUsd: 0,
+  collectedBs: 0,
+  pendingUsd: 0,
+  pendingBs: 0,
+};
 
 export function ReportReceivablesList() {
   const [sp, setSp] = useSearchParams();
@@ -72,18 +73,16 @@ export function ReportReceivablesList() {
       from: sp.get('from') ?? '',
       to: sp.get('to') ?? '',
       insuranceId: sp.get('insuranceId') ?? '',
-      status: (sp.get('status') ?? '') as '' | AccountsReceivableStatus,
+      status: sp.get('status') ?? '',
     }),
     [sp],
   );
   const [searchInput, setSearchInput] = useState(filters.search);
-  const [rows, setRows] = useState<AccountsReceivable[]>([]);
-  const [ordersIdx, setOrdersIdx] = useState<Record<string, Order>>({});
+  const [rows, setRows] = useState<ReportReceivableRow[]>([]);
+  const [summary, setSummary] = useState<ReportReceivableSummary>(EMPTY_SUMMARY);
   const [insurances, setInsurances] = useState<Insurance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [overCap, setOverCap] = useState(false);
-  const usdRate = useUsdRate();
 
   useEffect(() => {
     let cancelled = false;
@@ -101,42 +100,30 @@ export function ReportReceivablesList() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    Promise.all([
-      accountsReceivableGateway.list({
-        limit: REPORT_PAGE_SIZE,
-        page: 1,
-        insuranceId: filters.insuranceId || undefined,
-        status: filters.status || undefined,
-        sortDir: 'DESC',
-        sortBy: 'createdAt',
-      }),
-      orderGateway.list({ limit: REPORT_PAGE_SIZE, page: 1, sortDir: 'DESC' }),
-    ])
-      .then(([arRes, orderRes]) => {
-        if (cancelled) return;
-        setRows(arRes.data);
-        setOverCap(
-          arRes.metadata.total > REPORT_PAGE_SIZE ||
-            orderRes.metadata.total > REPORT_PAGE_SIZE,
-        );
-        const idx: Record<string, Order> = {};
-        orderRes.data.forEach((o) => {
-          idx[o.id] = o;
+    void (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await reportsGateway.receivables({
+          from: filters.from || undefined,
+          to: filters.to || undefined,
+          insuranceId: filters.insuranceId || undefined,
+          status: filters.status || undefined,
+          search: filters.search || undefined,
         });
-        setOrdersIdx(idx);
-      })
-      .catch((e) => {
+        if (cancelled) return;
+        setRows(res.rows);
+        setSummary(res.summary);
+      } catch (e) {
         if (!cancelled) setError(getHttpErrorMessage(e, 'No se pudo cargar el reporte'));
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setLoading(false);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
-  }, [filters.insuranceId, filters.status]);
+  }, [filters.from, filters.to, filters.insuranceId, filters.status, filters.search]);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -167,62 +154,18 @@ export function ReportReceivablesList() {
     setSp(new URLSearchParams(), { replace: true });
   };
 
-  const enriched = useMemo(() => {
-    const s = filters.search.toLowerCase().trim();
-    return rows
-      .map((ar) => ({ ar, order: ordersIdx[ar.orderId] ?? ar.order }))
-      .filter(({ ar, order }) => {
-        if (!inDateRange(ar.createdAt, filters.from || undefined, filters.to || undefined))
-          return false;
-        if (!s) return true;
-        const blob = [
-          ar.receivableNumber,
-          ar.insurance?.name,
-          order?.orderNumber,
-          holderDisplayName(order?.holder),
-          holderDisplayName(order?.patient),
-          holderDisplayId(order?.holder),
-          holderDisplayId(order?.patient),
-          order?.serviceKey,
-        ]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase();
-        return blob.includes(s);
-      });
-  }, [rows, ordersIdx, filters.search, filters.from, filters.to]);
-
-  const totals = useMemo(() => {
-    let target = 0;
-    let collected = 0;
-    let pending = 0;
-    enriched.forEach(({ ar }) => {
-      const t = targetUsd(ar) ?? 0;
-      const c = collectedUsd(ar);
-      const p = pendingUsd(ar) ?? Math.max(0, t - c);
-      target += t;
-      collected += c;
-      pending += p;
-    });
-    return { target, collected, pending, count: enriched.length };
-  }, [enriched]);
-
   const paged = useMemo(() => {
     const start = (filters.page - 1) * filters.limit;
-    return enriched.slice(start, start + filters.limit);
-  }, [enriched, filters.page, filters.limit]);
-  const lastPage = Math.max(1, Math.ceil(enriched.length / filters.limit));
+    return rows.slice(start, start + filters.limit);
+  }, [rows, filters.page, filters.limit]);
+  const lastPage = Math.max(1, Math.ceil(rows.length / filters.limit));
 
-  const doctorFromOrder = (o?: Order): string => {
-    const d = o?.orderServiceTypes?.find((r) => r.providerType === 'doctor')?.doctor;
-    if (!d) return '—';
-    return `${d.firstName ?? ''} ${d.lastName ?? ''}`.trim() || '—';
-  };
+  const pct = summary.targetUsd > 0 ? (summary.collectedUsd / summary.targetUsd) * 100 : 0;
 
   return (
     <ReportShell
       title="Reporte de cuentas por cobrar"
-      description={`${formatNumber(enriched.length)} cuenta${enriched.length === 1 ? '' : 's'} en el rango filtrado`}
+      description={`${formatNumber(summary.count)} orden${summary.count === 1 ? '' : 'es'} en el rango filtrado`}
       kpis={
         <KpiRow
           items={[
@@ -230,43 +173,41 @@ export function ReportReceivablesList() {
               icon: Wallet,
               tone: 'blue',
               label: 'Total facturado',
-              value: formatUsd(totals.target),
-              hint: 'USD; conversión a Bs vía tasa actual.',
+              value: formatUsd(summary.targetUsd),
+              hint: summary.targetBs > 0 ? `${formatBs(summary.targetBs)} a tasa fija` : 'USD',
             },
             {
               icon: TrendingUp,
               tone: 'success',
               label: 'Total cobrado',
-              value: formatUsd(totals.collected),
-              hint: `${totals.target > 0 ? ((totals.collected / totals.target) * 100).toFixed(1) : '0.0'}% de cobranza`,
+              value: formatUsd(summary.collectedUsd),
+              hint: `${pct.toFixed(1)}% de cobranza (USD)`,
             },
             {
               icon: AlertCircle,
               tone: 'warning',
               label: 'Pendiente por cobrar',
-              value: formatUsd(totals.pending),
+              value: formatUsd(summary.pendingUsd),
+              hint:
+                summary.pendingBs > 0
+                  ? `+ ${formatBs(summary.pendingBs)} (tasa fija) · incluye sin lote`
+                  : 'Incluye órdenes sin lote',
             },
             {
               icon: Coins,
               tone: 'cyan',
-              label: 'Cantidad de cuentas',
-              value: formatNumber(totals.count),
+              label: 'Cantidad de órdenes',
+              value: formatNumber(summary.count),
             },
           ]}
         />
       }
     >
-      {overCap ? (
-        <div className="px-4 py-2 text-xs text-warning border border-warning-soft bg-warning-soft rounded-lg">
-          Mostrando hasta {REPORT_PAGE_SIZE} registros. Aplicá filtros para acotar el reporte.
-        </div>
-      ) : null}
-
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
           searchValue={searchInput}
           onSearchChange={setSearchInput}
-          searchPlaceholder="Buscar por aseguradora, titular, paciente, N° orden…"
+          searchPlaceholder="Buscar por aseguradora, titular, N° orden…"
           hasActiveFilters={hasActiveFilters}
           onClear={clearFilters}
           filters={
@@ -301,14 +242,12 @@ export function ReportReceivablesList() {
                 }
               >
                 <SelectTrigger className="h-9 w-48">
-                  <SelectValue placeholder="Estado" />
+                  <SelectValue placeholder="Tipo de deudor" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Estado: todos</SelectItem>
-                  <SelectItem value="uncollected">{STATUS_LABEL.uncollected}</SelectItem>
-                  <SelectItem value="partially_collected">{STATUS_LABEL.partially_collected}</SelectItem>
-                  <SelectItem value="collected">{STATUS_LABEL.collected}</SelectItem>
-                  <SelectItem value="overcollected">{STATUS_LABEL.overcollected}</SelectItem>
+                  <SelectItem value="all">Deudor: todos</SelectItem>
+                  <SelectItem value="insurance">Solo seguros</SelectItem>
+                  <SelectItem value="holder">Solo titulares</SelectItem>
                 </SelectContent>
               </Select>
             </>
@@ -326,114 +265,71 @@ export function ReportReceivablesList() {
           <TableHeader>
             <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Fecha</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Aseguradora</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Titular</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Paciente</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Médico</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Deudor</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Orden</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Cuenta</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Clave</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Tasa USD/Bs</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Lote</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto USD</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto Bs.</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Cobrado USD</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Cobrado Bs.</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Pendiente USD</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Pendiente Bs.</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Modo</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Estado</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <SkeletonTableRows rows={6} columns={COLUMNS + 1} />
+              <SkeletonTableRows rows={6} columns={COLUMNS} />
             ) : paged.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={COLUMNS + 1} className="p-0">
+                <TableCell colSpan={COLUMNS} className="p-0">
                   <EmptyState
                     icon={Coins}
                     title={hasActiveFilters ? 'Sin resultados' : 'Sin cuentas por cobrar'}
                     description={
                       hasActiveFilters
                         ? 'Ajustá los filtros para ver más resultados.'
-                        : 'Aún no se han generado cuentas por cobrar de aseguradoras.'
+                        : 'Aún no hay órdenes por cobrar.'
                     }
                   />
                 </TableCell>
               </TableRow>
             ) : (
-              paged.map(({ ar, order }) => {
-                const t = targetUsd(ar);
-                const c = collectedUsd(ar);
-                const p = pendingUsd(ar);
-                const rate = order?.billingExchangeRate
-                  ? Number(order.billingExchangeRate.amountBs)
-                  : null;
-                return (
-                  <TableRow key={ar.id} className="hover:bg-[oklch(0.985_0.003_250)]">
-                    <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
-                      {formatDate(ar.createdAt)}
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm font-medium">
-                      {ar.insurance?.name ?? '—'}
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm">
-                      <div className="font-medium truncate">{holderDisplayName(order?.holder)}</div>
-                      <div className="text-xs text-muted-foreground font-mono">
-                        {holderDisplayId(order?.holder) || '—'}
-                      </div>
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm">
-                      <div className="font-medium truncate">{holderDisplayName(order?.patient)}</div>
-                      <div className="text-xs text-muted-foreground font-mono">
-                        {holderDisplayId(order?.patient) || '—'}
-                      </div>
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm">{doctorFromOrder(order)}</TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm font-mono">
-                      {order?.orderNumber ?? '—'}
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm font-mono">
-                      {ar.receivableNumber}
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm font-mono text-muted-foreground">
-                      {order?.serviceKey ?? '—'}
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                      {order ? `USD ${formatMoney(order.priceAmount)}` : '—'}
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-muted-foreground">
-                      {rate !== null ? formatMoney(rate) : '—'}
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                      {formatUsd(t)}
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                      {formatBs(usdToBs(t, usdRate))}
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-success">
-                      {formatUsd(c)}
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-success">
-                      {formatBs(usdToBs(c, usdRate))}
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-warning">
-                      {formatUsd(p)}
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-warning">
-                      {formatBs(usdToBs(p, usdRate))}
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4">
-                      <Badge
-                        variant="outline"
-                        className={`text-xs ${STATUS_TONE[ar.status]} border-transparent`}
-                      >
-                        {STATUS_LABEL[ar.status]}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
+              paged.map((r) => (
+                <TableRow key={r.orderId} className="hover:bg-[oklch(0.985_0.003_250)]">
+                  <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                    {formatDate(r.orderDate)}
+                  </TableCell>
+                  <TableCell className="py-3.5 px-4 text-sm">
+                    <div className="font-medium truncate">{r.debtorName}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {r.debtorType === 'holder' ? 'Titular' : 'Seguro'}
+                    </div>
+                  </TableCell>
+                  <TableCell className="py-3.5 px-4 text-sm font-mono">
+                    {r.orderNumber}
+                  </TableCell>
+                  <TableCell className="py-3.5 px-4 text-sm font-mono">
+                    {r.receivableNumber ?? '—'}
+                  </TableCell>
+                  <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
+                    {r.targetUsd != null ? formatUsd(r.targetUsd) : '—'}
+                  </TableCell>
+                  <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
+                    {r.targetBs != null ? formatBs(r.targetBs) : '—'}
+                  </TableCell>
+                  <TableCell className="py-3.5 px-4 text-sm">
+                    <Badge variant="outline" className="text-xs font-normal">
+                      {r.useFixedRate ? 'Tasa fija (Bs)' : 'USD'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="py-3.5 px-4">
+                    <Badge
+                      variant="outline"
+                      className={`text-xs ${STATE_TONE[r.state]} border-transparent`}
+                    >
+                      {STATE_LABEL[r.state]}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))
             )}
           </TableBody>
         </Table>
@@ -441,11 +337,11 @@ export function ReportReceivablesList() {
         <DataTablePagination
           page={filters.page}
           pageSize={filters.limit}
-          total={enriched.length}
+          total={rows.length}
           lastPage={lastPage}
           onPageChange={(p) => updateParam({ page: String(p) }, false)}
           onPageSizeChange={(limit) => updateParam({ limit: String(limit) })}
-          itemLabel="cuentas"
+          itemLabel="órdenes"
         />
         </div>
       </div>

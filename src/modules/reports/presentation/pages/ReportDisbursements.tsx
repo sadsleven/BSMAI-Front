@@ -21,10 +21,6 @@ import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Badge } from '@/components/ui/badge';
-import { accountsPayableGateway } from '@/modules/accounts-payable/infrastructure/accountsPayableGateway';
-import { taxesPayableGateway } from '@/modules/taxes-payable/infrastructure/taxesPayableGateway';
-import { recipientName as apRecipientName } from '@/modules/accounts-payable/domain/models/accountsPayable';
-import { recipientName as taxRecipientName } from '@/modules/taxes-payable/domain/models/taxesPayable';
 import {
   PAYMENT_TYPE_LABEL,
   type OrderPaymentType,
@@ -32,27 +28,18 @@ import {
 import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
-import { formatUsd, formatBs, formatDate, formatNumber, inDateRange } from '../../domain/format';
+import { formatUsd, formatBs, formatDate, formatNumber } from '../../domain/format';
 import { formatMoney } from '@/lib/format/money';
-import { bsToUsd, useUsdRate, usdToBs } from '../../domain/useUsdRate';
-import { REPORT_PAGE_SIZE } from '../../infrastructure/fetchAll';
+import {
+  reportsGateway,
+  type ReportDisbursementRow,
+  type ReportFlowSummary,
+} from '../../infrastructure/reportsGateway';
 import { getHttpErrorMessage } from '@/lib/api';
 
-type DestKind = 'provider' | 'tax';
+const COLUMNS = 8;
 
-type DisbursementRow = {
-  id: string;
-  paymentDate: string;
-  type: OrderPaymentType;
-  referenceNumber: string | null | undefined;
-  bankCode: string | null | undefined;
-  amountValue: number;
-  amountCurrency: 'USD' | 'EUR' | 'BS';
-  amountInUsd: number;
-  destination: string;
-  accountNumber: string;
-  kind: DestKind;
-};
+const EMPTY_SUMMARY: ReportFlowSummary = { count: 0, totalUsd: 0, totalBs: 0 };
 
 export function ReportDisbursements() {
   const [sp, setSp] = useSearchParams();
@@ -64,78 +51,39 @@ export function ReportDisbursements() {
       from: sp.get('from') ?? '',
       to: sp.get('to') ?? '',
       type: (sp.get('type') ?? '') as '' | OrderPaymentType,
-      kind: (sp.get('kind') ?? '') as '' | DestKind,
     }),
     [sp],
   );
   const [searchInput, setSearchInput] = useState(filters.search);
-  const [items, setItems] = useState<DisbursementRow[]>([]);
+  const [items, setItems] = useState<ReportDisbursementRow[]>([]);
+  const [summary, setSummary] = useState<ReportFlowSummary>(EMPTY_SUMMARY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [overCap, setOverCap] = useState(false);
-  const usdRate = useUsdRate();
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    Promise.all([
-      accountsPayableGateway.list({ limit: REPORT_PAGE_SIZE, page: 1, sortDir: 'DESC' }),
-      taxesPayableGateway.list({ limit: REPORT_PAGE_SIZE, page: 1, sortDir: 'DESC' }),
-    ])
-      .then(([apRes, taxRes]) => {
+    void (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await reportsGateway.disbursements({
+          from: filters.from || undefined,
+          to: filters.to || undefined,
+          search: filters.search || undefined,
+        });
         if (cancelled) return;
-        setOverCap(
-          apRes.metadata.total > REPORT_PAGE_SIZE ||
-            taxRes.metadata.total > REPORT_PAGE_SIZE,
-        );
-        const flat: DisbursementRow[] = [];
-        apRes.data.forEach((ap) => {
-          (ap.payments ?? []).forEach((p) => {
-            flat.push({
-              id: `ap-${p.id}`,
-              paymentDate: p.paymentDate,
-              type: p.type,
-              referenceNumber: p.referenceNumber,
-              bankCode: p.bankCode,
-              amountValue: Number(p.amountValue ?? 0),
-              amountCurrency: p.amountCurrency,
-              amountInUsd: Number(p.amountInUsd ?? 0),
-              destination: apRecipientName(ap),
-              accountNumber: ap.payableNumber,
-              kind: 'provider',
-            });
-          });
-        });
-        taxRes.data.forEach((t) => {
-          (t.payments ?? []).forEach((p) => {
-            flat.push({
-              id: `tax-${p.id}`,
-              paymentDate: p.paymentDate,
-              type: p.type,
-              referenceNumber: p.referenceNumber,
-              bankCode: p.bankCode,
-              amountValue: Number(p.amountValue ?? 0),
-              amountCurrency: p.amountCurrency,
-              amountInUsd: bsToUsd(p.amountInBs, usdRate),
-              destination: `Retención · ${taxRecipientName(t)}`,
-              accountNumber: t.taxPayableNumber,
-              kind: 'tax',
-            });
-          });
-        });
-        setItems(flat);
-      })
-      .catch((e) => {
+        setItems(res.rows);
+        setSummary(res.summary);
+      } catch (e) {
         if (!cancelled) setError(getHttpErrorMessage(e, 'No se pudo cargar el reporte'));
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setLoading(false);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
-  }, [usdRate]);
+  }, [filters.from, filters.to, filters.search]);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -159,34 +107,19 @@ export function ReportDisbursements() {
     setSp(next, { replace: true });
   };
 
+  // El filtro de método se aplica en cliente sobre los pagos ya traídos.
   const filtered = useMemo(() => {
-    const s = filters.search.toLowerCase().trim();
-    return items
-      .filter((it) => {
-        if (!inDateRange(it.paymentDate, filters.from || undefined, filters.to || undefined))
-          return false;
-        if (filters.type && it.type !== filters.type) return false;
-        if (filters.kind && it.kind !== filters.kind) return false;
-        if (!s) return true;
-        return [it.destination, it.referenceNumber, it.bankCode, it.accountNumber]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase()
-          .includes(s);
-      })
-      .sort((a, b) => (a.paymentDate < b.paymentDate ? 1 : -1));
-  }, [items, filters.search, filters.from, filters.to, filters.type, filters.kind]);
+    return items.filter((it) => !filters.type || it.type === filters.type);
+  }, [items, filters.type]);
 
-  const totals = useMemo(() => {
-    let total = 0;
-    let provider = 0;
-    let tax = 0;
+  const filteredTotals = useMemo(() => {
+    let usd = 0;
+    let bs = 0;
     filtered.forEach((it) => {
-      total += it.amountInUsd;
-      if (it.kind === 'provider') provider += it.amountInUsd;
-      else tax += it.amountInUsd;
+      usd += it.amountInUsd;
+      bs += it.amountInBs;
     });
-    return { total, provider, tax, count: filtered.length };
+    return { usd, bs };
   }, [filtered]);
 
   const paged = useMemo(() => {
@@ -196,11 +129,7 @@ export function ReportDisbursements() {
   const lastPage = Math.max(1, Math.ceil(filtered.length / filters.limit));
 
   const hasActiveFilters =
-    !!filters.search ||
-    !!filters.from ||
-    !!filters.to ||
-    !!filters.type ||
-    !!filters.kind;
+    !!filters.search || !!filters.from || !!filters.to || !!filters.type;
   const clearFilters = () => {
     setSearchInput('');
     setSp(new URLSearchParams(), { replace: true });
@@ -209,50 +138,45 @@ export function ReportDisbursements() {
   return (
     <ReportShell
       title="Pagos emitidos"
-      description="Salidas registradas a proveedores y al SENIAT (impuestos retenidos)"
+      description="Salidas registradas a proveedores (doctores y centros de atención)"
       kpis={
         <KpiRow
           items={[
             {
               icon: ArrowUpCircle,
               tone: 'destructive',
-              label: 'Total egresos',
-              value: formatUsd(totals.total),
-              hint: `${formatNumber(totals.count)} pagos`,
+              label: 'Total egresos (Bs)',
+              value: formatBs(summary.totalBs),
+              hint: `${formatNumber(summary.count)} pagos`,
             },
             {
               icon: Banknote,
               tone: 'blue',
-              label: 'A proveedores',
-              value: formatUsd(totals.provider),
+              label: 'Total egresos (USD)',
+              value: formatUsd(summary.totalUsd),
             },
             {
               icon: Receipt,
               tone: 'warning',
-              label: 'A impuestos',
-              value: formatUsd(totals.tax),
+              label: 'En filtro (Bs)',
+              value: formatBs(filteredTotals.bs),
+              hint: filters.type ? PAYMENT_TYPE_LABEL[filters.type] : 'Todos los métodos',
             },
             {
               icon: TrendingUp,
               tone: 'cyan',
-              label: 'Promedio por pago',
-              value: totals.count > 0 ? formatUsd(totals.total / totals.count) : '—',
+              label: 'Promedio por pago (USD)',
+              value: summary.count > 0 ? formatUsd(summary.totalUsd / summary.count) : '—',
             },
           ]}
         />
       }
     >
-      {overCap ? (
-        <div className="px-4 py-2 text-xs text-warning border border-warning-soft bg-warning-soft rounded-lg">
-          Mostrando pagos de hasta {REPORT_PAGE_SIZE} cuentas por lado. Aplicá filtros para acotar.
-        </div>
-      ) : null}
-
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
           searchValue={searchInput}
           onSearchChange={setSearchInput}
-          searchPlaceholder="Buscar por destinatario, referencia, banco…"
+          searchPlaceholder="Buscar por proveedor, referencia, N° lote…"
           hasActiveFilters={hasActiveFilters}
           onClear={clearFilters}
           filters={
@@ -262,21 +186,6 @@ export function ReportDisbursements() {
                 to={filters.to || undefined}
                 onChange={(f, t) => updateParam({ from: f, to: t })}
               />
-              <Select
-                value={filters.kind || 'all'}
-                onValueChange={(v) =>
-                  updateParam({ kind: v === 'all' ? undefined : v })
-                }
-              >
-                <SelectTrigger className="h-9 w-48">
-                  <SelectValue placeholder="Concepto" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Concepto: todos</SelectItem>
-                  <SelectItem value="provider">A proveedores</SelectItem>
-                  <SelectItem value="tax">A impuestos</SelectItem>
-                </SelectContent>
-              </Select>
               <Select
                 value={filters.type || 'all'}
                 onValueChange={(v) =>
@@ -310,11 +219,9 @@ export function ReportDisbursements() {
           <TableHeader>
             <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Fecha</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Destinatario</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Cuenta</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Concepto</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Proveedor</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Lote</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Método</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Banco</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Referencia</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto USD</TableHead>
@@ -323,48 +230,40 @@ export function ReportDisbursements() {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <SkeletonTableRows rows={6} columns={10} />
+              <SkeletonTableRows rows={6} columns={COLUMNS} />
             ) : paged.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="p-0">
+                <TableCell colSpan={COLUMNS} className="p-0">
                   <EmptyState
                     icon={ArrowUpCircle}
                     title={hasActiveFilters ? 'Sin resultados' : 'Sin pagos emitidos'}
                     description={
                       hasActiveFilters
                         ? 'Ajustá los filtros para ver más resultados.'
-                        : 'Aún no se han registrado pagos a proveedores ni al SENIAT.'
+                        : 'Aún no se han registrado pagos a proveedores.'
                     }
                   />
                 </TableCell>
               </TableRow>
             ) : (
               paged.map((it) => (
-                <TableRow key={it.id} className="hover:bg-[oklch(0.985_0.003_250)]">
+                <TableRow key={it.paymentId} className="hover:bg-[oklch(0.985_0.003_250)]">
                   <TableCell className="py-3.5 px-4 text-sm whitespace-nowrap">
                     {formatDate(it.paymentDate)}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-medium">
-                    {it.destination}
+                    <div>{it.providerName}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {it.providerType === 'doctor' ? 'Doctor' : 'Centro'}
+                    </div>
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono">
-                    {it.accountNumber}
-                  </TableCell>
-                  <TableCell className="py-3.5 px-4 text-sm">
-                    <Badge
-                      variant="outline"
-                      className={`text-xs font-normal border-transparent ${it.kind === 'tax' ? 'bg-warning-soft text-warning' : 'bg-brand-blue-soft text-brand-blue-strong'}`}
-                    >
-                      {it.kind === 'tax' ? 'Impuesto' : 'Proveedor'}
-                    </Badge>
+                    {it.payableNumber}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm">
                     <Badge variant="outline" className="text-xs font-normal">
-                      {PAYMENT_TYPE_LABEL[it.type]}
+                      {PAYMENT_TYPE_LABEL[it.type as OrderPaymentType] ?? it.type}
                     </Badge>
-                  </TableCell>
-                  <TableCell className="py-3.5 px-4 text-sm font-mono text-muted-foreground">
-                    {it.bankCode ?? '—'}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono">
                     {it.referenceNumber ?? '—'}
@@ -376,7 +275,7 @@ export function ReportDisbursements() {
                     {formatUsd(it.amountInUsd)}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-destructive">
-                    {formatBs(usdToBs(it.amountInUsd, usdRate))}
+                    {formatBs(it.amountInBs)}
                   </TableCell>
                 </TableRow>
               ))

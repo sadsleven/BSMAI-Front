@@ -23,6 +23,7 @@ export function InsuranceDetailBody({ insurance }: { insurance: Insurance }) {
     <div className="divide-y">
       <DetailSection title="Información">
         <DetailRow label="Nombre" value={insurance.name} />
+        <DetailRow label="Nombre corto" value={insurance.shortName} />
         <DetailRow label="Email" value={insurance.email} />
         <DetailRow label="Dirección fiscal" value={insurance.fiscalAddress} />
         <DetailRow label="RIF" value={insurance.rif} />

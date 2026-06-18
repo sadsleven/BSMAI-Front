@@ -130,7 +130,11 @@ export function OrderAttendStep({
                       )}
                     </div>
                     <div className="text-xs text-muted-foreground truncate">
-                      {g.rows.length} servicio{g.rows.length === 1 ? '' : 's'} ·{' '}
+                      Orden N°{' '}
+                      <span className="font-mono font-semibold text-foreground">
+                        {g.providerOrderNumber}
+                      </span>{' '}
+                      · {g.rows.length} servicio{g.rows.length === 1 ? '' : 's'} ·{' '}
                       {g.rows
                         .map((r) => r.serviceType?.name)
                         .filter(Boolean)

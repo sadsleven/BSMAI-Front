@@ -44,7 +44,7 @@ import { PAYMENT_ACCOUNT_TYPE_LABEL } from '@/modules/payment-accounts/domain/mo
 import { PAYMENT_TYPE_LABEL } from '@/modules/orders/domain/models/order';
 
 type SourceFilter = 'all' | 'orders' | 'receivables';
-type TypeFilter = '' | 'mobile_payment' | 'bank_transfer' | 'other';
+type TypeFilter = '' | 'mobile_payment' | 'bank_transfer' | 'card' | 'other';
 
 const EMPTY: InflowsReport = {
   totals: {
@@ -338,6 +338,7 @@ export function ReportPaymentAccountInflows() {
                   <SelectItem value="all">Tipo: todos</SelectItem>
                   <SelectItem value="mobile_payment">Pago móvil</SelectItem>
                   <SelectItem value="bank_transfer">Transferencia</SelectItem>
+                  <SelectItem value="card">Punto (tarjeta)</SelectItem>
                   <SelectItem value="other">Otro</SelectItem>
                 </SelectContent>
               </Select>

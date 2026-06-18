@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import {
@@ -9,11 +9,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import type { ServicePriceRow } from '@/lib/types/servicePrice';
 import { formatMoney } from '@/lib/format/money';
 
 export function ServicePricesDetailTable({ prices }: { prices: ServicePriceRow[] }) {
   const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -22,6 +25,18 @@ export function ServicePricesDetailTable({ prices }: { prices: ServicePriceRow[]
       (sp.serviceType?.name ?? sp.serviceTypeId).toLowerCase().includes(q),
     );
   }, [prices, query]);
+
+  // Reset a la primera página cuando cambia el filtro o el tamaño.
+  useEffect(() => {
+    setPage(1);
+  }, [query, pageSize]);
+
+  const lastPage = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(page, lastPage);
+  const paged = useMemo(
+    () => filtered.slice((safePage - 1) * pageSize, (safePage - 1) * pageSize + pageSize),
+    [filtered, safePage, pageSize],
+  );
 
   if (!prices.length) {
     return <p className="text-sm text-muted-foreground italic">Sin precios cargados.</p>;
@@ -62,7 +77,7 @@ export function ServicePricesDetailTable({ prices }: { prices: ServicePriceRow[]
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((sp, i) => (
+              paged.map((sp, i) => (
                 <TableRow
                   key={sp.id ?? `${sp.serviceTypeId}-${i}`}
                   className="hover:bg-[oklch(0.985_0.003_250)]"
@@ -78,6 +93,17 @@ export function ServicePricesDetailTable({ prices }: { prices: ServicePriceRow[]
             )}
           </TableBody>
         </Table>
+        {filtered.length > pageSize ? (
+          <DataTablePagination
+            page={safePage}
+            pageSize={pageSize}
+            total={filtered.length}
+            lastPage={lastPage}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+            itemLabel="precios"
+          />
+        ) : null}
       </div>
     </div>
   );

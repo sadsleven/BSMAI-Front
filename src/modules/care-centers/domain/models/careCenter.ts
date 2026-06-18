@@ -27,6 +27,8 @@ export interface CareCenter {
   businessName: string;
   email?: string | null;
   rif?: string | null;
+  /** Dirección del centro de atención. Opcional. */
+  centerAddress?: string | null;
   isActive: boolean;
   specialties: Specialty[];
   phones: CareCenterPhone[];
@@ -44,6 +46,7 @@ export interface CreateCareCenterDto {
   businessName: string;
   email: string;
   rif?: string;
+  centerAddress?: string;
   phones: { number: string; label?: string }[];
   specialtyIds: string[];
   paymentMethods?: CareCenterPaymentMethod[];

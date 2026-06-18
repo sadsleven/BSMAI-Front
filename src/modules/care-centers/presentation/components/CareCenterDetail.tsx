@@ -46,6 +46,7 @@ export function CareCenterDetailBody({
             <DetailRow label="Razón social" value={center.businessName} />
             <DetailRow label="RIF" value={center.rif} mono />
             <DetailRow label="Email" value={center.email} />
+            <DetailRow label="Dirección del centro" value={center.centerAddress} />
             <DetailRow
               label="Estado"
               value={

@@ -371,7 +371,7 @@ const servicePriceRowSchema = z.object({
 
 export const servicePricesArraySchema = z
   .array(servicePriceRowSchema)
-  .max(500, 'Máximo 500 precios')
+  .max(5000, 'Máximo 5000 precios')
   .superRefine((rows, ctx) => {
     const seen = new Set<string>();
     rows.forEach((r, i) => {
@@ -455,6 +455,10 @@ export const insuranceSchema = z.object({
     .string({ error: 'El nombre es obligatorio' })
     .min(2, 'El nombre debe tener al menos 2 caracteres')
     .max(200, 'El nombre no puede superar 200 caracteres'),
+  shortName: z
+    .string()
+    .max(100, 'El nombre corto no puede superar 100 caracteres')
+    .optional(),
   description: z
     .string()
     .max(500, 'La descripción no puede superar 500 caracteres')
@@ -474,6 +478,19 @@ export type InsuranceValues = z.infer<typeof insuranceSchema>;
 // ---- Doctores y Centros de Atención (métodos de pago compartidos) ----
 
 const PAYMENT_METHOD_TYPES = ['mobile_payment', 'bank_transfer', 'other'] as const;
+
+/**
+ * Tipos de cuenta propia (PaymentAccount). Incluye `card` (Punto / POS de
+ * tarjeta) — exclusivo de cuentas propias para pagos entrantes. NO se comparte
+ * con los métodos de pago de doctores/centros (`PAYMENT_METHOD_TYPES`).
+ */
+const PAYMENT_ACCOUNT_TYPES = [
+  'mobile_payment',
+  'bank_transfer',
+  'bank_transfer_usd',
+  'card',
+  'other',
+] as const;
 
 const optString = (max: number) => z.string().max(max).optional();
 
@@ -558,7 +575,7 @@ export const paymentAccountSchema = z
       .string({ error: 'El nombre es obligatorio' })
       .min(1, 'El nombre es obligatorio')
       .max(200, 'El nombre no puede superar 200 caracteres'),
-    type: z.enum(PAYMENT_METHOD_TYPES, { error: 'Seleccioná un tipo' }),
+    type: z.enum(PAYMENT_ACCOUNT_TYPES, { error: 'Seleccioná un tipo' }),
     isActive: z.boolean().optional(),
     bankCode: optString(8),
     phoneNumber: optString(11),
@@ -569,7 +586,16 @@ export const paymentAccountSchema = z
   })
   .superRefine((val, ctx) => {
     const trim = (v?: string) => (v ?? '').trim();
-    if (val.type === 'mobile_payment') {
+    if (val.type === 'card') {
+      if (!trim(val.bankCode))
+        ctx.addIssue({ code: 'custom', path: ['bankCode'], message: 'Banco requerido' });
+      if (!trim(val.accountHolderName))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['accountHolderName'],
+          message: 'Titular requerido',
+        });
+    } else if (val.type === 'mobile_payment') {
       if (!trim(val.bankCode))
         ctx.addIssue({ code: 'custom', path: ['bankCode'], message: 'Banco requerido' });
       if (!/^\d{11}$/.test(trim(val.phoneNumber)))
@@ -586,7 +612,10 @@ export const paymentAccountSchema = z
           path: ['accountHolderName'],
           message: 'Titular requerido',
         });
-    } else if (val.type === 'bank_transfer') {
+    } else if (
+      val.type === 'bank_transfer' ||
+      val.type === 'bank_transfer_usd'
+    ) {
       if (!trim(val.bankCode))
         ctx.addIssue({ code: 'custom', path: ['bankCode'], message: 'Banco requerido' });
       if (!/^\d{20}$/.test(trim(val.accountNumber)))
@@ -654,6 +683,10 @@ export const doctorSchema = z
     lastName: nameSchema('El apellido'),
     isLegalEntity: z.boolean(),
     rif: z.string().optional().or(z.literal('')),
+    centerAddress: z
+      .string()
+      .max(500, 'La dirección del centro no puede superar 500 caracteres')
+      .optional(),
     phones: phonesArraySchema,
     specialtyIds: z
       .array(z.string().uuid())
@@ -700,6 +733,10 @@ export const careCenterSchema = z
       .max(200, 'La razón social no puede superar 200 caracteres'),
     email: emailSchema,
     rif: optionalRifSchema,
+    centerAddress: z
+      .string()
+      .max(500, 'La dirección del centro no puede superar 500 caracteres')
+      .optional(),
     phones: phonesArraySchema,
     specialtyIds: z
       .array(z.string().uuid())
@@ -727,6 +764,8 @@ const PROVIDER_TYPES = ['doctor', 'care_center'] as const;
 const PAYMENT_TYPES_ORDER = [
   'mobile_payment',
   'bank_transfer',
+  'bank_transfer_usd',
+  'card',
   'cash_usd',
   'cash_eur',
   'cash_bs',
@@ -769,6 +808,8 @@ function makeOrderPaymentSchema(
       const needsAccount =
         val.type === 'mobile_payment' ||
         val.type === 'bank_transfer' ||
+        val.type === 'bank_transfer_usd' ||
+        val.type === 'card' ||
         val.type === 'other';
       if (requirePaymentAccount && needsAccount && !trim(val.paymentAccountId)) {
         ctx.addIssue({
@@ -777,7 +818,11 @@ function makeOrderPaymentSchema(
           message: 'Cuenta de pago requerida',
         });
       }
-      if (val.type === 'mobile_payment' || val.type === 'bank_transfer') {
+      if (
+        val.type === 'mobile_payment' ||
+        val.type === 'bank_transfer' ||
+        val.type === 'card'
+      ) {
         if (!trim(val.referenceNumber))
           ctx.addIssue({
             code: 'custom',
@@ -795,6 +840,19 @@ function makeOrderPaymentSchema(
             code: 'custom',
             path: ['amountCurrency'],
             message: 'Debe ser BS',
+          });
+      } else if (val.type === 'bank_transfer_usd') {
+        if (!trim(val.referenceNumber))
+          ctx.addIssue({
+            code: 'custom',
+            path: ['referenceNumber'],
+            message: 'Referencia requerida',
+          });
+        if (val.amountCurrency !== 'USD')
+          ctx.addIssue({
+            code: 'custom',
+            path: ['amountCurrency'],
+            message: 'Debe ser USD',
           });
       } else if (val.type === 'cash_bs') {
         if (requireBsRate && !trim(val.exchangeRateId))
@@ -1015,6 +1073,13 @@ export const orderSchema = z
           code: 'custom',
           path: ['casheaFirstInstallmentAmount'],
           message: 'Ingresá el monto de la primera cuota',
+        });
+      } else if (val.casheaFirstInstallmentAmount <= 0) {
+        // Cashea exige una cuota inicial obligatoria para continuar al Paso 2.
+        ctx.addIssue({
+          code: 'custom',
+          path: ['casheaFirstInstallmentAmount'],
+          message: 'La primera cuota (inicial) debe ser mayor a 0',
         });
       } else if (
         typeof val.priceAmount === 'number' &&

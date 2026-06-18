@@ -21,7 +21,6 @@ import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Badge } from '@/components/ui/badge';
-import { accountsReceivableGateway } from '@/modules/accounts-receivable/infrastructure/accountsReceivableGateway';
 import {
   PAYMENT_TYPE_LABEL,
   type OrderPaymentType,
@@ -29,24 +28,18 @@ import {
 import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
-import { formatUsd, formatBs, formatDate, formatNumber, inDateRange } from '../../domain/format';
+import { formatUsd, formatBs, formatDate, formatNumber } from '../../domain/format';
 import { formatMoney } from '@/lib/format/money';
-import { useUsdRate, usdToBs } from '../../domain/useUsdRate';
-import { REPORT_PAGE_SIZE } from '../../infrastructure/fetchAll';
+import {
+  reportsGateway,
+  type ReportCollectionRow,
+  type ReportFlowSummary,
+} from '../../infrastructure/reportsGateway';
 import { getHttpErrorMessage } from '@/lib/api';
 
-type CollectionRow = {
-  id: string;
-  paymentDate: string;
-  type: OrderPaymentType;
-  referenceNumber: string | null | undefined;
-  bankCode: string | null | undefined;
-  amountValue: number;
-  amountCurrency: 'USD' | 'EUR' | 'BS';
-  amountInUsd: number;
-  insuranceName: string;
-  receivableNumber: string;
-};
+const COLUMNS = 8;
+
+const EMPTY_SUMMARY: ReportFlowSummary = { count: 0, totalUsd: 0, totalBs: 0 };
 
 export function ReportCollections() {
   const [sp, setSp] = useSearchParams();
@@ -62,50 +55,35 @@ export function ReportCollections() {
     [sp],
   );
   const [searchInput, setSearchInput] = useState(filters.search);
-  const [items, setItems] = useState<CollectionRow[]>([]);
+  const [items, setItems] = useState<ReportCollectionRow[]>([]);
+  const [summary, setSummary] = useState<ReportFlowSummary>(EMPTY_SUMMARY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [overCap, setOverCap] = useState(false);
-  const usdRate = useUsdRate();
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    accountsReceivableGateway
-      .list({ limit: REPORT_PAGE_SIZE, page: 1, sortDir: 'DESC' })
-      .then((res) => {
-        if (cancelled) return;
-        setOverCap(res.metadata.total > REPORT_PAGE_SIZE);
-        const flat: CollectionRow[] = [];
-        res.data.forEach((ar) => {
-          (ar.payments ?? []).forEach((p) => {
-            flat.push({
-              id: p.id,
-              paymentDate: p.paymentDate,
-              type: p.type,
-              referenceNumber: p.referenceNumber,
-              bankCode: p.bankCode,
-              amountValue: Number(p.amountValue ?? 0),
-              amountCurrency: p.amountCurrency,
-              amountInUsd: Number(p.amountInUsd ?? 0),
-              insuranceName: ar.insurance?.name ?? '—',
-              receivableNumber: ar.receivableNumber,
-            });
-          });
+    void (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await reportsGateway.collections({
+          from: filters.from || undefined,
+          to: filters.to || undefined,
+          search: filters.search || undefined,
         });
-        setItems(flat);
-      })
-      .catch((e) => {
+        if (cancelled) return;
+        setItems(res.rows);
+        setSummary(res.summary);
+      } catch (e) {
         if (!cancelled) setError(getHttpErrorMessage(e, 'No se pudo cargar el reporte'));
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setLoading(false);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [filters.from, filters.to, filters.search]);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -130,33 +108,16 @@ export function ReportCollections() {
   };
 
   const filtered = useMemo(() => {
-    const s = filters.search.toLowerCase().trim();
-    return items
-      .filter((it) => {
-        if (!inDateRange(it.paymentDate, filters.from || undefined, filters.to || undefined))
-          return false;
-        if (filters.type && it.type !== filters.type) return false;
-        if (!s) return true;
-        return [it.referenceNumber, it.bankCode, it.insuranceName, it.receivableNumber]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase()
-          .includes(s);
-      })
-      .sort((a, b) => (a.paymentDate < b.paymentDate ? 1 : -1));
-  }, [items, filters.search, filters.from, filters.to, filters.type]);
+    return items.filter((it) => !filters.type || it.type === filters.type);
+  }, [items, filters.type]);
 
-  const totals = useMemo(() => {
-    let bs = 0;
-    let count = 0;
-    const byType = new Map<OrderPaymentType, number>();
-    filtered.forEach((it) => {
-      bs += it.amountInUsd;
-      count += 1;
-      byType.set(it.type, (byType.get(it.type) ?? 0) + it.amountInUsd);
-    });
+  const topMethod = useMemo(() => {
+    const byType = new Map<string, number>();
+    filtered.forEach((it) => byType.set(it.type, (byType.get(it.type) ?? 0) + it.amountInUsd));
     const top = Array.from(byType.entries()).sort((a, b) => b[1] - a[1])[0];
-    return { bs, count, topMethod: top ? PAYMENT_TYPE_LABEL[top[0]] : '—', topAmount: top?.[1] ?? 0 };
+    return top
+      ? { label: PAYMENT_TYPE_LABEL[top[0] as OrderPaymentType] ?? top[0], amount: top[1] }
+      : { label: '—', amount: 0 };
   }, [filtered]);
 
   const paged = useMemo(() => {
@@ -175,50 +136,45 @@ export function ReportCollections() {
   return (
     <ReportShell
       title="Cobros recibidos"
-      description="Pagos registrados desde aseguradoras (cuentas por cobrar)"
+      description="Pagos registrados desde aseguradoras y titulares (cuentas por cobrar)"
       kpis={
         <KpiRow
           items={[
             {
               icon: ArrowDownCircle,
               tone: 'success',
-              label: 'Total cobrado',
-              value: formatUsd(totals.bs),
+              label: 'Total cobrado (USD)',
+              value: formatUsd(summary.totalUsd),
+              hint: formatBs(summary.totalBs),
             },
             {
               icon: ListChecks,
               tone: 'blue',
               label: 'Cobros registrados',
-              value: formatNumber(totals.count),
+              value: formatNumber(summary.count),
             },
             {
               icon: Banknote,
               tone: 'cyan',
               label: 'Método principal',
-              value: totals.topMethod,
-              hint: totals.topAmount ? formatUsd(totals.topAmount) : undefined,
+              value: topMethod.label,
+              hint: topMethod.amount ? formatUsd(topMethod.amount) : undefined,
             },
             {
               icon: TrendingUp,
               tone: 'warning',
-              label: 'Promedio por cobro',
-              value: totals.count > 0 ? formatUsd(totals.bs / totals.count) : '—',
+              label: 'Promedio por cobro (USD)',
+              value: summary.count > 0 ? formatUsd(summary.totalUsd / summary.count) : '—',
             },
           ]}
         />
       }
     >
-      {overCap ? (
-        <div className="px-4 py-2 text-xs text-warning border border-warning-soft bg-warning-soft rounded-lg">
-          Mostrando pagos de hasta {REPORT_PAGE_SIZE} cuentas. Aplicá filtros para acotar.
-        </div>
-      ) : null}
-
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
           searchValue={searchInput}
           onSearchChange={setSearchInput}
-          searchPlaceholder="Buscar por aseguradora, referencia, banco…"
+          searchPlaceholder="Buscar por deudor, referencia, N° lote…"
           hasActiveFilters={hasActiveFilters}
           onClear={clearFilters}
           filters={
@@ -259,10 +215,9 @@ export function ReportCollections() {
           <TableHeader>
             <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Fecha</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Aseguradora</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Cuenta</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Deudor</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Lote</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Método</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Banco</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Referencia</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto USD</TableHead>
@@ -271,40 +226,40 @@ export function ReportCollections() {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <SkeletonTableRows rows={6} columns={9} />
+              <SkeletonTableRows rows={6} columns={COLUMNS} />
             ) : paged.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="p-0">
+                <TableCell colSpan={COLUMNS} className="p-0">
                   <EmptyState
                     icon={ArrowDownCircle}
                     title={hasActiveFilters ? 'Sin resultados' : 'Sin cobros registrados'}
                     description={
                       hasActiveFilters
                         ? 'Ajustá los filtros para ver más resultados.'
-                        : 'Aún no se han registrado cobros de aseguradoras.'
+                        : 'Aún no se han registrado cobros.'
                     }
                   />
                 </TableCell>
               </TableRow>
             ) : (
               paged.map((it) => (
-                <TableRow key={it.id} className="hover:bg-[oklch(0.985_0.003_250)]">
+                <TableRow key={it.paymentId} className="hover:bg-[oklch(0.985_0.003_250)]">
                   <TableCell className="py-3.5 px-4 text-sm whitespace-nowrap">
                     {formatDate(it.paymentDate)}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-medium">
-                    {it.insuranceName}
+                    <div>{it.debtorName}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {it.debtorType === 'insurance' ? 'Seguro' : 'Titular'}
+                    </div>
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono">
                     {it.receivableNumber}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm">
                     <Badge variant="outline" className="text-xs font-normal">
-                      {PAYMENT_TYPE_LABEL[it.type]}
+                      {PAYMENT_TYPE_LABEL[it.type as OrderPaymentType] ?? it.type}
                     </Badge>
-                  </TableCell>
-                  <TableCell className="py-3.5 px-4 text-sm font-mono text-muted-foreground">
-                    {it.bankCode ?? '—'}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono">
                     {it.referenceNumber ?? '—'}
@@ -316,7 +271,7 @@ export function ReportCollections() {
                     {formatUsd(it.amountInUsd)}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-success">
-                    {formatBs(usdToBs(it.amountInUsd, usdRate))}
+                    {formatBs(it.amountInBs)}
                   </TableCell>
                 </TableRow>
               ))

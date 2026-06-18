@@ -12,6 +12,8 @@ export type InsuranceSource = 'direct' | 'via_contractor';
 export type OrderPaymentType =
   | 'mobile_payment'
   | 'bank_transfer'
+  | 'bank_transfer_usd'
+  | 'card'
   | 'cash_usd'
   | 'cash_eur'
   | 'cash_bs'
@@ -53,17 +55,37 @@ export interface OrderProviderReportRow {
   observations?: string | null;
 }
 
+/** Orden interna: un número por proveedor distinto (mapea OrderInternalOrder del BE). */
+export interface OrderInternalOrderRow {
+  id: string;
+  providerType: ProviderType;
+  doctorId?: string | null;
+  careCenterId?: string | null;
+  /** Número de orden interna de este proveedor. */
+  internalNumber: string;
+  /** Ordinal 1-based dentro de la orden. `1` = proveedor del número base. */
+  sequencePosition: number;
+  /** Monto USD a pagar al proveedor (snapshot al facturar). Null hasta facturar. */
+  providerAmountUsd?: string | number | null;
+}
+
 /** Fila ST + proveedor dentro de una orden (mapea OrderServiceType del BE). */
 export interface OrderServiceTypeRow {
   serviceTypeId: string;
   serviceType?: { id: string; name: string; allowsQuantity?: boolean };
   providerType: ProviderType;
   doctorId?: string | null;
-  doctor?: (OrderRefSummary & { isLegalEntity?: boolean }) | null;
+  doctor?:
+    | (OrderRefSummary & { isLegalEntity?: boolean; centerAddress?: string | null })
+    | null;
   careCenterId?: string | null;
-  careCenter?: OrderRefSummary | null;
+  careCenter?: (OrderRefSummary & { centerAddress?: string | null }) | null;
   /** Cantidad del ST (≥1). Sólo > 1 si el ST tiene `allowsQuantity`. */
   quantity?: number;
+  /** FK a la orden interna del proveedor de esta fila. */
+  internalOrderId?: string;
+  /** Orden interna (número) del proveedor de esta fila — para el N° por fila en facturación. */
+  internalOrder?: OrderInternalOrderRow | null;
 }
 
 export interface Order {
@@ -83,6 +105,8 @@ export interface Order {
   insurance?: {
     id: string;
     name: string;
+    /** Nombre corto / abreviatura del seguro. Opcional. */
+    shortName?: string | null;
     rif?: string | null;
     fiscalAddress?: string | null;
     phones?: Array<{ id?: string; number: string; label?: string | null }>;
@@ -95,6 +119,8 @@ export interface Order {
   specialty?: { id: string; name: string };
   /** Filas ST + proveedor. Reemplaza `serviceTypes` y los top-level provider fields. */
   orderServiceTypes?: OrderServiceTypeRow[];
+  /** Órdenes internas: un número por proveedor distinto. */
+  internalOrders?: OrderInternalOrderRow[];
   pathologies?: Array<{ id: string; name: string }>;
   orderDate: string;
   appointmentDate: string;
@@ -291,11 +317,26 @@ export const ORDER_TYPE_LABEL: Record<OrderType, string> = {
 export const PAYMENT_TYPE_LABEL: Record<OrderPaymentType, string> = {
   mobile_payment: 'Pago móvil',
   bank_transfer: 'Transferencia',
+  bank_transfer_usd: 'Transferencia en dólares',
+  card: 'Punto (tarjeta)',
   cash_usd: 'Efectivo dólares',
   cash_eur: 'Efectivo euros',
   cash_bs: 'Efectivo bolívares',
   other: 'Otro',
 };
+
+/**
+ * Todos los números de orden interna de una orden (uno por proveedor), ordenados
+ * por `sequencePosition` con el base primero. Fallback al `orderNumber` base si
+ * el BE no incluyó `internalOrders`.
+ */
+export function orderInternalNumbers(o: Order): string[] {
+  const iio = o.internalOrders ?? [];
+  if (!iio.length) return [o.orderNumber];
+  return [...iio]
+    .sort((a, b) => a.sequencePosition - b.sequencePosition)
+    .map((x) => x.internalNumber);
+}
 
 export function holderDisplayName(p?: OrderRefSummary | null): string {
   if (!p) return '—';

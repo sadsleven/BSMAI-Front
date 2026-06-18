@@ -67,15 +67,21 @@ export const PERMISSIONS = {
   },
   ACCOUNTS_PAYABLE: {
     LIST: 'accounts-payable.list',
+    CREATE: 'accounts-payable.create',
     UPDATE: 'accounts-payable.update',
+    SOFT_DELETE: 'accounts-payable.soft-delete',
   },
   ACCOUNTS_RECEIVABLE: {
     LIST: 'accounts-receivable.list',
+    CREATE: 'accounts-receivable.create',
     UPDATE: 'accounts-receivable.update',
+    SOFT_DELETE: 'accounts-receivable.soft-delete',
   },
   TAXES_PAYABLE: {
     LIST: 'taxes-payable.list',
+    CREATE: 'taxes-payable.create',
     UPDATE: 'taxes-payable.update',
+    SOFT_DELETE: 'taxes-payable.soft-delete',
   },
   APP_CONFIG: {
     VIEW: 'app-config.view',

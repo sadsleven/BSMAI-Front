@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Eye, Plus, HandCoins } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { HandCoins, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { AccountsReceivableDetail } from '../components/AccountsReceivableDetail';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Table,
   TableBody,
@@ -20,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SortableHeader, type SortDir } from '@/components/ui/sortable-header';
 import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
@@ -33,51 +33,52 @@ import { getHttpErrorMessage } from '@/lib/api';
 import { formatMoney } from '@/lib/format/money';
 import { accountsReceivableGateway } from '../../infrastructure/accountsReceivableGateway';
 import {
-  collectedBs,
-  collectedUsd,
   debtorDisplayName,
   debtorTypeOf,
-  isCasheaAccount,
-  isFixedRateAccount,
-  pendingBs,
-  pendingUsd,
+  pendingDebtorId,
+  pendingDebtorName,
   STATUS_LABEL,
-  targetBs,
-  targetUsd,
-  type AccountsReceivable,
+  type AccountsReceivableBatch,
   type AccountsReceivableDebtorType,
   type AccountsReceivableStatus,
+  type PendingReceivable,
 } from '../../domain/models/accountsReceivable';
 import { insuranceGateway } from '@/modules/insurances/infrastructure/insuranceGateway';
 import type { Insurance } from '@/modules/insurances/domain/models/insurance';
 
-type SortBy = 'orderNumber' | 'createdAt' | 'updatedAt';
+type Tab = 'pending' | 'batches';
+type SortBy = 'receivableNumber' | 'createdAt' | 'updatedAt';
 
-function readQuery(sp: URLSearchParams) {
-  return {
-    page: Number(sp.get('page') ?? 1) || 1,
-    limit: Number(sp.get('limit') ?? 10) || 10,
-    search: sp.get('search') ?? '',
-    status: (sp.get('status') ?? '') as '' | AccountsReceivableStatus,
-    insuranceId: sp.get('insuranceId') ?? '',
-    debtorType: (sp.get('debtorType') ?? '') as '' | AccountsReceivableDebtorType,
-    sortBy: (sp.get('sortBy') ?? 'createdAt') as SortBy,
-    sortDir: (sp.get('sortDir') ?? 'DESC') as SortDir,
+function statusBadge(status: AccountsReceivableStatus) {
+  const map: Record<AccountsReceivableStatus, { bg: string; dot: string }> = {
+    collected: { bg: 'bg-success-soft text-success', dot: 'bg-success' },
+    partially_collected: {
+      bg: 'bg-brand-cyan-soft text-brand-blue-strong',
+      dot: 'bg-brand-cyan',
+    },
+    overcollected: {
+      bg: 'bg-brand-blue-soft text-brand-blue-strong',
+      dot: 'bg-brand-blue',
+    },
+    uncollected: { bg: 'bg-warning-soft text-warning', dot: 'bg-warning' },
   };
+  const c = map[status];
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full ${c.bg} px-2 py-0.5 text-xs font-medium`}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
+      {STATUS_LABEL[status]}
+    </span>
+  );
 }
 
 export function AccountsReceivableList() {
   const [sp, setSp] = useSearchParams();
   const navigate = useNavigate();
-  const filters = useMemo(() => readQuery(sp), [sp]);
-  const [searchInput, setSearchInput] = useState(filters.search);
+  const tab = (sp.get('tab') === 'batches' ? 'batches' : 'pending') as Tab;
 
-  const [data, setData] = useState<AccountsReceivable[]>([]);
-  const [metadata, setMetadata] = useState({ total: 0, page: 1, lastPage: 1 });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [detailId, setDetailId] = useState<string | null>(null);
+  const [searchInput, setSearchInput] = useState(sp.get('search') ?? '');
   const [insurances, setInsurances] = useState<Insurance[]>([]);
 
   useEffect(() => {
@@ -89,6 +90,20 @@ export function AccountsReceivableList() {
       }
     })();
   }, []);
+
+  const filters = useMemo(
+    () => ({
+      page: Number(sp.get('page') ?? 1) || 1,
+      limit: Number(sp.get('limit') ?? 10) || 10,
+      search: sp.get('search') ?? '',
+      status: (sp.get('status') ?? '') as '' | AccountsReceivableStatus,
+      debtorType: (sp.get('debtorType') ?? '') as '' | AccountsReceivableDebtorType,
+      insuranceId: sp.get('insuranceId') ?? '',
+      sortBy: (sp.get('sortBy') ?? 'createdAt') as SortBy,
+      sortDir: (sp.get('sortDir') ?? 'DESC') as SortDir,
+    }),
+    [sp],
+  );
 
   const updateParam = useCallback(
     (patch: Record<string, string | number | undefined>) => {
@@ -111,47 +126,90 @@ export function AccountsReceivableList() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput]);
 
-  const fetch = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const setTab = (next: Tab) => {
+    const params = new URLSearchParams();
+    params.set('tab', next);
+    setSp(params, { replace: true });
+    setSearchInput('');
+  };
+
+  const hasActiveFilters = !!(
+    filters.search ||
+    filters.status ||
+    filters.debtorType ||
+    filters.insuranceId
+  );
+  const clearFilters = () => {
+    setSearchInput('');
+    const params = new URLSearchParams();
+    params.set('tab', tab);
+    setSp(params, { replace: true });
+  };
+
+  // -------- Pendientes --------
+  const [pending, setPending] = useState<PendingReceivable[]>([]);
+  const [pendingMeta, setPendingMeta] = useState({ total: 0, page: 1, lastPage: 1 });
+  const [pendingLoading, setPendingLoading] = useState(true);
+  const [pendingError, setPendingError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const fetchPending = useCallback(async () => {
+    setPendingLoading(true);
+    setPendingError(null);
+    try {
+      const res = await accountsReceivableGateway.listPending({
+        page: filters.page,
+        limit: filters.limit,
+        search: filters.search || undefined,
+        debtorType: filters.debtorType || undefined,
+        insuranceId: filters.insuranceId || undefined,
+      });
+      setPending(res.data);
+      setPendingMeta(res.metadata);
+    } catch (e) {
+      setPendingError(getHttpErrorMessage(e, 'No se pudieron cargar los pendientes'));
+    } finally {
+      setPendingLoading(false);
+    }
+  }, [filters]);
+
+  // -------- Lotes --------
+  const [batches, setBatches] = useState<AccountsReceivableBatch[]>([]);
+  const [batchesMeta, setBatchesMeta] = useState({ total: 0, page: 1, lastPage: 1 });
+  const [batchesLoading, setBatchesLoading] = useState(true);
+  const [batchesError, setBatchesError] = useState<string | null>(null);
+
+  const fetchBatches = useCallback(async () => {
+    setBatchesLoading(true);
+    setBatchesError(null);
     try {
       const res = await accountsReceivableGateway.list({
         page: filters.page,
         limit: filters.limit,
         search: filters.search || undefined,
         status: filters.status || undefined,
-        insuranceId: filters.insuranceId || undefined,
         debtorType: filters.debtorType || undefined,
+        insuranceId: filters.insuranceId || undefined,
         sortBy: filters.sortBy,
         sortDir: filters.sortDir,
       });
-      setData(res.data);
-      setMetadata(res.metadata);
+      setBatches(res.data);
+      setBatchesMeta(res.metadata);
     } catch (e) {
-      setError(getHttpErrorMessage(e, 'No se pudieron cargar las cuentas'));
+      setBatchesError(getHttpErrorMessage(e, 'No se pudieron cargar los lotes'));
     } finally {
-      setLoading(false);
+      setBatchesLoading(false);
     }
   }, [filters]);
 
   useEffect(() => {
-    fetch();
-  }, [fetch]);
+    void Promise.resolve().then(() =>
+      tab === 'pending' ? fetchPending() : fetchBatches(),
+    );
+  }, [tab, fetchPending, fetchBatches]);
 
   const onSort = (column: SortBy, dir: SortDir) =>
     updateParam({ sortBy: column, sortDir: dir });
-
-  const clearFilters = () => {
-    setSearchInput('');
-    setSp(new URLSearchParams(), { replace: true });
-  };
-
-  const hasActiveFilters = !!(
-    filters.search ||
-    filters.status ||
-    filters.insuranceId ||
-    filters.debtorType
-  );
 
   const toggleSelect = (id: string) =>
     setSelected((prev) => {
@@ -161,388 +219,454 @@ export function AccountsReceivableList() {
       return next;
     });
 
-  const selectedAccounts = useMemo(
-    () => data.filter((a) => selected.has(a.id)),
-    [data, selected],
+  const selectedRows = useMemo(
+    () => pending.filter((p) => selected.has(p.orderId)),
+    [pending, selected],
   );
 
-  const goRegister = () => {
-    navigate('/accounts-receivable/register-collection', {
-      state: { receivableIds: selectedAccounts.map((a) => a.id) },
-    });
+  // Mismo deudor y mismo modo (tasa fija vs USD) para todos los seleccionados.
+  const sharedDebtor = useMemo(() => {
+    if (selectedRows.length === 0) return null;
+    const first = selectedRows[0];
+    const key = `${first.debtorType}:${pendingDebtorId(first)}:${first.useFixedRate}`;
+    const allSame = selectedRows.every(
+      (r) => `${r.debtorType}:${pendingDebtorId(r)}:${r.useFixedRate}` === key,
+    );
+    if (!allSame) return null;
+    return {
+      debtorType: first.debtorType,
+      debtorId: pendingDebtorId(first) as string,
+      debtorName: pendingDebtorName(first),
+      useFixedRate: first.useFixedRate,
+    };
+  }, [selectedRows]);
+
+  const canCreate = selectedRows.length >= 1 && sharedDebtor !== null;
+
+  const goCreate = () => {
+    if (canCreate && sharedDebtor) {
+      navigate('/accounts-receivable/new', {
+        state: {
+          debtorType: sharedDebtor.debtorType,
+          debtorId: sharedDebtor.debtorId,
+          debtorName: sharedDebtor.debtorName,
+          useFixedRate: sharedDebtor.useFixedRate,
+          orderIds: selectedRows.map((r) => r.orderId),
+        },
+      });
+      return;
+    }
+    navigate('/accounts-receivable/new');
   };
+
+  const debtorFilters = (
+    <>
+      <Select
+        value={filters.debtorType || 'all'}
+        onValueChange={(v) =>
+          updateParam({ debtorType: v === 'all' ? undefined : v })
+        }
+      >
+        <SelectTrigger className="h-9 w-44">
+          <SelectValue placeholder="Deudor" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Deudor: todos</SelectItem>
+          <SelectItem value="insurance">Seguro</SelectItem>
+          <SelectItem value="holder">Titular (crédito)</SelectItem>
+        </SelectContent>
+      </Select>
+      <Select
+        value={filters.insuranceId || 'all'}
+        onValueChange={(v) =>
+          updateParam({ insuranceId: v === 'all' ? undefined : v })
+        }
+      >
+        <SelectTrigger className="h-9 w-56">
+          <SelectValue placeholder="Seguro" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Seguro: todos</SelectItem>
+          {insurances.map((i) => (
+            <SelectItem key={i.id} value={i.id}>
+              {i.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </>
+  );
+
+  const pendingTargetLabel = (p: PendingReceivable) =>
+    p.useFixedRate && p.targetBs !== null
+      ? `${formatMoney(p.targetBs)} Bs.`
+      : p.targetUsd !== null
+        ? `${formatMoney(p.targetUsd)} USD`
+        : '—';
 
   return (
     <div className="space-y-6">
       <PageBreadcrumbs />
-      <div className="flex items-end justify-between gap-4 flex-wrap">
-        <div className="space-y-1">
-          <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">
-            Cuentas por cobrar
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {metadata.total.toLocaleString()} cuenta{metadata.total === 1 ? '' : 's'} en total
-          </p>
-        </div>
-        <Can permission={PERMISSIONS.ACCOUNTS_RECEIVABLE.UPDATE}>
-          <Button onClick={goRegister}>
-            <Plus className="w-4 h-4 mr-1.5" />
-            Registrar cobro
-            {selectedAccounts.length > 0 && (
-              <span className="ml-1 text-[11px] opacity-80">
-                ({selectedAccounts.length})
-              </span>
-            )}
-          </Button>
-        </Can>
+      <div className="space-y-1">
+        <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">
+          Cuentas por cobrar
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Armá lotes de cobro por deudor desde las órdenes pendientes y registrá
+          los cobros.
+        </p>
       </div>
 
-      <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
-        <DataTableToolbar
-          searchValue={searchInput}
-          onSearchChange={setSearchInput}
-          searchPlaceholder="Buscar por N° cuenta, N° orden, seguro o titular…"
-          hasActiveFilters={hasActiveFilters}
-          onClear={clearFilters}
-          filters={
-            <>
-              <Select
-                value={filters.status || 'all'}
-                onValueChange={(v) =>
-                  updateParam({ status: v === 'all' ? undefined : v })
-                }
-              >
-                <SelectTrigger className="h-9 w-44">
-                  <SelectValue placeholder="Estado" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Estado: todos</SelectItem>
-                  <SelectItem value="uncollected">No cobrada</SelectItem>
-                  <SelectItem value="partially_collected">Cobrada parcialmente</SelectItem>
-                  <SelectItem value="collected">Cobrada</SelectItem>
-                  <SelectItem value="overcollected">Sobre-cobrada</SelectItem>
-                </SelectContent>
-              </Select>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
+        <TabsList>
+          <TabsTrigger value="pending">Pendientes</TabsTrigger>
+          <TabsTrigger value="batches">Lotes</TabsTrigger>
+        </TabsList>
 
-              <Select
-                value={filters.debtorType || 'all'}
-                onValueChange={(v) =>
-                  updateParam({ debtorType: v === 'all' ? undefined : v })
-                }
-              >
-                <SelectTrigger className="h-9 w-44">
-                  <SelectValue placeholder="Deudor" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Deudor: todos</SelectItem>
-                  <SelectItem value="insurance">Seguro</SelectItem>
-                  <SelectItem value="holder">Titular (crédito)</SelectItem>
-                </SelectContent>
-              </Select>
+        {/* ---------------- Pendientes ---------------- */}
+        <TabsContent value="pending">
+          <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
+            <DataTableToolbar
+              searchValue={searchInput}
+              onSearchChange={setSearchInput}
+              searchPlaceholder="Buscar por N° orden o deudor…"
+              hasActiveFilters={hasActiveFilters}
+              onClear={clearFilters}
+              filters={debtorFilters}
+              actions={
+                <Can permission={PERMISSIONS.ACCOUNTS_RECEIVABLE.CREATE}>
+                  <Button
+                    size="lg"
+                    onClick={goCreate}
+                    className="bg-brand-blue text-white shadow-sm hover:bg-brand-blue-strong font-semibold"
+                  >
+                    <Plus className="w-4 h-4 mr-1.5" />
+                    Realizar cobro
+                    {selectedRows.length > 0 && (
+                      <span className="ml-1 text-[11px] opacity-80">
+                        ({selectedRows.length})
+                      </span>
+                    )}
+                  </Button>
+                </Can>
+              }
+            />
+            {selectedRows.length > 0 && !sharedDebtor ? (
+              <div className="mx-4 mt-3 rounded-lg border border-warning/30 bg-warning-soft p-2.5 text-xs text-warning">
+                Las órdenes seleccionadas tienen deudores o modos de cobro
+                distintos. Un lote agrupa órdenes de un solo deudor y modo (tasa
+                fija o USD).
+              </div>
+            ) : null}
+            {pendingError ? (
+              <div className="px-4 py-2 text-sm text-destructive border-b bg-destructive-soft">
+                {pendingError}
+              </div>
+            ) : null}
 
-              <Select
-                value={filters.insuranceId || 'all'}
-                onValueChange={(v) =>
-                  updateParam({ insuranceId: v === 'all' ? undefined : v })
-                }
-              >
-                <SelectTrigger className="h-9 w-56">
-                  <SelectValue placeholder="Seguro" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Seguro: todos</SelectItem>
-                  {insurances.map((i) => (
-                    <SelectItem key={i.id} value={i.id}>
-                      {i.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </>
-          }
-        />
+            <div className="m-4 rounded-lg border overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-10"></TableHead>
+                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      N° orden
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      Deudor
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      Sucursal
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      A cobrar
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      Creación
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pendingLoading ? (
+                    <SkeletonTableRows rows={5} columns={6} />
+                  ) : pending.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="p-0">
+                        <EmptyState
+                          icon={HandCoins}
+                          title={
+                            hasActiveFilters
+                              ? 'Sin resultados con esos filtros'
+                              : 'No hay órdenes pendientes de cobro'
+                          }
+                          description={
+                            hasActiveFilters
+                              ? 'Limpiá los filtros para ver todas las órdenes.'
+                              : 'Las órdenes finalizadas con deudor (seguro o titular) aparecen acá hasta que se incluyen en un lote.'
+                          }
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    pending.map((p) => (
+                      <TableRow key={p.orderId} className="hover:bg-muted/30">
+                        <TableCell className="py-3.5 px-4">
+                          <Checkbox
+                            checked={selected.has(p.orderId)}
+                            onCheckedChange={() => toggleSelect(p.orderId)}
+                            aria-label="Seleccionar orden"
+                          />
+                        </TableCell>
+                        <TableCell className="py-3.5 px-4 font-mono text-sm font-semibold">
+                          {p.orderNumber}
+                        </TableCell>
+                        <TableCell className="py-3.5 px-4 text-sm">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge
+                              variant="outline"
+                              className={
+                                p.debtorType === 'holder'
+                                  ? 'bg-brand-cyan-soft text-brand-blue-strong border-brand-cyan/40'
+                                  : 'bg-brand-blue-soft text-brand-blue-strong border-brand-blue/30'
+                              }
+                            >
+                              {p.debtorType === 'holder' ? 'Titular' : 'Seguro'}
+                            </Badge>
+                            {p.useFixedRate ? (
+                              <Badge
+                                variant="outline"
+                                className="bg-brand-blue-soft text-brand-blue-strong border-brand-blue/30"
+                              >
+                                Tasa fija
+                              </Badge>
+                            ) : null}
+                            <span className="truncate">{pendingDebtorName(p)}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-3.5 px-4 text-sm text-muted-foreground">
+                          {p.branchName ?? '—'}
+                        </TableCell>
+                        <TableCell className="py-3.5 px-4 text-sm font-mono">
+                          {pendingTargetLabel(p)}
+                        </TableCell>
+                        <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                          {formatCreated(p.createdAt)}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
 
-        {error ? (
-          <div className="px-4 py-2 text-sm text-destructive border-b bg-destructive-soft">
-            {error}
+              <DataTablePagination
+                page={filters.page}
+                pageSize={filters.limit}
+                total={pendingMeta.total}
+                lastPage={pendingMeta.lastPage}
+                onPageChange={(p) => updateParam({ page: p })}
+                onPageSizeChange={(limit) => updateParam({ limit })}
+                itemLabel="órdenes"
+              />
+            </div>
           </div>
-        ) : null}
+        </TabsContent>
 
-        <div className="m-4 rounded-lg border overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-10"></TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                N° cuenta
-              </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                <SortableHeader<SortBy>
-                  column="orderNumber"
-                  activeColumn={filters.sortBy}
-                  direction={filters.sortDir}
-                  onSort={onSort}
-                >
-                  N° orden
-                </SortableHeader>
-              </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                Deudor
-              </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                Monto orden
-              </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                Falta por cobrar
-              </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                Estado
-              </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                <SortableHeader<SortBy>
-                  column="createdAt"
-                  activeColumn={filters.sortBy}
-                  direction={filters.sortDir}
-                  onSort={onSort}
-                >
-                  Creación
-                </SortableHeader>
-              </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-center">
-                Acciones
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <SkeletonTableRows rows={5} columns={9} />
-            ) : data.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={9} className="p-0">
-                  <EmptyState
-                    icon={HandCoins}
-                    title={
-                      hasActiveFilters
-                        ? 'Sin resultados con esos filtros'
-                        : 'Sin cuentas por cobrar'
+        {/* ---------------- Lotes ---------------- */}
+        <TabsContent value="batches">
+          <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
+            <DataTableToolbar
+              searchValue={searchInput}
+              onSearchChange={setSearchInput}
+              searchPlaceholder="Buscar por N° lote, orden o deudor…"
+              hasActiveFilters={hasActiveFilters}
+              onClear={clearFilters}
+              filters={
+                <>
+                  <Select
+                    value={filters.status || 'all'}
+                    onValueChange={(v) =>
+                      updateParam({ status: v === 'all' ? undefined : v })
                     }
-                    description={
-                      hasActiveFilters
-                        ? 'Limpiá los filtros para ver todas las cuentas.'
-                        : 'Las cuentas se generan al crear órdenes tipo seguro, crédito o Cashea.'
-                    }
-                  />
-                </TableCell>
-              </TableRow>
-            ) : (
-              data.map((a) => {
-                const fixed = isFixedRateAccount(a);
-                const pUsd = pendingUsd(a);
-                const collected = collectedUsd(a);
-                const pBs = pendingBs(a);
-                const collectedBsVal = collectedBs(a);
-                const debtorType = debtorTypeOf(a);
-                // Permite seleccionar mientras no esté completamente cobrada.
-                const isUncollected =
-                  a.status === 'uncollected' || a.status === 'partially_collected';
-                return (
-                  <TableRow key={a.id} className="hover:bg-muted/30">
-                    <TableCell className="py-3.5 px-4">
-                      <Checkbox
-                        checked={selected.has(a.id)}
-                        disabled={!isUncollected}
-                        onCheckedChange={() => isUncollected && toggleSelect(a.id)}
-                        aria-label="Seleccionar cuenta"
-                      />
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 font-mono text-sm font-semibold">
-                      {a.receivableNumber}
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 font-mono text-sm">
-                      <Link
-                        to={`/orders/edit/${a.orderId}`}
-                        className="text-brand-blue hover:underline"
+                  >
+                    <SelectTrigger className="h-9 w-44">
+                      <SelectValue placeholder="Estado" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Estado: todos</SelectItem>
+                      <SelectItem value="uncollected">No cobrado</SelectItem>
+                      <SelectItem value="partially_collected">
+                        Cobrado parcialmente
+                      </SelectItem>
+                      <SelectItem value="collected">Cobrado</SelectItem>
+                      <SelectItem value="overcollected">Sobre-cobrado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {debtorFilters}
+                </>
+              }
+            />
+            {batchesError ? (
+              <div className="px-4 py-2 text-sm text-destructive border-b bg-destructive-soft">
+                {batchesError}
+              </div>
+            ) : null}
+
+            <div className="m-4 rounded-lg border overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      <SortableHeader<SortBy>
+                        column="receivableNumber"
+                        activeColumn={filters.sortBy}
+                        direction={filters.sortDir}
+                        onSort={onSort}
                       >
-                        {a.order.orderNumber}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {isCasheaAccount(a) ? (
-                          <Badge
-                            variant="outline"
-                            className="bg-warning-soft text-warning border-warning/40"
-                          >
-                            Cashea
-                          </Badge>
-                        ) : (
-                          <Badge
-                            variant="outline"
-                            className={
-                              debtorType === 'holder'
-                                ? 'bg-brand-cyan-soft text-brand-blue-strong border-brand-cyan/40'
-                                : 'bg-brand-blue-soft text-brand-blue-strong border-brand-blue/30'
-                            }
-                          >
-                            {debtorType === 'holder' ? 'Titular' : 'Seguro'}
-                          </Badge>
-                        )}
-                        {fixed ? (
-                          <Badge
-                            variant="outline"
-                            className="bg-brand-blue-soft text-brand-blue-strong border-brand-blue/30"
-                          >
-                            Tasa fija
-                          </Badge>
-                        ) : null}
-                        <span className="truncate">{debtorDisplayName(a)}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm font-mono">
-                      {(() => {
-                        const price = Number(a.order.priceAmount);
-                        if (fixed) {
-                          const tBs = targetBs(a) ?? 0;
-                          const rateBs = Number(
-                            a.order.fixedExchangeRate?.amountBs ?? 0,
-                          );
-                          return (
-                            <div className="space-y-0.5">
-                              <div>{formatMoney(tBs)} Bs</div>
-                              <div className="text-[10px] text-muted-foreground font-sans">
-                                tasa fija · {formatMoney(price)} USD × {formatMoney(rateBs)} Bs
-                              </div>
-                            </div>
-                          );
-                        }
-                        const target = targetUsd(a);
-                        if (isCasheaAccount(a) && target !== null) {
-                          return (
-                            <div className="space-y-0.5">
-                              <div>{formatMoney(target)} USD</div>
-                              <div className="text-[10px] text-muted-foreground font-sans">
-                                neto · precio {formatMoney(price)}
-                              </div>
-                            </div>
-                          );
-                        }
-                        return `${formatMoney(price)} USD`;
-                      })()}
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm font-mono">
-                      {fixed
-                        ? pBs !== null
-                          ? (() => {
-                              const v = pBs;
-                              return (
-                                <div
-                                  className={
-                                    Math.abs(v) <= 0.01
-                                      ? 'text-success'
-                                      : v < 0
-                                        ? 'text-brand-blue-strong'
-                                        : collectedBsVal > 0
-                                          ? 'text-warning'
-                                          : 'text-foreground'
-                                  }
-                                >
-                                  {v < 0 ? '+' : ''}
-                                  {formatMoney(Math.abs(v))} Bs
-                                </div>
-                              );
-                            })()
-                          : '—'
-                        : pUsd !== null
-                          ? (
-                              <div
+                        N° lote
+                      </SortableHeader>
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      Deudor
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      Órdenes
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      A cobrar
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      Cobrado
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      Falta
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      Estado
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      <SortableHeader<SortBy>
+                        column="createdAt"
+                        activeColumn={filters.sortBy}
+                        direction={filters.sortDir}
+                        onSort={onSort}
+                      >
+                        Creación
+                      </SortableHeader>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {batchesLoading ? (
+                    <SkeletonTableRows rows={5} columns={8} />
+                  ) : batches.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="p-0">
+                        <EmptyState
+                          icon={HandCoins}
+                          title={
+                            hasActiveFilters
+                              ? 'Sin resultados con esos filtros'
+                              : 'Sin lotes de cobro'
+                          }
+                          description={
+                            hasActiveFilters
+                              ? 'Limpiá los filtros para ver todos los lotes.'
+                              : 'Realizá un cobro desde la pestaña Pendientes.'
+                          }
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    batches.map((b) => {
+                      const fixed = b.mode === 'fixed';
+                      const unit = fixed ? 'Bs.' : 'USD';
+                      const target = fixed ? b.targetBs ?? 0 : b.targetUsd ?? 0;
+                      const collected = fixed ? b.collectedBs ?? 0 : b.collectedUsd ?? 0;
+                      const pendingVal = fixed ? b.pendingBs ?? 0 : b.pendingUsd ?? 0;
+                      const dt = debtorTypeOf(b);
+                      return (
+                        <TableRow
+                          key={b.id}
+                          className="hover:bg-muted/30 cursor-pointer"
+                          onClick={() => navigate(`/accounts-receivable/${b.id}`)}
+                        >
+                          <TableCell className="py-3.5 px-4 font-mono text-sm font-semibold">
+                            {b.receivableNumber}
+                          </TableCell>
+                          <TableCell className="py-3.5 px-4 text-sm">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge
+                                variant="outline"
                                 className={
-                                  Math.abs(pUsd) <= 0.01
-                                    ? 'text-success'
-                                    : pUsd < 0
-                                      ? 'text-brand-blue-strong'
-                                      : collected > 0
-                                        ? 'text-warning'
-                                        : 'text-foreground'
+                                  dt === 'holder'
+                                    ? 'bg-brand-cyan-soft text-brand-blue-strong border-brand-cyan/40'
+                                    : 'bg-brand-blue-soft text-brand-blue-strong border-brand-blue/30'
                                 }
                               >
-                                {pUsd < 0 ? '+' : ''}
-                                {formatMoney(Math.abs(pUsd))} USD
-                              </div>
-                            )
-                          : '—'}
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4">
-                      {(() => {
-                        const colorMap: Record<
-                          typeof a.status,
-                          { bg: string; dot: string }
-                        > = {
-                          collected: {
-                            bg: 'bg-success-soft text-success',
-                            dot: 'bg-success',
-                          },
-                          partially_collected: {
-                            bg: 'bg-brand-cyan-soft text-brand-blue-strong',
-                            dot: 'bg-brand-cyan',
-                          },
-                          overcollected: {
-                            bg: 'bg-brand-blue-soft text-brand-blue-strong',
-                            dot: 'bg-brand-blue',
-                          },
-                          uncollected: {
-                            bg: 'bg-warning-soft text-warning',
-                            dot: 'bg-warning',
-                          },
-                        };
-                        const c = colorMap[a.status];
-                        return (
-                          <span
-                            className={`inline-flex items-center gap-1.5 rounded-full ${c.bg} px-2 py-0.5 text-xs font-medium`}
-                          >
-                            <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
-                            {STATUS_LABEL[a.status]}
-                          </span>
-                        );
-                      })()}
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
-                      {formatCreated(a.createdAt)}
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-center">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setDetailId(a.id)}
-                        title="Ver detalle"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
+                                {dt === 'holder' ? 'Titular' : 'Seguro'}
+                              </Badge>
+                              {fixed ? (
+                                <Badge
+                                  variant="outline"
+                                  className="bg-brand-blue-soft text-brand-blue-strong border-brand-blue/30"
+                                >
+                                  Tasa fija
+                                </Badge>
+                              ) : null}
+                              <span className="truncate">{debtorDisplayName(b)}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-3.5 px-4 text-sm text-muted-foreground">
+                            {b.orders?.length ?? 0}
+                          </TableCell>
+                          <TableCell className="py-3.5 px-4 text-sm font-mono">
+                            {formatMoney(target)} {unit}
+                          </TableCell>
+                          <TableCell className="py-3.5 px-4 text-sm font-mono">
+                            {formatMoney(collected)} {unit}
+                          </TableCell>
+                          <TableCell className="py-3.5 px-4 text-sm font-mono">
+                            <span
+                              className={
+                                Math.abs(pendingVal) <= 0.01
+                                  ? 'text-success'
+                                  : pendingVal < 0
+                                    ? 'text-brand-blue-strong'
+                                    : collected > 0
+                                      ? 'text-warning'
+                                      : 'text-foreground'
+                              }
+                            >
+                              {pendingVal < 0 ? '+' : ''}
+                              {formatMoney(Math.abs(pendingVal))} {unit}
+                            </span>
+                          </TableCell>
+                          <TableCell className="py-3.5 px-4">
+                            {statusBadge(b.status)}
+                          </TableCell>
+                          <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                            {formatCreated(b.createdAt)}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
 
-        <AccountsReceivableDetail
-          accountId={detailId}
-          open={!!detailId}
-          onOpenChange={(o) => !o && setDetailId(null)}
-        />
-
-        <DataTablePagination
-          page={filters.page}
-          pageSize={filters.limit}
-          total={metadata.total}
-          lastPage={metadata.lastPage}
-          onPageChange={(p) => updateParam({ page: p })}
-          onPageSizeChange={(limit) => updateParam({ limit })}
-          itemLabel="cuentas"
-        />
-        </div>
-      </div>
+              <DataTablePagination
+                page={filters.page}
+                pageSize={filters.limit}
+                total={batchesMeta.total}
+                lastPage={batchesMeta.lastPage}
+                onPageChange={(p) => updateParam({ page: p })}
+                onPageSizeChange={(limit) => updateParam({ limit })}
+                itemLabel="lotes"
+              />
+            </div>
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

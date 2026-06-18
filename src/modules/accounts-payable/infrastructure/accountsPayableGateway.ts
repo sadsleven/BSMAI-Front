@@ -1,12 +1,32 @@
 import { api } from '@/lib/api';
 import type {
-  AccountsPayable,
+  AccountsPayableBatch,
+  AccountsPayablePaymentInput,
   AccountsPayableQuery,
+  CreateAccountsPayableBatchDto,
   PaginatedResponse,
-  RegisterPaymentDto,
+  PendingPayable,
+  PendingPayableQuery,
 } from '../domain/models/accountsPayable';
 
-function buildParams(q: AccountsPayableQuery): Record<string, string | number | undefined> {
+const BASE = '/accounts-payable';
+
+function pendingParams(
+  q: PendingPayableQuery,
+): Record<string, string | number | undefined> {
+  return {
+    page: q.page,
+    limit: q.limit,
+    search: q.search,
+    doctorId: q.doctorId,
+    careCenterId: q.careCenterId,
+    branchId: q.branchId,
+  };
+}
+
+function batchParams(
+  q: AccountsPayableQuery,
+): Record<string, string | number | undefined> {
   return {
     page: q.page,
     limit: q.limit,
@@ -15,31 +35,90 @@ function buildParams(q: AccountsPayableQuery): Record<string, string | number | 
     doctorId: q.doctorId,
     careCenterId: q.careCenterId,
     branchId: q.branchId,
-    orderId: q.orderId,
     sortBy: q.sortBy,
     sortDir: q.sortDir,
   };
 }
 
 export const accountsPayableGateway = {
-  async list(
-    query: AccountsPayableQuery = {},
-  ): Promise<PaginatedResponse<AccountsPayable>> {
-    const { data } = await api.get<PaginatedResponse<AccountsPayable>>(
-      '/accounts-payable',
-      { params: buildParams(query) },
+  async listPending(
+    query: PendingPayableQuery = {},
+  ): Promise<PaginatedResponse<PendingPayable>> {
+    const { data } = await api.get<PaginatedResponse<PendingPayable>>(
+      `${BASE}/pending`,
+      { params: pendingParams(query) },
     );
     return data;
   },
-  async getById(id: string): Promise<AccountsPayable> {
-    const { data } = await api.get<AccountsPayable>(`/accounts-payable/${id}`);
+  async list(
+    query: AccountsPayableQuery = {},
+  ): Promise<PaginatedResponse<AccountsPayableBatch>> {
+    const { data } = await api.get<PaginatedResponse<AccountsPayableBatch>>(BASE, {
+      params: batchParams(query),
+    });
     return data;
   },
-  async registerPayment(dto: RegisterPaymentDto): Promise<AccountsPayable[]> {
-    const { data } = await api.post<AccountsPayable[]>(
-      '/accounts-payable/register-payment',
+  async getBatch(id: string): Promise<AccountsPayableBatch> {
+    const { data } = await api.get<AccountsPayableBatch>(`${BASE}/${id}`);
+    return data;
+  },
+  async createBatch(
+    dto: CreateAccountsPayableBatchDto,
+  ): Promise<AccountsPayableBatch> {
+    const { data } = await api.post<AccountsPayableBatch>(BASE, dto);
+    return data;
+  },
+  async addOrders(
+    id: string,
+    internalOrderIds: string[],
+  ): Promise<AccountsPayableBatch> {
+    const { data } = await api.patch<AccountsPayableBatch>(
+      `${BASE}/${id}/orders/add`,
+      { internalOrderIds },
+    );
+    return data;
+  },
+  async removeOrders(
+    id: string,
+    internalOrderIds: string[],
+  ): Promise<AccountsPayableBatch> {
+    const { data } = await api.patch<AccountsPayableBatch>(
+      `${BASE}/${id}/orders/remove`,
+      { internalOrderIds },
+    );
+    return data;
+  },
+  async registerPayment(
+    id: string,
+    payments: AccountsPayablePaymentInput[],
+  ): Promise<AccountsPayableBatch> {
+    const { data } = await api.post<AccountsPayableBatch>(
+      `${BASE}/${id}/payments`,
+      { payments },
+    );
+    return data;
+  },
+  async editPayment(
+    id: string,
+    paymentId: string,
+    dto: AccountsPayablePaymentInput,
+  ): Promise<AccountsPayableBatch> {
+    const { data } = await api.patch<AccountsPayableBatch>(
+      `${BASE}/${id}/payments/${paymentId}`,
       dto,
     );
     return data;
+  },
+  async deletePayment(
+    id: string,
+    paymentId: string,
+  ): Promise<AccountsPayableBatch> {
+    const { data } = await api.delete<AccountsPayableBatch>(
+      `${BASE}/${id}/payments/${paymentId}`,
+    );
+    return data;
+  },
+  async deleteBatch(id: string): Promise<void> {
+    await api.delete(`${BASE}/${id}`);
   },
 };

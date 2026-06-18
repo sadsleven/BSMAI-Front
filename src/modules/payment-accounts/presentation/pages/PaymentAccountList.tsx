@@ -10,6 +10,7 @@ import {
   Eye,
   Smartphone,
   Banknote,
+  CreditCard,
   FileText,
 } from 'lucide-react';
 import { usePaymentAccountStore } from '../../domain/store/paymentAccountStore';
@@ -70,6 +71,8 @@ type TypeFilter = 'all' | PaymentAccountType;
 const TYPE_ICON: Record<PaymentAccountType, typeof Smartphone> = {
   mobile_payment: Smartphone,
   bank_transfer: Banknote,
+  bank_transfer_usd: Banknote,
+  card: CreditCard,
   other: FileText,
 };
 
@@ -305,6 +308,9 @@ export function PaymentAccountList() {
                   <SelectItem value="all">Tipo: todos</SelectItem>
                   <SelectItem value="mobile_payment">Pago móvil</SelectItem>
                   <SelectItem value="bank_transfer">Transferencia</SelectItem>
+                  <SelectItem value="bank_transfer_usd">
+                    Transferencia en dólares
+                  </SelectItem>
                   <SelectItem value="other">Otro</SelectItem>
                 </SelectContent>
               </Select>

@@ -25,6 +25,7 @@ import { dashboardGateway } from '@/modules/dashboard/infrastructure/dashboardGa
 import {
   ORDER_STATUS_LABEL,
   holderDisplayName,
+  orderInternalNumbers,
   type Order,
   type OrderStatus,
 } from '@/modules/orders/domain/models/order';
@@ -460,7 +461,19 @@ export function DashboardPage() {
                     : recent.orders.map((o) => (
                         <tr key={o.id} className="border-t hover:bg-[oklch(0.985_0.003_250)]">
                           <td className="px-5 py-3 font-mono text-xs text-foreground">
-                            {o.orderNumber}
+                            {(() => {
+                              const nums = orderInternalNumbers(o);
+                              return (
+                                <span className="inline-flex flex-wrap items-center gap-x-1.5">
+                                  <span className="font-semibold">{nums[0]}</span>
+                                  {nums.slice(1).map((n) => (
+                                    <span key={n} className="text-muted-foreground">
+                                      · {n}
+                                    </span>
+                                  ))}
+                                </span>
+                              );
+                            })()}
                           </td>
                           <td className="px-5 py-3">
                             <div className="font-medium">{holderDisplayName(o.patient)}</div>

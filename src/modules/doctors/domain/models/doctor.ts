@@ -29,6 +29,8 @@ export interface Doctor {
   lastName: string;
   isLegalEntity: boolean;
   rif?: string | null;
+  /** Dirección del centro donde atiende el doctor. Opcional. */
+  centerAddress?: string | null;
   isActive: boolean;
   specialties: Specialty[];
   phones: DoctorPhone[];
@@ -49,6 +51,7 @@ export interface CreateDoctorDto {
   lastName: string;
   isLegalEntity?: boolean;
   rif?: string;
+  centerAddress?: string;
   phones: { number: string; label?: string }[];
   specialtyIds: string[];
   paymentMethods?: DoctorPaymentMethod[];

@@ -1,8 +1,15 @@
-export type PaymentAccountType = 'mobile_payment' | 'bank_transfer' | 'other';
+export type PaymentAccountType =
+  | 'mobile_payment'
+  | 'bank_transfer'
+  | 'bank_transfer_usd'
+  | 'card'
+  | 'other';
 
 export const PAYMENT_ACCOUNT_TYPE_LABEL: Record<PaymentAccountType, string> = {
   mobile_payment: 'Pago móvil',
   bank_transfer: 'Transferencia',
+  bank_transfer_usd: 'Transferencia en dólares',
+  card: 'Punto (tarjeta)',
   other: 'Otro',
 };
 
@@ -58,9 +65,15 @@ export function paymentAccountSummary(a: PaymentAccount): string {
   if (a.type === 'mobile_payment') {
     return [a.bankCode, a.idDocument, a.phoneNumber].filter(Boolean).join(' · ');
   }
-  if (a.type === 'bank_transfer') {
+  if (a.type === 'bank_transfer' || a.type === 'bank_transfer_usd') {
     const acc = a.accountNumber ? `Cta ${a.accountNumber}` : null;
-    return [a.bankCode, acc, a.accountHolderName].filter(Boolean).join(' · ');
+    const usd = a.type === 'bank_transfer_usd' ? 'USD' : null;
+    return [a.bankCode, acc, a.accountHolderName, usd]
+      .filter(Boolean)
+      .join(' · ');
+  }
+  if (a.type === 'card') {
+    return [a.bankCode, a.accountHolderName].filter(Boolean).join(' · ');
   }
   return a.description ?? '';
 }

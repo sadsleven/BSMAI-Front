@@ -97,6 +97,7 @@ export function DataTablePagination({
 
       <div className="flex items-center gap-1">
         <Button
+          type="button"
           variant="outline"
           size="icon"
           className="w-8 h-8"
@@ -117,6 +118,7 @@ export function DataTablePagination({
           ) : (
             <Button
               key={p}
+              type="button"
               variant={p === safePage ? 'default' : 'outline'}
               size="icon"
               className="w-8 h-8 text-sm"
@@ -128,6 +130,7 @@ export function DataTablePagination({
           ),
         )}
         <Button
+          type="button"
           variant="outline"
           size="icon"
           className="w-8 h-8"

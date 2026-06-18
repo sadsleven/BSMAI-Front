@@ -56,6 +56,7 @@ export function DoctorDetailBody({
             />
             {doctor.isLegalEntity && <DetailRow label="RIF" value={doctor.rif} mono />}
             <DetailRow label="Email" value={doctor.email} />
+            <DetailRow label="Dirección del centro" value={doctor.centerAddress} />
             <DetailRow
               label="Estado"
               value={

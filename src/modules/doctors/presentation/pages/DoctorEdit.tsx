@@ -60,6 +60,7 @@ export function DoctorEdit() {
       lastName: '',
       isLegalEntity: false,
       rif: '',
+      centerAddress: '',
       phones: [],
       specialtyIds: [],
       paymentMethods: [],
@@ -82,6 +83,7 @@ export function DoctorEdit() {
           lastName: d.lastName,
           isLegalEntity: d.isLegalEntity,
           rif: d.rif ?? '',
+          centerAddress: d.centerAddress ?? '',
           phones:
             d.phones?.length > 0
               ? d.phones.map((ph) => ({ number: ph.number, label: ph.label ?? '' }))
@@ -131,6 +133,7 @@ export function DoctorEdit() {
         lastName: values.lastName,
         isLegalEntity: values.isLegalEntity,
         rif: values.isLegalEntity ? values.rif || undefined : undefined,
+        centerAddress: values.centerAddress?.trim() ?? '',
         phones: values.phones.map((p) => ({
           number: p.number,
           label: p.label || undefined,

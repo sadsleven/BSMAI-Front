@@ -1,6 +1,7 @@
 import { Controller, useFormContext } from 'react-hook-form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { CedulaInput } from '@/components/ui/cedula-input';
 import { RifInput } from '@/components/ui/rif-input';
@@ -149,6 +150,19 @@ export function DoctorForm({
               className={cn('h-9', invalid('lastName'))}
             />
             <FieldError message={errors.lastName?.message} />
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="centerAddress" className="text-sm font-medium">
+              Dirección del centro{' '}
+              <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
+            </Label>
+            <Textarea
+              id="centerAddress"
+              rows={2}
+              {...register('centerAddress')}
+              className={invalid('centerAddress')}
+            />
+            <FieldError message={errors.centerAddress?.message} />
           </div>
         </FormGrid>
       </FormSection>

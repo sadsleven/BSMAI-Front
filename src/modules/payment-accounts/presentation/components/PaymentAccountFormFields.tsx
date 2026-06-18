@@ -20,7 +20,13 @@ import type { PaymentAccountValues } from '@/lib/validations/schemas';
 import { cn } from '@/lib/utils';
 import { PAYMENT_ACCOUNT_TYPE_LABEL } from '../../domain/models/paymentAccount';
 
-const TYPES: PaymentAccountValues['type'][] = ['mobile_payment', 'bank_transfer', 'other'];
+const TYPES: PaymentAccountValues['type'][] = [
+  'mobile_payment',
+  'bank_transfer',
+  'bank_transfer_usd',
+  'card',
+  'other',
+];
 
 export type PaymentAccountFormFieldsProps = {
   /** Si true, el tipo no se puede cambiar (caso edición). */
@@ -90,8 +96,14 @@ export function PaymentAccountFormFields({ lockType }: PaymentAccountFormFieldsP
     if (next === 'mobile_payment') {
       setValue('accountNumber', '', { shouldDirty: true });
       setValue('description', '', { shouldDirty: true });
-    } else if (next === 'bank_transfer') {
+    } else if (next === 'bank_transfer' || next === 'bank_transfer_usd') {
       setValue('phoneNumber', '', { shouldDirty: true });
+      setValue('description', '', { shouldDirty: true });
+    } else if (next === 'card') {
+      // Punto: solo banco + titular.
+      setValue('phoneNumber', '', { shouldDirty: true });
+      setValue('idDocument', '', { shouldDirty: true });
+      setValue('accountNumber', '', { shouldDirty: true });
       setValue('description', '', { shouldDirty: true });
     } else {
       setValue('bankCode', '', { shouldDirty: true });
@@ -291,6 +303,124 @@ export function PaymentAccountFormFields({ lockType }: PaymentAccountFormFieldsP
               {showError('idDocument')}
             </div>
           </FormGrid>
+        </FormSection>
+      )}
+
+      {type === 'bank_transfer_usd' && (
+        <FormSection
+          title="Datos de la transferencia en dólares"
+          description="Cuenta en USD. Los cobros con esta cuenta se registran en dólares, sin tasa de cambio."
+        >
+          <FormGrid>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">
+                Banco <span className="text-destructive">*</span>
+              </Label>
+              <Select
+                value={bankCode ?? ''}
+                onValueChange={(v) =>
+                  setValue('bankCode', v, { shouldDirty: true, shouldValidate: true })
+                }
+              >
+                <SelectTrigger className={cn('h-9', invalid('bankCode'))}>
+                  <SelectValue placeholder={loadingBanks ? 'Cargando…' : 'Seleccionar banco'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {banks.map((b) => (
+                    <SelectItem key={b.code} value={b.code}>
+                      {b.code} — {b.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {showError('bankCode')}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="accountNumberUsd" className="text-sm font-medium">
+                Número de cuenta <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="accountNumberUsd"
+                placeholder="00000000000000000000"
+                {...register('accountNumber')}
+                className={cn('h-9 font-mono', invalid('accountNumber'))}
+                maxLength={20}
+              />
+              {showError('accountNumber')}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="accountHolderNameUsd" className="text-sm font-medium">
+                Titular <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="accountHolderNameUsd"
+                {...register('accountHolderName')}
+                className={cn('h-9', invalid('accountHolderName'))}
+              />
+              {showError('accountHolderName')}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="idDocumentUsd" className="text-sm font-medium">
+                Cédula/RIF del titular <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="idDocumentUsd"
+                placeholder="J-12.345.678-9"
+                {...register('idDocument')}
+                className={cn('h-9 font-mono', invalid('idDocument'))}
+              />
+              {showError('idDocument')}
+            </div>
+          </FormGrid>
+        </FormSection>
+      )}
+
+      {type === 'card' && (
+        <FormSection
+          title="Datos del Punto"
+          description="Punto de venta (POS) de tarjeta. El número de referencia se ingresa al registrar cada cobro."
+        >
+          <FormGrid>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">
+                Banco <span className="text-destructive">*</span>
+              </Label>
+              <Select
+                value={bankCode ?? ''}
+                onValueChange={(v) =>
+                  setValue('bankCode', v, { shouldDirty: true, shouldValidate: true })
+                }
+              >
+                <SelectTrigger className={cn('h-9', invalid('bankCode'))}>
+                  <SelectValue placeholder={loadingBanks ? 'Cargando…' : 'Seleccionar banco'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {banks.map((b) => (
+                    <SelectItem key={b.code} value={b.code}>
+                      {b.code} — {b.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {showError('bankCode')}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="accountHolderName" className="text-sm font-medium">
+                Titular <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="accountHolderName"
+                {...register('accountHolderName')}
+                className={cn('h-9', invalid('accountHolderName'))}
+              />
+              {showError('accountHolderName')}
+            </div>
+          </FormGrid>
+          {bankCode && banksByCode.has(bankCode) ? (
+            <p className="text-xs text-muted-foreground mt-2">
+              {banksByCode.get(bankCode)?.name}
+            </p>
+          ) : null}
         </FormSection>
       )}
 
