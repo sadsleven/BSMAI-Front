@@ -371,7 +371,7 @@ const servicePriceRowSchema = z.object({
 
 export const servicePricesArraySchema = z
   .array(servicePriceRowSchema)
-  .max(500, 'Máximo 500 precios')
+  .max(5000, 'Máximo 5000 precios')
   .superRefine((rows, ctx) => {
     const seen = new Set<string>();
     rows.forEach((r, i) => {
@@ -1073,6 +1073,13 @@ export const orderSchema = z
           code: 'custom',
           path: ['casheaFirstInstallmentAmount'],
           message: 'Ingresá el monto de la primera cuota',
+        });
+      } else if (val.casheaFirstInstallmentAmount <= 0) {
+        // Cashea exige una cuota inicial obligatoria para continuar al Paso 2.
+        ctx.addIssue({
+          code: 'custom',
+          path: ['casheaFirstInstallmentAmount'],
+          message: 'La primera cuota (inicial) debe ser mayor a 0',
         });
       } else if (
         typeof val.priceAmount === 'number' &&

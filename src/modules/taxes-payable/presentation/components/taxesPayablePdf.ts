@@ -3,8 +3,11 @@ import autoTable from 'jspdf-autotable';
 import { saveAs } from 'file-saver';
 import {
   PERSON_TYPE_LABEL,
+  batchRecipientName,
   recipientName,
-  type TaxPayable,
+  taxAmountBs,
+  type TaxBatch,
+  type TaxObligation,
 } from '../../domain/models/taxesPayable';
 import { formatMoney } from '@/lib/format/money';
 
@@ -21,10 +24,17 @@ function fmtBs(n: number): string {
 }
 
 function safeFilenameSegment(s: string): string {
-  return s.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').trim().slice(0, 80) || 'sin_nombre';
+  const cleaned = Array.from(s)
+    .map((ch) => {
+      const code = ch.charCodeAt(0);
+      if (code < 32 || '<>:"/\\|?*'.includes(ch)) return '_';
+      return ch;
+    })
+    .join('');
+  return cleaned.trim().slice(0, 80) || 'sin_nombre';
 }
 
-function header(doc: jsPDF, title: string, taxNumber: string): number {
+function header(doc: jsPDF, title: string, num: string): number {
   doc.setFontSize(14).setFont('helvetica', 'bold');
   doc.text(COMPANY.name, 14, 18);
   doc.setFontSize(9).setFont('helvetica', 'normal');
@@ -34,88 +44,65 @@ function header(doc: jsPDF, title: string, taxNumber: string): number {
   doc.setFontSize(12).setFont('helvetica', 'bold');
   doc.text(title, 14, 46);
   doc.setFontSize(9).setFont('helvetica', 'normal');
-  doc.text(`N° ${taxNumber}`, 14, 52);
+  doc.text(`N° ${num}`, 14, 52);
   doc.text(`Fecha: ${new Date().toLocaleDateString('es-VE')}`, 14, 57);
   return 65;
 }
 
-export async function downloadInvoicePdf(tax: TaxPayable): Promise<void> {
+export async function downloadBatchInvoicePdf(batch: TaxBatch): Promise<void> {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  let y = header(doc, 'FACTURA AGRUPADA', tax.taxPayableNumber);
+  let y = header(doc, 'FACTURA AGRUPADA — LOTE SENIAT', batch.taxBatchNumber);
 
   doc.setFontSize(10).setFont('helvetica', 'normal');
-  doc.text(`Proveedor: ${recipientName(tax)}`, 14, y);
+  doc.text(`Proveedor: ${batchRecipientName(batch)}`, 14, y);
   y += 5;
   doc.text(
-    `Tipo: ${tax.recipientType === 'doctor' ? 'Doctor' : 'Centro de atención'}  ·  Régimen: ${
-      PERSON_TYPE_LABEL[tax.personType]
-    }`,
+    `Tipo: ${batch.recipientType === 'doctor' ? 'Doctor' : 'Centro de atención'}`,
     14,
     y,
   );
   y += 5;
 
-  const orderMap = new Map((tax.orders ?? []).map((o) => [o.id, o.orderNumber]));
-  const ap = tax.accountsPayables ?? [];
-  let totalGrossUsd = 0;
-  const body = ap.map((a) => {
-    const gross = Number(a.providerAmount ?? 0);
-    totalGrossUsd += gross;
+  let total = 0;
+  const body = (batch.obligations ?? []).map((o) => {
+    const amt = taxAmountBs(o);
+    total += amt;
     return [
-      orderMap.get(a.orderId) ?? '—',
-      a.payableNumber,
-      `${formatMoney(gross)} USD`,
+      o.taxPayableNumber,
+      (o.internalNumbers ?? []).join(', ') || '—',
+      `${formatMoney(amt)} Bs.`,
     ];
   });
 
   autoTable(doc, {
-    head: [['N° orden', 'Cuenta por pagar', 'Bruto USD']],
+    head: [['N° comprobante', 'Órdenes', 'Retención Bs.']],
     body,
     startY: y + 3,
     styles: { fontSize: 9 },
     headStyles: { fillColor: [229, 231, 235], textColor: 20 },
-    foot: [
-      ['', 'TOTAL BRUTO USD', `${formatMoney(totalGrossUsd)} USD`],
-    ],
+    foot: [['', 'TOTAL AL SENIAT Bs.', `${formatMoney(total)} Bs.`]],
     footStyles: { fontStyle: 'bold', fillColor: [243, 244, 246], textColor: 20 },
   });
 
-  const afterY = (doc as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y + 50;
-  doc.setFontSize(9);
-  doc.text(`Bruto Bs.:  ${fmtBs(Number(tax.grossAmountBs))}`, 14, afterY + 8);
-  doc.text(`Retención Bs.:  ${fmtBs(Number(tax.taxAmountBs))}`, 14, afterY + 14);
-  doc.setFont('helvetica', 'bold');
-  doc.text(
-    `Neto al proveedor Bs.:  ${fmtBs(
-      Math.max(0, Number(tax.grossAmountBs) - Number(tax.taxAmountBs)),
-    )}`,
-    14,
-    afterY + 20,
-  );
-
   const blob = doc.output('blob');
-  saveAs(blob, `Factura-${safeFilenameSegment(tax.taxPayableNumber)}.pdf`);
+  saveAs(blob, `Factura-Lote-${safeFilenameSegment(batch.taxBatchNumber)}.pdf`);
 }
 
-export async function downloadWithholdingPdf(tax: TaxPayable): Promise<void> {
+export async function downloadWithholdingPdf(tax: TaxObligation): Promise<void> {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  let y = header(doc, 'COMPROBANTE DE RETENCIÓN DE ISLR', tax.taxPayableNumber);
+  const y = header(doc, 'COMPROBANTE DE RETENCIÓN DE ISLR', tax.taxPayableNumber);
 
   const rows: string[][] = [
     ['Proveedor', recipientName(tax)],
     ['Tipo', tax.recipientType === 'doctor' ? 'Doctor' : 'Centro de atención'],
     ['Régimen', PERSON_TYPE_LABEL[tax.personType]],
+    ['Órdenes', (tax.internalNumbers ?? []).join(', ') || '—'],
     ['Concepto', 'Honorarios profesionales no mercantiles (Decreto 1.808)'],
-    [
-      'UT vigente',
-      `Bs. ${fmtBs(Number(tax.taxUnitAmountBs))} (${new Date(
-        tax.taxUnit.effectiveDate,
-      ).toLocaleDateString('es-VE')})`,
-    ],
+    ['UT vigente', `Bs. ${fmtBs(Number(tax.taxUnitAmountBs))}`],
     ['Base imponible (bruto)', `${fmtBs(Number(tax.grossAmountBs))} Bs.`],
     ['Tasa aplicada', `${(Number(tax.taxRate) * 100).toFixed(0)}%`],
     ['Sustraendo', `${fmtBs(Number(tax.subtrahendBs))} Bs.`],
-    ['RETENCIÓN', `${fmtBs(Number(tax.taxAmountBs))} Bs.`],
+    ['RETENCIÓN', `${fmtBs(taxAmountBs(tax))} Bs.`],
   ];
 
   autoTable(doc, {

@@ -15,8 +15,8 @@ const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
 const DEFAULT_PAGE_SIZE = 10;
 /** A partir de cuántas filas aparecen búsqueda + paginado. */
 const PAGINATE_THRESHOLD = PAGE_SIZE_OPTIONS[0];
-/** Tope de opciones renderizadas en el combobox de ST (hay miles). */
-const MAX_OPTIONS = 50;
+/** Tanda de opciones montadas en el combobox de ST; crece al hacer scroll. */
+const OPTIONS_CHUNK = 50;
 
 /** Contador para claves estables de filas nuevas (sólo cliente). */
 let rowKeySeq = 0;
@@ -352,15 +352,21 @@ function ServiceTypeCombobox({
 }: ServiceTypeComboboxProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [limit, setLimit] = useState(OPTIONS_CHUNK);
 
-  const { items, overflow } = useMemo(() => {
+  // Reinicia el tope visible al cambiar la búsqueda o reabrir el popup.
+  useEffect(() => {
+    setLimit(OPTIONS_CHUNK);
+  }, [query, open]);
+
+  const { items, hasMore } = useMemo(() => {
     const q = query.trim().toLowerCase();
     const matched = q ? options.filter((o) => o.name.toLowerCase().includes(q)) : options;
     return {
-      items: matched.slice(0, MAX_OPTIONS),
-      overflow: Math.max(0, matched.length - MAX_OPTIONS),
+      items: matched.slice(0, limit),
+      hasMore: matched.length > limit,
     };
-  }, [query, options]);
+  }, [query, options, limit]);
 
   return (
     <Popover
@@ -403,7 +409,15 @@ function ServiceTypeCombobox({
             />
           </div>
         </div>
-        <div className="max-h-64 overflow-y-auto py-1">
+        <div
+          className="max-h-64 overflow-y-auto py-1"
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            if (hasMore && el.scrollHeight - el.scrollTop - el.clientHeight < 48) {
+              setLimit((l) => l + OPTIONS_CHUNK);
+            }
+          }}
+        >
           {items.length === 0 ? (
             <div className="px-3 py-2 text-xs text-muted-foreground">
               {loading ? 'Cargando…' : 'Sin resultados.'}
@@ -433,9 +447,9 @@ function ServiceTypeCombobox({
               </button>
             ))
           )}
-          {overflow > 0 && (
-            <div className="px-3 py-1.5 text-xs text-muted-foreground border-t">
-              +{overflow.toLocaleString()} más. Refiná la búsqueda.
+          {hasMore && (
+            <div className="px-3 py-1.5 text-center text-xs text-muted-foreground">
+              Desplazá para ver más…
             </div>
           )}
         </div>

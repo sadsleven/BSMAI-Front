@@ -2,8 +2,11 @@ import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import {
   PERSON_TYPE_LABEL,
+  batchRecipientName,
   recipientName,
-  type TaxPayable,
+  taxAmountBs,
+  type TaxBatch,
+  type TaxObligation,
 } from '../../domain/models/taxesPayable';
 import { formatMoney } from '@/lib/format/money';
 
@@ -21,22 +24,29 @@ function fmtBs(n: number): string {
 }
 
 function safeFilenameSegment(s: string): string {
-  return s.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').trim().slice(0, 80) || 'sin_nombre';
+  const cleaned = Array.from(s)
+    .map((ch) => {
+      const code = ch.charCodeAt(0);
+      if (code < 32 || '<>:"/\\|?*'.includes(ch)) return '_';
+      return ch;
+    })
+    .join('');
+  return cleaned.trim().slice(0, 80) || 'sin_nombre';
 }
 
 /**
- * Factura agrupada: lista de órdenes contenidas en el pago al proveedor,
- * con sus montos y el total bruto. Una factura por taxes_payable.
+ * Factura agrupada del lote SENIAT: lista de obligaciones de retención del
+ * proveedor con sus montos y el total. Una factura por lote.
  */
-export async function downloadInvoiceXlsx(tax: TaxPayable): Promise<void> {
+export async function downloadBatchInvoiceXlsx(batch: TaxBatch): Promise<void> {
   const wb = new ExcelJS.Workbook();
   wb.creator = COMPANY.name;
   wb.created = new Date();
   const ws = wb.addWorksheet('Factura');
   ws.columns = [
-    { width: 14 }, // N° orden
-    { width: 38 }, // Detalle
-    { width: 14 }, // Bruto USD
+    { width: 18 }, // N° comprobante
+    { width: 32 }, // Órdenes
+    { width: 16 }, // Retención Bs.
   ];
 
   let row = 1;
@@ -50,24 +60,21 @@ export async function downloadInvoiceXlsx(tax: TaxPayable): Promise<void> {
   ws.getCell(row, 1).value = `${COMPANY.ciudad} · Tel: ${COMPANY.telefono}`;
   row += 2;
 
-  ws.getCell(row, 1).value = `FACTURA AGRUPADA N° ${tax.taxPayableNumber}`;
+  ws.getCell(row, 1).value = `FACTURA AGRUPADA — LOTE SENIAT N° ${batch.taxBatchNumber}`;
   ws.getCell(row, 1).font = { bold: true, size: 12 };
   row++;
-  ws.getCell(row, 1).value = `Proveedor: ${recipientName(tax)} (${
-    tax.recipientType === 'doctor' ? 'Doctor' : 'Centro de atención'
+  ws.getCell(row, 1).value = `Proveedor: ${batchRecipientName(batch)} (${
+    batch.recipientType === 'doctor' ? 'Doctor' : 'Centro de atención'
   })`;
   row++;
-  ws.getCell(row, 1).value = `Régimen: ${PERSON_TYPE_LABEL[tax.personType]}`;
-  row++;
   ws.getCell(row, 1).value = `Fecha: ${new Date(
-    tax.createdAt ?? new Date().toISOString(),
+    batch.createdAt ?? new Date().toISOString(),
   ).toLocaleDateString('es-VE')}`;
   row += 2;
 
-  // Header tabla
-  ws.getCell(row, 1).value = 'N° orden';
-  ws.getCell(row, 2).value = 'Cuenta por pagar';
-  ws.getCell(row, 3).value = 'Bruto USD';
+  ws.getCell(row, 1).value = 'N° comprobante';
+  ws.getCell(row, 2).value = 'Órdenes';
+  ws.getCell(row, 3).value = 'Retención Bs.';
   for (let c = 1; c <= 3; c++) {
     ws.getCell(row, c).font = { bold: true };
     ws.getCell(row, c).fill = {
@@ -78,50 +85,32 @@ export async function downloadInvoiceXlsx(tax: TaxPayable): Promise<void> {
   }
   row++;
 
-  let totalGrossUsd = 0;
-  const ap = tax.accountsPayables ?? [];
-  const orders = tax.orders ?? [];
-  const orderMap = new Map(orders.map((o) => [o.id, o.orderNumber]));
-  for (const a of ap) {
-    const grossUsd = Number(a.providerAmount ?? 0);
-    totalGrossUsd += grossUsd;
-    ws.getCell(row, 1).value = orderMap.get(a.orderId) ?? '—';
-    ws.getCell(row, 2).value = a.payableNumber;
-    ws.getCell(row, 3).value = grossUsd;
+  let total = 0;
+  for (const o of batch.obligations ?? []) {
+    const amt = taxAmountBs(o);
+    total += amt;
+    ws.getCell(row, 1).value = o.taxPayableNumber;
+    ws.getCell(row, 2).value = (o.internalNumbers ?? []).join(', ') || '—';
+    ws.getCell(row, 3).value = amt;
     ws.getCell(row, 3).numFmt = '#,##0.00';
     row++;
   }
-  // Total
-  ws.getCell(row, 1).value = 'Total bruto USD';
+  ws.getCell(row, 1).value = 'Total al SENIAT Bs.';
   ws.getCell(row, 1).font = { bold: true };
-  ws.getCell(row, 3).value = totalGrossUsd;
+  ws.getCell(row, 3).value = total;
   ws.getCell(row, 3).numFmt = '#,##0.00';
-  ws.getCell(row, 3).font = { bold: true };
-  row += 2;
-
-  ws.getCell(row, 1).value = 'Bruto Bs.';
-  ws.getCell(row, 3).value = fmtBs(Number(tax.grossAmountBs));
-  row++;
-  ws.getCell(row, 1).value = 'Retención Bs.';
-  ws.getCell(row, 3).value = fmtBs(Number(tax.taxAmountBs));
-  row++;
-  ws.getCell(row, 1).value = 'Neto al proveedor Bs.';
-  ws.getCell(row, 1).font = { bold: true };
-  ws.getCell(row, 3).value = fmtBs(
-    Math.max(0, Number(tax.grossAmountBs) - Number(tax.taxAmountBs)),
-  );
   ws.getCell(row, 3).font = { bold: true };
 
   const buf = await wb.xlsx.writeBuffer();
-  const filename = `Factura-${safeFilenameSegment(tax.taxPayableNumber)}.xlsx`;
+  const filename = `Factura-Lote-${safeFilenameSegment(batch.taxBatchNumber)}.xlsx`;
   saveAs(new Blob([buf]), filename);
 }
 
 /**
- * Comprobante de retención de ISLR (Decreto 1.808). Detalla la fórmula
- * aplicada y los montos del cálculo.
+ * Comprobante de retención de ISLR (Decreto 1.808) de una obligación. Detalla
+ * la fórmula aplicada y los montos del cálculo.
  */
-export async function downloadWithholdingXlsx(tax: TaxPayable): Promise<void> {
+export async function downloadWithholdingXlsx(tax: TaxObligation): Promise<void> {
   const wb = new ExcelJS.Workbook();
   wb.creator = COMPANY.name;
   wb.created = new Date();
@@ -151,22 +140,15 @@ export async function downloadWithholdingXlsx(tax: TaxPayable): Promise<void> {
 
   const rows: Array<[string, string | number]> = [
     ['Proveedor', recipientName(tax)],
-    [
-      'Tipo',
-      tax.recipientType === 'doctor' ? 'Doctor' : 'Centro de atención',
-    ],
+    ['Tipo', tax.recipientType === 'doctor' ? 'Doctor' : 'Centro de atención'],
     ['Régimen', PERSON_TYPE_LABEL[tax.personType]],
+    ['Órdenes', (tax.internalNumbers ?? []).join(', ') || '—'],
     ['Concepto', 'Honorarios profesionales no mercantiles (Decreto 1.808)'],
-    [
-      'UT vigente',
-      `Bs. ${fmtBs(Number(tax.taxUnitAmountBs))} (efectivo ${new Date(
-        tax.taxUnit.effectiveDate,
-      ).toLocaleDateString('es-VE')})`,
-    ],
+    ['UT vigente', `Bs. ${fmtBs(Number(tax.taxUnitAmountBs))}`],
     ['Base imponible (bruto Bs.)', fmtBs(Number(tax.grossAmountBs))],
     ['Tasa aplicada', `${(Number(tax.taxRate) * 100).toFixed(0)}%`],
     ['Sustraendo (Bs.)', fmtBs(Number(tax.subtrahendBs))],
-    ['Retención (Bs.)', fmtBs(Number(tax.taxAmountBs))],
+    ['Retención (Bs.)', fmtBs(taxAmountBs(tax))],
   ];
 
   for (const [label, value] of rows) {

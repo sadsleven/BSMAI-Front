@@ -3,7 +3,12 @@ import autoTable from 'jspdf-autotable';
 import { saveAs } from 'file-saver';
 import type { Order } from '../../domain/models/order';
 import { holderDisplayName } from '../../domain/models/order';
-import { resolveCreationRateBs, type OrderProviderGroup } from './orderExcel';
+import {
+  orderReferenceLabel,
+  providerInternalNumber,
+  resolveCreationRateBs,
+  type OrderProviderGroup,
+} from './orderExcel';
 import { formatMoney } from '@/lib/format/money';
 
 const COMPANY = {
@@ -88,20 +93,31 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
   const stsRaw = (order.orderServiceTypes ?? []).filter(
     (row) => !!row.serviceTypeId,
   );
-  const detailRowsList: Array<{ name: string; qty: number; unitBs: number; totalRowBs: number }> =
+  const detailRowsList: Array<{
+    name: string;
+    qty: number;
+    unitBs: number;
+    totalRowBs: number;
+    orderNo: string;
+  }> =
     stsRaw.length > 0
       ? stsRaw.map((row) => {
           const fx = priceFxForSt(row.serviceTypeId);
           const unitBs = rateBs > 0 ? fx * rateBs : fx;
           const qty = Math.max(1, Math.trunc(row.quantity ?? 1));
+          const pid =
+            row.providerType === 'doctor' ? row.doctorId : row.careCenterId;
           return {
             name: row.serviceType?.name ?? '',
             qty,
             unitBs,
             totalRowBs: unitBs * qty,
+            orderNo:
+              row.internalOrder?.internalNumber ??
+              providerInternalNumber(order, row.providerType, pid ?? ''),
           };
         })
-      : [{ name: '', qty: 1, unitBs: priceBs, totalRowBs: priceBs }];
+      : [{ name: '', qty: 1, unitBs: priceBs, totalRowBs: priceBs, orderNo: order.orderNumber }];
   const sumStsBs = detailRowsList.reduce((acc, r) => acc + r.totalRowBs, 0);
   const totalBs = sumStsBs > 0 ? sumStsBs : priceBs;
   const totalFx = rateBs > 0 ? totalBs / rateBs : priceFx;
@@ -235,7 +251,7 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
   detailRowsList.forEach((row) => {
     body.push([
       { content: String(row.qty).padStart(2, '0'), styles: { halign: 'center' } },
-      { content: order.orderNumber, styles: { halign: 'center' } },
+      { content: row.orderNo, styles: { halign: 'center' } },
       { content: row.name, styles: { halign: 'center' } },
       { content: fmtMoney(row.unitBs), styles: { halign: 'center' } },
       { content: fmtMoney(row.totalRowBs), styles: { halign: 'center' } },
@@ -356,8 +372,7 @@ export async function downloadOrdenInternaPdfForProvider(
   const patientCi = holderId(order.patient);
   const providerLabel =
     group.providerType === 'doctor' ? 'Médico Tratante:' : 'Centro:';
-  const centerAddress =
-    group.providerType === 'care_center' ? group.providerName : '';
+  const centerAddress = group.providerCenterAddress;
   const sts = group.rows.map((r) => {
     const base = r.serviceType?.name ?? r.serviceTypeId;
     return r.quantity && r.quantity > 1 ? `${base} (x${r.quantity})` : base;
@@ -405,7 +420,7 @@ export async function downloadOrdenInternaPdfForProvider(
       styles: { halign: 'center', fontSize: 12 },
     },
     { content: 'N°', styles: { halign: 'center', fontSize: 12 } },
-    { content: order.orderNumber, styles: { halign: 'center', fontSize: 12 } },
+    { content: group.providerOrderNumber, styles: { halign: 'center', fontSize: 12 } },
   ]);
 
   // R5 — Médico Tratante/Centro + Especialidad
@@ -457,7 +472,7 @@ export async function downloadOrdenInternaPdfForProvider(
     { content: phone, styles: { fontSize: 11 } },
     { content: 'Referencia:', styles: { fontStyle: 'bold', fontSize: 11 } },
     {
-      content: order.serviceKey ?? '',
+      content: orderReferenceLabel(order),
       styles: { halign: 'center', fontSize: 11 },
     },
   ]);
@@ -473,15 +488,20 @@ export async function downloadOrdenInternaPdfForProvider(
   ]);
 
   // R10 — Patología + Clave de Servicio
+  const pathologyText = (order.pathologies ?? [])
+    .map((p) => p.name)
+    .filter(Boolean)
+    .join(', ');
   body.push([
     { content: 'Patología:', styles: { fontSize: 11 } },
     {
-      content: (order.pathologies ?? []).map((p) => p.name).join(', '),
+      content: pathologyText,
       colSpan: 4,
       styles: { halign: 'left', fontSize: 11 },
     },
     { content: 'Clave de Servicio:', styles: { fontSize: 11 } },
     {
+      // Clave de servicio = la capturada en el Paso 1 (sólo seguro la persiste).
       content: order.serviceKey ?? '',
       styles: { halign: 'center', fontSize: 11 },
     },
@@ -587,5 +607,5 @@ export async function downloadOrdenInternaPdfForProvider(
   const providerSlug = safeFilenameSegment(group.providerName);
   const typeSlug = group.providerType === 'doctor' ? 'doctor' : 'centro';
   const blob = doc.output('blob');
-  saveAs(blob, `Orden-${order.orderNumber}-${typeSlug}-${providerSlug}.pdf`);
+  saveAs(blob, `Orden-${group.providerOrderNumber}-${typeSlug}-${providerSlug}.pdf`);
 }

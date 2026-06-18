@@ -34,6 +34,7 @@ import {
   ORDER_STATUS_LABEL,
   ORDER_TYPE_LABEL,
   holderDisplayName,
+  orderInternalNumbers,
   type Order,
   type OrderStatus,
   type OrderType,
@@ -146,7 +147,7 @@ export function ReportOrdersPipeline() {
       if (filters.type && o.type !== filters.type) return false;
       if (!s) return true;
       return [
-        o.orderNumber,
+        ...orderInternalNumbers(o),
         holderDisplayName(o.holder),
         holderDisplayName(o.patient),
         o.insurance?.name,
@@ -314,12 +315,24 @@ export function ReportOrdersPipeline() {
                 return (
                   <TableRow key={o.id} className="hover:bg-[oklch(0.985_0.003_250)]">
                     <TableCell className="py-3.5 px-4 text-sm font-mono font-semibold">
-                      <Link
-                        to={`/orders/edit/${o.id}`}
-                        className="text-brand-blue hover:underline"
-                      >
-                        {o.orderNumber}
-                      </Link>
+                      {(() => {
+                        const nums = orderInternalNumbers(o);
+                        return (
+                          <span className="inline-flex flex-wrap items-center gap-x-1.5">
+                            <Link
+                              to={`/orders/edit/${o.id}`}
+                              className="text-brand-blue hover:underline"
+                            >
+                              {nums[0]}
+                            </Link>
+                            {nums.slice(1).map((n) => (
+                              <span key={n} className="text-muted-foreground font-normal">
+                                · {n}
+                              </span>
+                            ))}
+                          </span>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
                       {formatDate(o.orderDate)}

@@ -43,6 +43,7 @@ import {
   type OrderStatus,
   type OrderType,
   holderDisplayName,
+  orderInternalNumbers,
 } from '../../domain/models/order';
 import { Can } from '@/modules/auth/presentation/components/Can';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
@@ -476,7 +477,19 @@ export function OrderList() {
                 return (
                   <TableRow key={order.id} className="hover:bg-[oklch(0.985_0.003_250)]">
                     <TableCell className="py-3.5 px-4 font-mono text-sm">
-                      {order.orderNumber}
+                      {(() => {
+                        const nums = orderInternalNumbers(order);
+                        return (
+                          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                            <span className="font-semibold">{nums[0]}</span>
+                            {nums.slice(1).map((n) => (
+                              <span key={n} className="text-muted-foreground">
+                                · {n}
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm">
                       {order.orderDate.slice(0, 10)}

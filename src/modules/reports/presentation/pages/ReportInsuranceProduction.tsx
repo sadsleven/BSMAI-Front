@@ -12,29 +12,15 @@ import {
 import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
-import { accountsReceivableGateway } from '@/modules/accounts-receivable/infrastructure/accountsReceivableGateway';
-import {
-  collectedUsd,
-  targetUsd,
-  type AccountsReceivable,
-} from '@/modules/accounts-receivable/domain/models/accountsReceivable';
 import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
-import { formatUsd, formatBs, formatNumber, formatPercent, inDateRange } from '../../domain/format';
-import { useUsdRate, usdToBs } from '../../domain/useUsdRate';
-import { REPORT_PAGE_SIZE } from '../../infrastructure/fetchAll';
+import { formatUsd, formatBs, formatNumber, formatPercent } from '../../domain/format';
+import {
+  reportsGateway,
+  type ReportReceivableDebtorRow,
+} from '../../infrastructure/reportsGateway';
 import { getHttpErrorMessage } from '@/lib/api';
-
-type Row = {
-  insuranceId: string;
-  name: string;
-  accountsCount: number;
-  ordersCount: number;
-  billedUsd: number;
-  collectedUsd: number;
-  pendingUsd: number;
-};
 
 export function ReportInsuranceProduction() {
   const [sp, setSp] = useSearchParams();
@@ -47,33 +33,33 @@ export function ReportInsuranceProduction() {
     [sp],
   );
   const [searchInput, setSearchInput] = useState(filters.search);
-  const [rows, setRows] = useState<AccountsReceivable[]>([]);
+  const [rows, setRows] = useState<ReportReceivableDebtorRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [overCap, setOverCap] = useState(false);
-  const usdRate = useUsdRate();
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    accountsReceivableGateway
-      .list({ limit: REPORT_PAGE_SIZE, page: 1, sortDir: 'DESC' })
-      .then((res) => {
+    void (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await reportsGateway.receivablesByDebtor({
+          groupBy: 'insurance',
+          from: filters.from || undefined,
+          to: filters.to || undefined,
+        });
         if (cancelled) return;
-        setRows(res.data);
-        setOverCap(res.metadata.total > REPORT_PAGE_SIZE);
-      })
-      .catch((e) => {
+        setRows(res.rows);
+      } catch (e) {
         if (!cancelled) setError(getHttpErrorMessage(e, 'No se pudo cargar el reporte'));
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setLoading(false);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [filters.from, filters.to]);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -95,57 +81,28 @@ export function ReportInsuranceProduction() {
     setSp(next, { replace: true });
   };
 
-  const aggregated = useMemo<Row[]>(() => {
-    const map = new Map<string, Row>();
-    const orderSet = new Map<string, Set<string>>();
-    rows.forEach((ar) => {
-      if (!inDateRange(ar.createdAt, filters.from || undefined, filters.to || undefined)) return;
-      const id = ar.insuranceId;
-      if (!id) return;
-      let row = map.get(id);
-      if (!row) {
-        row = {
-          insuranceId: id,
-          name: ar.insurance?.name ?? '—',
-          accountsCount: 0,
-          ordersCount: 0,
-          billedUsd: 0,
-          collectedUsd: 0,
-          pendingUsd: 0,
-        };
-        map.set(id, row);
-      }
-      const tgt = targetUsd(ar) ?? 0;
-      const col = collectedUsd(ar);
-      row.accountsCount += 1;
-      row.billedUsd += tgt;
-      row.collectedUsd += col;
-      row.pendingUsd += Math.max(0, tgt - col);
-      if (!orderSet.has(id)) orderSet.set(id, new Set());
-      orderSet.get(id)!.add(ar.orderId);
-    });
-    map.forEach((row) => {
-      row.ordersCount = orderSet.get(row.insuranceId)?.size ?? 0;
-    });
-    const result = Array.from(map.values());
+  const filtered = useMemo(() => {
     const s = filters.search.toLowerCase().trim();
-    const filtered = s ? result.filter((r) => r.name.toLowerCase().includes(s)) : result;
-    return filtered.sort((a, b) => b.billedUsd - a.billedUsd);
-  }, [rows, filters.from, filters.to, filters.search]);
+    return rows
+      .filter((r) => !s || r.debtorName.toLowerCase().includes(s))
+      .sort((a, b) => b.targetUsd - a.targetUsd);
+  }, [rows, filters.search]);
 
   const totals = useMemo(() => {
     let billed = 0;
     let collected = 0;
     let pending = 0;
-    aggregated.forEach((r) => {
-      billed += r.billedUsd;
+    let orders = 0;
+    filtered.forEach((r) => {
+      billed += r.targetUsd;
       collected += r.collectedUsd;
       pending += r.pendingUsd;
+      orders += r.ordersCount;
     });
-    return { billed, collected, pending };
-  }, [aggregated]);
+    return { billed, collected, pending, orders };
+  }, [filtered]);
 
-  const top = aggregated[0];
+  const top = filtered[0];
   const hasActiveFilters = !!filters.search || !!filters.from || !!filters.to;
   const clearFilters = () => {
     setSearchInput('');
@@ -163,8 +120,8 @@ export function ReportInsuranceProduction() {
               icon: ShieldCheck,
               tone: 'blue',
               label: 'Aseguradoras activas',
-              value: formatNumber(aggregated.length),
-              hint: `${formatNumber(aggregated.reduce((s, r) => s + r.ordersCount, 0))} órdenes`,
+              value: formatNumber(filtered.length),
+              hint: `${formatNumber(totals.orders)} órdenes`,
             },
             {
               icon: Wallet,
@@ -183,19 +140,13 @@ export function ReportInsuranceProduction() {
               icon: Crown,
               tone: 'warning',
               label: 'Top aseguradora',
-              value: top ? top.name : '—',
-              hint: top ? formatUsd(top.billedUsd) : undefined,
+              value: top ? top.debtorName : '—',
+              hint: top ? formatUsd(top.targetUsd) : undefined,
             },
           ]}
         />
       }
     >
-      {overCap ? (
-        <div className="px-4 py-2 text-xs text-warning border border-warning-soft bg-warning-soft rounded-lg">
-          Mostrando hasta {REPORT_PAGE_SIZE} cuentas. Aplicá filtros para acotar el reporte.
-        </div>
-      ) : null}
-
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
           searchValue={searchInput}
@@ -225,7 +176,7 @@ export function ReportInsuranceProduction() {
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">#</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Aseguradora</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Órdenes</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Cuentas</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Lotes</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Facturado USD</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Facturado Bs.</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Cobrado USD</TableHead>
@@ -238,7 +189,7 @@ export function ReportInsuranceProduction() {
           <TableBody>
             {loading ? (
               <SkeletonTableRows rows={6} columns={11} />
-            ) : aggregated.length === 0 ? (
+            ) : filtered.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={11} className="p-0">
                   <EmptyState
@@ -247,43 +198,48 @@ export function ReportInsuranceProduction() {
                     description={
                       hasActiveFilters
                         ? 'Ajustá los filtros para ver más resultados.'
-                        : 'Aún no se han facturado órdenes de aseguradoras.'
+                        : 'Aún no hay órdenes de aseguradoras por cobrar.'
                     }
                   />
                 </TableCell>
               </TableRow>
             ) : (
-              aggregated.map((r, idx) => {
-                const pct = r.billedUsd > 0 ? (r.collectedUsd / r.billedUsd) * 100 : 0;
+              filtered.map((r, idx) => {
+                const pct = r.targetUsd > 0 ? (r.collectedUsd / r.targetUsd) * 100 : 0;
                 return (
-                  <TableRow key={r.insuranceId} className="hover:bg-[oklch(0.985_0.003_250)]">
+                  <TableRow
+                    key={`${r.debtorType}:${r.debtorId}`}
+                    className="hover:bg-[oklch(0.985_0.003_250)]"
+                  >
                     <TableCell className="py-3.5 px-4 text-sm text-muted-foreground">
                       {idx + 1}
                     </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm font-medium">{r.name}</TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-medium">
+                      {r.debtorName}
+                    </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
                       {formatNumber(r.ordersCount)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                      {formatNumber(r.accountsCount)}
+                      {formatNumber(r.lotesCount)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                      {formatUsd(r.billedUsd)}
+                      {formatUsd(r.targetUsd)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                      {formatBs(usdToBs(r.billedUsd, usdRate))}
+                      {formatBs(r.targetBs)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-success">
                       {formatUsd(r.collectedUsd)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-success">
-                      {formatBs(usdToBs(r.collectedUsd, usdRate))}
+                      {formatBs(r.collectedBs)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-warning">
                       {formatUsd(r.pendingUsd)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-warning">
-                      {formatBs(usdToBs(r.pendingUsd, usdRate))}
+                      {formatBs(r.pendingBs)}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-muted-foreground">
                       {formatPercent(pct)}

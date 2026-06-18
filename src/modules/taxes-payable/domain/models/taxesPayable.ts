@@ -1,10 +1,9 @@
 import type {
-  Order,
   OrderPaymentType,
   PaymentCurrency,
 } from '@/modules/orders/domain/models/order';
 
-export type TaxPayableStatus = 'paid' | 'unpaid' | 'partially_paid';
+export type TaxBatchStatus = 'paid' | 'unpaid' | 'partially_paid';
 export type RecipientType = 'doctor' | 'care_center';
 export type TaxPayablePersonType = 'natural' | 'legal_entity';
 
@@ -16,6 +15,7 @@ export interface TaxPayablePayment {
   bankCode?: string | null;
   accountNumber?: string | null;
   exchangeRateId?: string | null;
+  exchangeRate?: { id: string; currency: string; amountBs: string | number } | null;
   amountCurrency: PaymentCurrency;
   amountValue: string | number;
   amountInBs: string | number;
@@ -28,14 +28,11 @@ export interface TaxPayableTaxUnit {
   effectiveDate: string;
 }
 
-export interface TaxPayableAccountsPayableRef {
-  id: string;
-  payableNumber: string;
-  orderId: string;
-  providerAmount?: string | number | null;
-}
-
-export interface TaxPayable {
+/**
+ * Obligación de retención (`taxes_payable`). Es la unidad "Pendiente" (sin lote)
+ * o un elemento de las `obligations` de un lote SENIAT.
+ */
+export interface TaxObligation {
   id: string;
   taxPayableNumber: string;
   recipientType: RecipientType;
@@ -49,8 +46,8 @@ export interface TaxPayable {
   careCenterId?: string | null;
   careCenter?: { id: string; businessName?: string | null } | null;
   personType: TaxPayablePersonType;
-  taxUnitId: string;
-  taxUnit: TaxPayableTaxUnit;
+  taxUnitId?: string;
+  taxUnit?: TaxPayableTaxUnit;
   /** Snapshot del valor UT (Bs) usado para el cálculo. */
   taxUnitAmountBs: string | number;
   /** Base imponible en Bs. */
@@ -61,31 +58,64 @@ export interface TaxPayable {
   subtrahendBs: string | number;
   /** Retención en Bs (≥ 0). */
   taxAmountBs: string | number;
-  status: TaxPayableStatus;
+  status: TaxBatchStatus;
   paidAt?: string | null;
-  /** Órdenes contenidas en la factura agrupada del pago. */
-  orders?: Order[];
-  /** AP cubiertas por el pago al proveedor que originó la retención. */
-  accountsPayables?: TaxPayableAccountsPayableRef[];
-  payments?: TaxPayablePayment[];
+  sourcePayableId?: string | null;
+  taxPaymentBatchId?: string | null;
+  /** Números de orden interna del lote AP de origen (transient, lo provee el BE). */
+  internalNumbers?: string[];
   createdAt?: string;
   updatedAt?: string;
+}
+
+/** Lote SENIAT (un proveedor, N obligaciones de retención, M pagos). */
+export interface TaxBatch {
+  id: string;
+  taxBatchNumber: string;
+  recipientType: RecipientType;
+  doctorId?: string | null;
+  doctor?: {
+    id: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    isLegalEntity?: boolean;
+  } | null;
+  careCenterId?: string | null;
+  careCenter?: { id: string; businessName?: string | null } | null;
+  status: TaxBatchStatus;
+  paidAt?: string | null;
+  obligations: TaxObligation[];
+  payments: TaxPayablePayment[];
+  createdAt?: string;
+  updatedAt?: string;
+  // Transient (provistos por el BE).
+  targetBs?: number;
+  paidBs?: number;
+  pendingBs?: number;
+}
+
+export interface PendingTaxQuery {
+  page?: number;
+  limit?: number;
+  search?: string;
+  doctorId?: string;
+  careCenterId?: string;
+  branchId?: string;
 }
 
 export interface TaxesPayableQuery {
   page?: number;
   limit?: number;
   search?: string;
-  status?: TaxPayableStatus;
+  status?: TaxBatchStatus;
   doctorId?: string;
   careCenterId?: string;
   branchId?: string;
-  orderId?: string;
-  sortBy?: 'taxPayableNumber' | 'taxAmountBs' | 'grossAmountBs' | 'createdAt' | 'updatedAt';
+  sortBy?: 'taxBatchNumber' | 'createdAt' | 'updatedAt';
   sortDir?: 'ASC' | 'DESC';
 }
 
-export interface RegisterTaxPaymentInput {
+export interface TaxPayablePaymentInput {
   type: OrderPaymentType;
   paymentDate: string;
   referenceNumber?: string;
@@ -96,9 +126,11 @@ export interface RegisterTaxPaymentInput {
   amountValue: number;
 }
 
-export interface RegisterTaxPaymentDto {
+export interface CreateTaxBatchDto {
+  recipientType: RecipientType;
+  doctorId?: string;
+  careCenterId?: string;
   taxPayableIds: string[];
-  payments: RegisterTaxPaymentInput[];
 }
 
 export interface PaginatedResponse<T> {
@@ -106,7 +138,7 @@ export interface PaginatedResponse<T> {
   metadata: { total: number; page: number; lastPage: number };
 }
 
-export const STATUS_LABEL: Record<TaxPayableStatus, string> = {
+export const STATUS_LABEL: Record<TaxBatchStatus, string> = {
   paid: 'Pagado',
   unpaid: 'No pagado',
   partially_paid: 'Pagado parcialmente',
@@ -117,11 +149,12 @@ export const PERSON_TYPE_LABEL: Record<TaxPayablePersonType, string> = {
   legal_entity: 'Persona jurídica domiciliada',
 };
 
-export function canSelectForPayment(t: TaxPayable): boolean {
-  return t.status !== 'paid';
-}
-
-export function recipientName(t: TaxPayable): string {
+/** Nombre del proveedor de una obligación. */
+export function recipientName(t: {
+  recipientType: RecipientType;
+  doctor?: { firstName?: string | null; lastName?: string | null } | null;
+  careCenter?: { businessName?: string | null } | null;
+}): string {
   if (t.recipientType === 'doctor') {
     const d = t.doctor;
     return d ? `${d.firstName ?? ''} ${d.lastName ?? ''}`.trim() || '—' : '—';
@@ -129,18 +162,23 @@ export function recipientName(t: TaxPayable): string {
   return t.careCenter?.businessName ?? '—';
 }
 
-/** Retención en Bs. */
-export function taxAmountBs(t: TaxPayable): number {
+/** Nombre del proveedor de un lote SENIAT. */
+export function batchRecipientName(b: TaxBatch): string {
+  return recipientName(b);
+}
+
+/** ID del proveedor de un lote (doctor o centro). */
+export function batchProviderId(b: TaxBatch): string | null {
+  return b.recipientType === 'doctor' ? b.doctorId ?? null : b.careCenterId ?? null;
+}
+
+/** ID del proveedor de una obligación pendiente (doctor o centro). */
+export function obligationProviderId(t: TaxObligation): string | null {
+  return t.recipientType === 'doctor' ? t.doctorId ?? null : t.careCenterId ?? null;
+}
+
+/** Retención en Bs de una obligación. */
+export function taxAmountBs(t: TaxObligation): number {
   const n = Number(t.taxAmountBs);
   return Number.isFinite(n) ? n : 0;
-}
-
-/** Suma Bs de pagos aplicados al SENIAT. */
-export function paidBs(t: TaxPayable): number {
-  return (t.payments ?? []).reduce((s, p) => s + Number(p.amountInBs || 0), 0);
-}
-
-/** Pendiente Bs. */
-export function pendingBs(t: TaxPayable): number {
-  return Math.max(0, taxAmountBs(t) - paidBs(t));
 }

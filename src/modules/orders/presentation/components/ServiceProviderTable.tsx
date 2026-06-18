@@ -1,4 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  type UIEvent,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Trash2, AlertTriangle, Search, ChevronDown, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -59,12 +66,6 @@ export function ServiceProviderTable({
   const usedIds = useMemo(
     () => new Set(value.map((r) => r.serviceTypeId).filter(Boolean)),
     [value],
-  );
-
-  // Mostrar columna Cantidad sólo si algún ST disponible la permite.
-  const showQuantityColumn = useMemo(
-    () => serviceTypes.some((s) => s.allowsQuantity),
-    [serviceTypes],
   );
 
   // Cache per-row del objeto provider para mostrar chip en ProviderSearchSelect.
@@ -150,12 +151,12 @@ export function ServiceProviderTable({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
           Cada Tipo de Servicio tiene su propio proveedor. Cambiar uno no afecta a los demás.
         </p>
         {distinctProviders > 0 && (
-          <Badge variant="outline" className="text-[10px]">
+          <Badge variant="outline" className="text-[10px] shrink-0">
             {distinctProviders} proveedor{distinctProviders === 1 ? '' : 'es'}
           </Badge>
         )}
@@ -166,135 +167,121 @@ export function ServiceProviderTable({
           Aún no hay Tipos de Servicio. Agregá al menos uno.
         </div>
       ) : (
-        <div className="rounded-lg border overflow-x-auto">
-          <table className="w-full text-sm min-w-[760px]">
-            <thead className="bg-[oklch(0.985_0.003_250)]">
-              <tr className="text-left">
-                <th className="px-4 py-2 font-semibold text-[11px] uppercase tracking-[0.06em] text-muted-foreground w-[34%]">
-                  Tipo de Servicio
-                </th>
-                <th className="px-4 py-2 font-semibold text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
-                  Proveedor
-                </th>
-                {showQuantityColumn ? (
-                  <th className="px-4 py-2 font-semibold text-[11px] uppercase tracking-[0.06em] text-muted-foreground w-28">
-                    Cantidad
-                  </th>
-                ) : null}
-                <th className="px-2 py-2 w-10" />
-              </tr>
-            </thead>
-            <tbody>
-              {value.map((row, idx) => {
-                const rowError = errors?.[idx];
-                const available = serviceTypes.filter(
-                  (s) => !usedIds.has(s.id) || s.id === row.serviceTypeId,
-                );
-                const currentST = row.serviceTypeId ? stById.get(row.serviceTypeId) : null;
-                const cachedProvider = providerCache[idx] ?? null;
-                return (
-                  <tr key={idx} className="border-t align-top">
-                    <td className="px-4 py-3">
-                      <ServiceTypeSelect
-                        value={row.serviceTypeId || ''}
-                        options={available.map((s) => ({ id: s.id, label: s.name }))}
-                        onChange={(v) => {
-                          const st = stById.get(v);
+        <div className="space-y-3">
+          {value.map((row, idx) => {
+            const rowError = errors?.[idx];
+            const available = serviceTypes.filter(
+              (s) => !usedIds.has(s.id) || s.id === row.serviceTypeId,
+            );
+            const currentST = row.serviceTypeId ? stById.get(row.serviceTypeId) : null;
+            const cachedProvider = providerCache[idx] ?? null;
+            const showQuantity = !!currentST?.allowsQuantity;
+            return (
+              <div key={idx} className="rounded-lg border bg-card p-3 space-y-3">
+                {/* Fila 1: Tipo de Servicio (ocupa todo el ancho) + quitar */}
+                <div className="flex items-start gap-2">
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <label className="block text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      Tipo de Servicio
+                    </label>
+                    <ServiceTypeSelect
+                      value={row.serviceTypeId || ''}
+                      options={available.map((s) => ({ id: s.id, label: s.name }))}
+                      onChange={(v) => {
+                        const st = stById.get(v);
+                        updateRow(idx, {
+                          serviceTypeId: v,
+                          quantity: st?.allowsQuantity ? row.quantity ?? 1 : undefined,
+                        });
+                      }}
+                      disabled={disabled}
+                      invalid={!!rowError?.serviceTypeId}
+                    />
+                    {rowError?.serviceTypeId && (
+                      <p className="text-xs text-destructive flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" />
+                        {rowError.serviceTypeId}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeRow(idx)}
+                    disabled={disabled}
+                    className="mt-[22px] inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive-soft hover:text-destructive disabled:opacity-40"
+                    title="Quitar"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Fila 2: proveedor (tipo + buscador) + cantidad — envuelve en pantallas chicas */}
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      Proveedor
+                    </label>
+                    <div className="inline-flex rounded-md border p-0.5 gap-0.5">
+                      {(['doctor', 'care_center'] as const).map((pt) => (
+                        <button
+                          key={pt}
+                          type="button"
+                          onClick={() => setRowProviderType(idx, pt)}
+                          disabled={disabled}
+                          className={cn(
+                            'px-2.5 py-1 rounded text-xs font-medium transition-colors',
+                            row.providerType === pt
+                              ? 'bg-brand-blue-soft text-brand-blue-strong'
+                              : 'text-muted-foreground hover:bg-accent',
+                          )}
+                        >
+                          {pt === 'doctor' ? 'Doctor' : 'Centro'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="min-w-[200px] flex-1">
+                    <ProviderSearchSelect
+                      providerType={row.providerType}
+                      value={cachedProvider}
+                      onChange={(pv) => setRowProvider(idx, pv)}
+                      disabled={disabled}
+                      hideLabel
+                      compact
+                      error={rowError?.doctorId ?? rowError?.careCenterId}
+                    />
+                  </div>
+                  {showQuantity && (
+                    <div className="w-24 space-y-1">
+                      <label className="block text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                        Cantidad
+                      </label>
+                      <Input
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={row.quantity ?? 1}
+                        onChange={(e) => {
+                          const n = Math.trunc(Number(e.target.value));
                           updateRow(idx, {
-                            serviceTypeId: v,
-                            quantity: st?.allowsQuantity ? row.quantity ?? 1 : undefined,
+                            quantity: Number.isFinite(n) && n >= 1 ? n : 1,
                           });
                         }}
                         disabled={disabled}
-                        invalid={!!rowError?.serviceTypeId}
+                        className={cn('h-9', rowError?.quantity && 'border-destructive')}
                       />
-                      {rowError?.serviceTypeId && (
-                        <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                      {rowError?.quantity && (
+                        <p className="text-xs text-destructive flex items-center gap-1">
                           <AlertTriangle className="w-3 h-3" />
-                          {rowError.serviceTypeId}
+                          {rowError.quantity}
                         </p>
                       )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="space-y-2">
-                        <div className="inline-flex rounded-md border p-0.5 gap-0.5">
-                          {(['doctor', 'care_center'] as const).map((pt) => (
-                            <button
-                              key={pt}
-                              type="button"
-                              onClick={() => setRowProviderType(idx, pt)}
-                              disabled={disabled}
-                              className={cn(
-                                'px-2.5 py-1 rounded text-xs font-medium transition-colors',
-                                row.providerType === pt
-                                  ? 'bg-brand-blue-soft text-brand-blue-strong'
-                                  : 'text-muted-foreground hover:bg-accent',
-                              )}
-                            >
-                              {pt === 'doctor' ? 'Doctor' : 'Centro'}
-                            </button>
-                          ))}
-                        </div>
-                        <ProviderSearchSelect
-                          providerType={row.providerType}
-                          value={cachedProvider}
-                          onChange={(pv) => setRowProvider(idx, pv)}
-                          disabled={disabled}
-                          hideLabel
-                          compact
-                          error={rowError?.doctorId ?? rowError?.careCenterId}
-                        />
-                      </div>
-                    </td>
-                    {showQuantityColumn ? (
-                      <td className="px-4 py-3 align-top">
-                        {currentST?.allowsQuantity ? (
-                          <>
-                            <Input
-                              type="number"
-                              min={1}
-                              step={1}
-                              value={row.quantity ?? 1}
-                              onChange={(e) => {
-                                const n = Math.trunc(Number(e.target.value));
-                                updateRow(idx, {
-                                  quantity: Number.isFinite(n) && n >= 1 ? n : 1,
-                                });
-                              }}
-                              disabled={disabled}
-                              className={cn(
-                                'h-9 w-24',
-                                rowError?.quantity && 'border-destructive',
-                              )}
-                            />
-                            {rowError?.quantity && (
-                              <p className="text-xs text-destructive mt-1 flex items-center gap-1">
-                                <AlertTriangle className="w-3 h-3" />
-                                {rowError.quantity}
-                              </p>
-                            )}
-                          </>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">—</span>
-                        )}
-                      </td>
-                    ) : null}
-                    <td className="px-2 py-3 text-right align-top">
-                      <button
-                        type="button"
-                        onClick={() => removeRow(idx)}
-                        disabled={disabled}
-                        className="inline-flex items-center justify-center w-8 h-8 rounded-md text-muted-foreground hover:bg-destructive-soft hover:text-destructive transition-colors disabled:opacity-40"
-                        title="Quitar"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -384,6 +371,29 @@ function ServiceTypeSelect({
     return options.filter((o) => o.label.toLowerCase().includes(q));
   }, [options, query]);
 
+  // Render incremental por scroll: sólo se montan `visibleCount` filas y se
+  // agregan más al acercarse al fondo. Mantiene el DOM chico (clave en PCs
+  // lentas) sin librerías de virtualización. Los datos ya están en memoria.
+  const CHUNK = 40;
+  const [visibleCount, setVisibleCount] = useState(CHUNK);
+  useEffect(() => {
+    // Reinicia al abrir o al cambiar el filtro.
+    setVisibleCount(CHUNK);
+  }, [query, open]);
+  const shown = useMemo(
+    () => filtered.slice(0, visibleCount),
+    [filtered, visibleCount],
+  );
+  const onListScroll = (e: UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (
+      visibleCount < filtered.length &&
+      el.scrollHeight - el.scrollTop - el.clientHeight < 96
+    ) {
+      setVisibleCount((c) => Math.min(c + CHUNK, filtered.length));
+    }
+  };
+
   return (
     <div ref={wrapRef}>
       <div ref={anchorRef}>
@@ -391,6 +401,7 @@ function ServiceTypeSelect({
           type="button"
           onClick={toggleOpen}
           disabled={disabled}
+          title={selectedLabel || undefined}
           className={cn(
             'flex h-9 w-full items-center justify-between gap-1.5 rounded-md border border-input bg-transparent py-2 pr-2 pl-2.5 text-sm shadow-xs outline-none transition-[color,box-shadow] disabled:cursor-not-allowed disabled:opacity-50',
             'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]',
@@ -399,7 +410,7 @@ function ServiceTypeSelect({
         >
           <span
             className={cn(
-              'line-clamp-1 truncate text-left',
+              'min-w-0 flex-1 truncate text-left',
               !selectedLabel && 'text-muted-foreground',
             )}
           >
@@ -431,7 +442,10 @@ function ServiceTypeSelect({
                   className="h-8 pl-9"
                 />
               </div>
-              <div className="max-h-[232px] overflow-y-auto py-1">
+              <div
+                className="max-h-[232px] overflow-y-auto py-1"
+                onScroll={onListScroll}
+              >
                 {filtered.length === 0 ? (
                   <div className="px-3 py-2 text-sm text-muted-foreground">
                     {options.length === 0
@@ -440,12 +454,13 @@ function ServiceTypeSelect({
                   </div>
                 ) : (
                   <ul>
-                    {filtered.map((o) => {
+                    {shown.map((o) => {
                       const selected = o.id === value;
                       return (
                         <li key={o.id}>
                           <button
                             type="button"
+                            title={o.label}
                             onClick={() => {
                               onChange(o.id);
                               setOpen(false);
@@ -466,6 +481,14 @@ function ServiceTypeSelect({
                         </li>
                       );
                     })}
+                    {visibleCount < filtered.length && (
+                      <li
+                        aria-hidden
+                        className="px-3 py-2 text-center text-[11px] text-muted-foreground"
+                      >
+                        Mostrando {visibleCount} de {filtered.length} · seguí bajando…
+                      </li>
+                    )}
                   </ul>
                 )}
               </div>

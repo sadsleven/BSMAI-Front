@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { FormProvider, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -217,8 +217,20 @@ export function OrderEdit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  // Regla de pago Paso 1 reportada por OrderForm (sólo `cash` bloquea acá).
+  const step1OkRef = useRef(true);
+  const handleStep1Ok = useCallback((ok: boolean) => {
+    step1OkRef.current = ok;
+  }, []);
+
   const onSubmit = async (values: OrderValues) => {
     if (!id) return;
+    if (values.type === 'cash' && !step1OkRef.current) {
+      notify.error(
+        'La orden de contado debe estar cuadrada (pagos = total) para poder crearla y continuar al Paso 2.',
+      );
+      return;
+    }
     try {
       await orderGateway.update(id, buildDto(values));
       notify.success('Orden actualizada');
@@ -314,6 +326,7 @@ export function OrderEdit() {
             onOrderRefresh={async () => {
               await fetchOrder();
             }}
+            onStep1PaymentOkChange={handleStep1Ok}
           />
 
           <div className="flex items-center justify-between gap-3 pt-2 flex-wrap">

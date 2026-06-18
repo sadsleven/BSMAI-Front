@@ -11,7 +11,7 @@ export const PNR_TAX_RATE = 0.03;
 export type SeniatPersonType = 'natural' | 'legal_entity';
 
 export interface RetentionInput {
-  /** Bruto pagado al proveedor, en bolívares (Bs). */
+  /** Totalpagado al proveedor, en bolívares (Bs). */
   grossBs: number;
   personType: SeniatPersonType;
   /** Valor de 1 UT en bolívares al momento del cálculo. */

@@ -150,6 +150,12 @@ export type OrderFormProps = {
   onStepChange?: (id: string) => void;
   /** Refresca la orden persistida tras transiciones (atender, informe, facturar). */
   onOrderRefresh?: () => void | Promise<void>;
+  /**
+   * Reporta si el Paso 1 cumple la regla de pago según el tipo (sólo bloqueante
+   * en `cash`: pagos = total). La página padre lo usa para frenar el submit sin
+   * pegar al backend. `true` para tipos sin requisito o ya cuadrados.
+   */
+  onStep1PaymentOkChange?: (ok: boolean) => void;
 };
 
 export function OrderForm({
@@ -160,6 +166,7 @@ export function OrderForm({
   currentStep: externalStep,
   onStepChange,
   onOrderRefresh,
+  onStep1PaymentOkChange,
 }: OrderFormProps) {
   const me = useAuthStore((s) => s.user);
   const { has } = usePermissions();
@@ -401,9 +408,9 @@ export function OrderForm({
   }, [payments, currentRate, eurRatesById]);
 
   const priceAmount = useWatch({ control, name: 'priceAmount' }) as number | undefined;
-  const diff = (priceAmount ?? 0) - totalPaid;
 
-  const showPayments = type === 'cash';
+  // Pagos en Paso 1: contado y cashea (cashea cobra la cuota inicial del titular).
+  const showPayments = type === 'cash' || type === 'cashea';
   const isCashea = type === 'cashea';
 
   // Tasa fija — solo aplica a seguro. Limpia campos cuando type cambia fuera de insurance.
@@ -480,6 +487,19 @@ export function OrderForm({
       : globalCasheaConfig?.totalRate ?? 0.06
     : 0;
   const casheaFirstAmount = isCashea ? casheaFirstInstallmentAmount ?? 0 : 0;
+
+  // Target de cuadre del Paso 1: contado cuadra el total de la orden; cashea
+  // cuadra la cuota inicial (pago real del titular; el resto lo financia Cashea).
+  const paymentTarget = isCashea ? casheaFirstAmount : priceAmount ?? 0;
+  const diff = paymentTarget - totalPaid;
+
+  // Reporta al padre si el Paso 1 cumple la regla de pago. Sólo `cash` bloquea
+  // acá (debe cuadrar); `cashea` (inicial > 0) ya lo valida zod; crédito/seguro
+  // no piden pago. Permite frenar el submit sin pegar al backend.
+  const step1PaymentOk = type !== 'cash' || Math.abs(diff) < 0.01;
+  useEffect(() => {
+    onStep1PaymentOkChange?.(step1PaymentOk);
+  }, [step1PaymentOk, onStep1PaymentOkChange]);
   // Comisión exacta en centavos enteros (espeja el backend) → sin drift toFixed.
   const casheaCommissionAmount = isCashea
     ? casheaCommissionCents(
@@ -489,10 +509,17 @@ export function OrderForm({
         casheaTotalRate,
       ) / 100
     : 0;
+  // Monto que Cashea remite al comercio = precio − comisión − cuota inicial
+  // (la inicial la cobra el comercio del titular en el Paso 1; sólo resta lo
+  // financiado). Espeja `targetUsdForOrder` del backend.
   const casheaNet = isCashea
-    ? (Math.round((priceAmount ?? 0) * 100) -
-        Math.round(casheaCommissionAmount * 100)) /
-      100
+    ? Math.max(
+        0,
+        (Math.round((priceAmount ?? 0) * 100) -
+          Math.round(casheaCommissionAmount * 100) -
+          Math.round(casheaFirstAmount * 100)) /
+          100,
+      )
     : 0;
   const casheaFirstRatePct = +(casheaFirstRate * 100).toFixed(2);
   const casheaTotalRatePct = +(casheaTotalRate * 100).toFixed(2);
@@ -1323,10 +1350,10 @@ export function OrderForm({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 pt-3 border-t">
             <div className="space-y-1">
               <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
-                Total orden
+                {isCashea ? 'Cuota inicial' : 'Total orden'}
               </div>
               <div className="text-lg font-semibold">
-                {formatMoney(priceAmount ?? 0)} USD
+                {formatMoney(paymentTarget)} USD
               </div>
             </div>
             <div className="space-y-1">
@@ -1367,6 +1394,25 @@ export function OrderForm({
               ) : null}
             </div>
           </div>
+
+          {Math.abs(diff) >= 0.01 ? (
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-warning-soft bg-warning-soft px-3 py-2 text-xs text-warning">
+              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>
+                {isCashea ? (
+                  <>
+                    Cashea requiere cobrar la <strong>cuota inicial</strong> (pagos = inicial)
+                    para poder crear la orden y continuar al Paso 2.
+                  </>
+                ) : (
+                  <>
+                    La orden de contado debe estar <strong>cuadrada</strong> (pagos = total)
+                    para poder crearla y continuar al Paso 2.
+                  </>
+                )}
+              </span>
+            </div>
+          ) : null}
         </FormSection>
       ) : null}
       </>

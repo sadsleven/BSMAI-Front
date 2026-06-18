@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { ChevronLeft, AlertTriangle } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { OrderForm } from '../components/OrderForm';
 import { orderGateway } from '../../infrastructure/orderGateway';
 import type { CreateOrderDto } from '../../domain/models/order';
@@ -102,7 +102,19 @@ export function OrderCreate() {
 
   const { handleSubmit, formState } = methods;
 
+  // Regla de pago Paso 1 reportada por OrderForm (sólo `cash` bloquea acá).
+  const step1OkRef = useRef(true);
+  const handleStep1Ok = useCallback((ok: boolean) => {
+    step1OkRef.current = ok;
+  }, []);
+
   const onSubmit = async (values: OrderValues) => {
+    if (values.type === 'cash' && !step1OkRef.current) {
+      notify.error(
+        'La orden de contado debe estar cuadrada (pagos = total) para poder crearla y continuar al Paso 2.',
+      );
+      return;
+    }
     try {
       const dto = buildDto(values);
       const created = await orderGateway.create(dto);
@@ -147,7 +159,7 @@ export function OrderCreate() {
             </button>
           </div>
 
-          <OrderForm />
+          <OrderForm onStep1PaymentOkChange={handleStep1Ok} />
 
           <div className="flex items-center justify-between gap-3 pt-2 flex-wrap">
             <p className="text-xs text-muted-foreground">

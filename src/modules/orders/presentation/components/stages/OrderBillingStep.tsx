@@ -19,8 +19,7 @@ import { formatMoney } from '@/lib/format/money';
 import { orderGateway } from '../../../infrastructure/orderGateway';
 import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
 import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchangeRate';
-import { accountsPayableGateway } from '@/modules/accounts-payable/infrastructure/accountsPayableGateway';
-import { downloadFacturacionXlsx } from '../orderExcel';
+import { downloadFacturacionXlsx, providerInternalNumber } from '../orderExcel';
 import { downloadFacturacionPdf } from '../orderPdf';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
@@ -80,8 +79,8 @@ export function OrderBillingStep({
 
   useEffect(() => {
     let cancelled = false;
-    setLoadingSuggested(true);
     (async () => {
+      setLoadingSuggested(true);
       type Group = {
         key: string;
         providerType: 'doctor' | 'care_center';
@@ -141,21 +140,18 @@ export function OrderBillingStep({
             .reduce((s, l) => s + (l.amount ?? 0), 0)
             .toFixed(2);
 
+          // Prefill desde la orden interna del proveedor (si ya fue facturada),
+          // sino la suma sugerida. El BE recalcula al finalizar.
           let amount: number | undefined = undefined;
-          try {
-            const list = await accountsPayableGateway.list({
-              orderId: order.id,
-              doctorId: g.providerType === 'doctor' ? g.providerId : undefined,
-              careCenterId:
-                g.providerType === 'care_center' ? g.providerId : undefined,
-              limit: 1,
-            });
-            const acc = list.data[0];
-            if (acc?.providerAmount) {
-              amount = Number(acc.providerAmount);
-            }
-          } catch {
-            // ignorar
+          const internal = (order.internalOrders ?? []).find(
+            (io) =>
+              io.providerType === g.providerType &&
+              (g.providerType === 'doctor'
+                ? io.doctorId === g.providerId
+                : io.careCenterId === g.providerId),
+          );
+          if (internal?.providerAmountUsd != null) {
+            amount = Number(internal.providerAmountUsd);
           }
           if (amount === undefined) {
             amount = suggested > 0 ? suggested : undefined;
@@ -355,7 +351,11 @@ export function OrderBillingStep({
                         </span>
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {p.serviceTypeNames.join(', ')}
+                        Orden N°{' '}
+                        <span className="font-mono font-semibold text-foreground">
+                          {providerInternalNumber(order, p.providerType, p.providerId)}
+                        </span>{' '}
+                        · {p.serviceTypeNames.join(', ')}
                       </div>
                     </div>
                     {showModified && (
@@ -599,7 +599,11 @@ export function OrderBillingStep({
           <div className="flex flex-wrap gap-2">
             {providers.map((p) => {
               const params = new URLSearchParams();
-              params.set('search', order.orderNumber);
+              params.set('tab', 'pending');
+              params.set(
+                'search',
+                providerInternalNumber(order, p.providerType, p.providerId),
+              );
               if (p.providerType === 'doctor') params.set('doctorId', p.providerId);
               else params.set('careCenterId', p.providerId);
               return (
@@ -616,7 +620,7 @@ export function OrderBillingStep({
             order.type === 'credit' ||
             order.type === 'cashea' ? (
               <Link
-                to={`/accounts-receivable?search=${encodeURIComponent(order.orderNumber)}`}
+                to={`/accounts-receivable?tab=pending&search=${encodeURIComponent(order.orderNumber)}`}
               >
                 <Button type="button" variant="outline">
                   <HandCoins className="w-4 h-4 mr-1.5" />

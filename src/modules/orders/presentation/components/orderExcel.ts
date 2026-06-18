@@ -93,7 +93,49 @@ export interface OrderProviderGroup {
   providerType: 'doctor' | 'care_center';
   providerId: string;
   providerName: string;
+  /** Dirección del centro donde atiende el doctor / del centro de atención. */
+  providerCenterAddress: string;
+  /** Número de orden interna de ESTE proveedor (lo que se imprime, no el base). */
+  providerOrderNumber: string;
   rows: OrderServiceTypeRow[];
+}
+
+/**
+ * Etiqueta de "Referencia" para la orden interna — SÓLO para estos archivos
+ * (Excel/PDF). Seguro → nombre corto (o nombre si no tiene); Cashea → "Cashea";
+ * Crédito → "Reembolso"; Contado → "Particular".
+ */
+export function orderReferenceLabel(order: Order): string {
+  switch (order.type) {
+    case 'insurance':
+      return (order.insurance?.shortName?.trim() || order.insurance?.name) ?? '';
+    case 'cashea':
+      return 'Cashea';
+    case 'credit':
+      return 'Reembolso';
+    case 'cash':
+      return 'Particular';
+    default:
+      return '';
+  }
+}
+
+/**
+ * Número de orden interna de un proveedor de la orden. Lo resuelve desde
+ * `order.internalOrders`; si faltara (orden vieja o no recargada), cae al
+ * número BASE de la orden para no imprimir vacío.
+ */
+export function providerInternalNumber(
+  order: Order,
+  providerType: 'doctor' | 'care_center',
+  providerId: string,
+): string {
+  const iio = (order.internalOrders ?? []).find(
+    (o) =>
+      o.providerType === providerType &&
+      (providerType === 'doctor' ? o.doctorId : o.careCenterId) === providerId,
+  );
+  return iio?.internalNumber ?? order.orderNumber;
 }
 
 /** Agrupa las filas OST por proveedor distinto. */
@@ -110,11 +152,17 @@ export function groupOrderProviders(order: Order): OrderProviderGroup[] {
             row.doctorId ||
             ''
           : row.careCenter?.businessName ?? row.careCenterId ?? '';
+      const centerAddress =
+        row.providerType === 'doctor'
+          ? row.doctor?.centerAddress ?? ''
+          : row.careCenter?.centerAddress ?? '';
       groups.set(key, {
         key,
         providerType: row.providerType,
         providerId: id,
         providerName: name,
+        providerCenterAddress: centerAddress,
+        providerOrderNumber: providerInternalNumber(order, row.providerType, id),
         rows: [],
       });
     }
@@ -322,20 +370,32 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
   const stsRaw = (order.orderServiceTypes ?? []).filter(
     (row) => !!row.serviceTypeId,
   );
-  const detailRows: Array<{ name: string; qty: number; unitBs: number; totalRowBs: number }> =
+  const detailRows: Array<{
+    name: string;
+    qty: number;
+    unitBs: number;
+    totalRowBs: number;
+    orderNo: string;
+  }> =
     stsRaw.length > 0
       ? stsRaw.map((row) => {
           const fx = priceFxForSt(row.serviceTypeId);
           const unitBs = rateBs > 0 ? fx * rateBs : fx;
           const qty = Math.max(1, Math.trunc(row.quantity ?? 1));
+          const pid =
+            row.providerType === 'doctor' ? row.doctorId : row.careCenterId;
           return {
             name: row.serviceType?.name ?? '',
             qty,
             unitBs,
             totalRowBs: unitBs * qty,
+            // N° de orden interna del proveedor de ESTA fila (no el base).
+            orderNo:
+              row.internalOrder?.internalNumber ??
+              providerInternalNumber(order, row.providerType, pid ?? ''),
           };
         })
-      : [{ name: '', qty: 1, unitBs: priceBs, totalRowBs: priceBs }];
+      : [{ name: '', qty: 1, unitBs: priceBs, totalRowBs: priceBs, orderNo: order.orderNumber }];
   const sumStsBs = detailRows.reduce((acc, r) => acc + r.totalRowBs, 0);
   const totalBs = sumStsBs > 0 ? sumStsBs : priceBs;
   const totalFx = rateBs > 0 ? totalBs / rateBs : priceFx;
@@ -343,7 +403,7 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
   detailRows.forEach((row, i) => {
     const r = ws.getRow(detailStart + i);
     r.getCell(1).value = String(row.qty).padStart(2, '0');
-    r.getCell(2).value = order.orderNumber;
+    r.getCell(2).value = row.orderNo;
     r.getCell(3).value = row.name;
     r.getCell(4).value = row.unitBs;
     r.getCell(4).numFmt = '#,##0.00';
@@ -550,7 +610,8 @@ export async function downloadOrdenInternaForProvider(
   ws.getCell('F3').value = 'N°';
   ws.getCell('F3').font = TITLE;
   ws.getCell('F3').alignment = center;
-  ws.getCell('G3').value = order.orderNumber;
+  // N° de orden interna de ESTE proveedor (cada orden interna su propio número).
+  ws.getCell('G3').value = group.providerOrderNumber;
   ws.getCell('G3').font = TITLE;
   ws.getCell('G3').alignment = center;
 
@@ -568,15 +629,13 @@ export async function downloadOrdenInternaForProvider(
   ws.getCell('G5').font = { name: 'Calibri', size: 8 };
   ws.getCell('G5').alignment = centerWrap;
 
-  // R6 — Centro/Dirección (sólo si proveedor es centro)
+  // R6 — Centro/Dirección del proveedor (doctor o centro). C6:G6 mergeado.
   ws.getCell('A6').value = 'Centro/Dirección: ';
   ws.getCell('A6').font = LBL;
   ws.getCell('A6').alignment = { wrapText: true };
-  if (group.providerType === 'care_center') {
-    ws.getCell('C6').value = group.providerName;
-    ws.getCell('C6').font = LBL;
-    ws.getCell('C6').alignment = leftMid;
-  }
+  ws.getCell('C6').value = group.providerCenterAddress;
+  ws.getCell('C6').font = LBL;
+  ws.getCell('C6').alignment = { ...leftMid, wrapText: true };
 
   // R7 — Paciente + Cédula
   ws.getCell('A7').value = 'Paciente';
@@ -608,7 +667,7 @@ export async function downloadOrdenInternaForProvider(
   ws.getCell('F8').value = 'Referencia:';
   ws.getCell('F8').font = LBL_BOLD;
   ws.getCell('F8').alignment = { wrapText: true };
-  ws.getCell('G8').value = order.serviceKey ?? '';
+  ws.getCell('G8').value = orderReferenceLabel(order);
   ws.getCell('G8').font = LBL;
   ws.getCell('G8').alignment = center;
 
@@ -619,15 +678,24 @@ export async function downloadOrdenInternaForProvider(
   ws.getCell('B9').font = LBL;
   ws.getCell('B9').alignment = { horizontal: 'left' };
 
-  // R10 — Patología + Clave de Servicio
+  // R10 — Patología + Clave de Servicio. Valor mergeado B10:E10.
+  const pathologyText = (order.pathologies ?? [])
+    .map((p) => p.name)
+    .filter(Boolean)
+    .join(', ');
   ws.getCell('A10').value = 'Patología:';
   ws.getCell('A10').font = LBL;
   ws.getCell('A10').alignment = { vertical: 'middle', wrapText: true };
-  ws.getCell('B10').value = (order.pathologies ?? []).map((p) => p.name).join(', ');
+  ws.getCell('B10').value = pathologyText;
   ws.getCell('B10').font = LBL;
-  ws.getCell('B10').alignment = { horizontal: 'left' };
+  ws.getCell('B10').alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+  // Excel no auto-ajusta filas con celdas mergeadas: altura explícita.
+  // Merge B:E ≈ 54 unidades ≈ 64 chars en Calibri 11.
+  const pathologyLines = Math.max(1, Math.ceil(pathologyText.length / 64));
+  ws.getRow(10).height = Math.max(15.75, pathologyLines * 15);
   ws.getCell('F10').value = 'Clave de Servicio:';
   ws.getCell('F10').font = LBL;
+  // Clave de servicio = la capturada en el Paso 1 (sólo seguro la persiste).
   ws.getCell('G10').value = order.serviceKey ?? '';
   ws.getCell('G10').font = LBL;
   ws.getCell('G10').alignment = center;
@@ -703,7 +771,7 @@ export async function downloadOrdenInternaForProvider(
     new Blob([buf], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     }),
-    `Orden-${order.orderNumber}-${typeSlug}-${providerSlug}.xlsx`,
+    `Orden-${group.providerOrderNumber}-${typeSlug}-${providerSlug}.xlsx`,
   );
 }
 
