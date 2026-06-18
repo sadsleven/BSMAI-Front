@@ -3,7 +3,6 @@ import autoTable from 'jspdf-autotable';
 import { saveAs } from 'file-saver';
 import {
   PERSON_TYPE_LABEL,
-  batchRecipientName,
   recipientName,
   taxAmountBs,
   type TaxBatch,
@@ -51,17 +50,7 @@ function header(doc: jsPDF, title: string, num: string): number {
 
 export async function downloadBatchInvoicePdf(batch: TaxBatch): Promise<void> {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  let y = header(doc, 'FACTURA AGRUPADA — LOTE SENIAT', batch.taxBatchNumber);
-
-  doc.setFontSize(10).setFont('helvetica', 'normal');
-  doc.text(`Proveedor: ${batchRecipientName(batch)}`, 14, y);
-  y += 5;
-  doc.text(
-    `Tipo: ${batch.recipientType === 'doctor' ? 'Doctor' : 'Centro de atención'}`,
-    14,
-    y,
-  );
-  y += 5;
+  const y = header(doc, 'FACTURA AGRUPADA — LOTE SENIAT', batch.taxBatchNumber);
 
   let total = 0;
   const body = (batch.obligations ?? []).map((o) => {
@@ -69,18 +58,19 @@ export async function downloadBatchInvoicePdf(batch: TaxBatch): Promise<void> {
     total += amt;
     return [
       o.taxPayableNumber,
+      recipientName(o),
       (o.internalNumbers ?? []).join(', ') || '—',
       `${formatMoney(amt)} Bs.`,
     ];
   });
 
   autoTable(doc, {
-    head: [['N° comprobante', 'Órdenes', 'Retención Bs.']],
+    head: [['N° comprobante', 'Proveedor', 'Órdenes', 'Retención Bs.']],
     body,
     startY: y + 3,
     styles: { fontSize: 9 },
     headStyles: { fillColor: [229, 231, 235], textColor: 20 },
-    foot: [['', 'TOTAL AL SENIAT Bs.', `${formatMoney(total)} Bs.`]],
+    foot: [['', '', 'TOTAL AL SENIAT Bs.', `${formatMoney(total)} Bs.`]],
     footStyles: { fontStyle: 'bold', fillColor: [243, 244, 246], textColor: 20 },
   });
 

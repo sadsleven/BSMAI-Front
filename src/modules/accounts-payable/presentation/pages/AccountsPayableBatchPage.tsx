@@ -46,14 +46,24 @@ import {
   OrderPaymentForm,
   paymentInBs,
   type PaymentItemErrors,
+  type RecipientPaymentMethod,
 } from '@/modules/orders/presentation/components/OrderPaymentForm';
 import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchangeRate';
 import { UsdRateSelect } from '@/modules/exchange-rates/presentation/components/UsdRateSelect';
+import { doctorGateway } from '@/modules/doctors/infrastructure/doctorGateway';
+import { careCenterGateway } from '@/modules/care-centers/infrastructure/careCenterGateway';
+import { useTaxUnit } from '@/lib/taxes/useTaxUnit';
+import {
+  calcRetention,
+  type RetentionResult,
+  type SeniatPersonType,
+} from '@/lib/taxes/seniatRetention';
 import { accountsPayableGateway } from '../../infrastructure/accountsPayableGateway';
 import {
   orderInternalNumber,
   pendingProviderId,
   pendingProviderName,
+  personTypeOf,
   recipientName,
   type AccountsPayableBatch,
   type PendingPayable,
@@ -413,9 +423,11 @@ export function AccountsPayableBatchPage() {
 // =============================================================================
 function BatchDetail({ id }: { id: string }) {
   const navigate = useNavigate();
+  const { taxUnit } = useTaxUnit();
   const [batch, setBatch] = useState<AccountsPayableBatch | null>(null);
   const [loading, setLoading] = useState(true);
   const [eurRatesById, setEurRatesById] = useState<Record<string, ExchangeRate>>({});
+  const [recipientMethods, setRecipientMethods] = useState<RecipientPaymentMethod[]>([]);
 
   // Add-orders popover.
   const [candidates, setCandidates] = useState<PendingPayable[]>([]);
@@ -446,6 +458,44 @@ function BatchDetail({ id }: { id: string }) {
   const isPaid = batch?.status === 'paid';
   const providerId =
     batch?.recipientType === 'doctor' ? batch?.doctorId : batch?.careCenterId;
+
+  // Cuentas registradas del proveedor (para precargar banco/cuenta en el pago).
+  const recipientType = batch?.recipientType;
+  useEffect(() => {
+    if (!providerId || !recipientType) {
+      setRecipientMethods([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const provider =
+          recipientType === 'doctor'
+            ? await doctorGateway.getById(providerId)
+            : await careCenterGateway.getById(providerId);
+        if (cancelled) return;
+        setRecipientMethods(
+          (provider.paymentMethods ?? [])
+            .filter((m) => m.isActive !== false && m.id)
+            .map((m) => ({
+              id: m.id,
+              type: m.type,
+              bankCode: m.bankCode,
+              phoneNumber: m.phoneNumber,
+              idDocument: m.idDocument,
+              accountNumber: m.accountNumber,
+              accountHolderName: m.accountHolderName,
+              description: m.description,
+            })),
+        );
+      } catch {
+        if (!cancelled) setRecipientMethods([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [providerId, recipientType]);
 
   // Candidatos para agregar: pendientes del mismo proveedor.
   const loadCandidates = useCallback(async () => {
@@ -674,6 +724,18 @@ function BatchDetail({ id }: { id: string }) {
     );
   }
 
+  // Desglose SENIAT (espejo del cálculo del BE) para la sección Resumen.
+  const seniatPersonType: SeniatPersonType = personTypeOf(batch);
+  const taxUnitBs = taxUnit ? Number(taxUnit.amountBs) : null;
+  const seniatBreakdown: RetentionResult | null =
+    taxUnitBs && taxUnitBs > 0
+      ? calcRetention({
+          grossBs: batch.grossBs ?? 0,
+          personType: seniatPersonType,
+          taxUnitBs,
+        })
+      : null;
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <PageBreadcrumbs />
@@ -719,6 +781,14 @@ function BatchDetail({ id }: { id: string }) {
             value={`${formatMoney(batch.pendingBs ?? 0)} Bs.`}
           />
         </div>
+
+        <SeniatBreakdown
+          personType={seniatPersonType}
+          grossBs={batch.grossBs ?? 0}
+          retentionBs={batch.retentionBs ?? 0}
+          taxUnitBs={taxUnitBs}
+          result={seniatBreakdown}
+        />
       </FormSection>
 
       {/* Órdenes */}
@@ -933,6 +1003,7 @@ function BatchDetail({ id }: { id: string }) {
                           hideAddButtons
                           onRemovePayment={removePaymentAt}
                           usePaymentAccount={false}
+                          recipientMethods={recipientMethods}
                         />
                       )}
                     />
@@ -1133,6 +1204,73 @@ function SummaryTile({
         {label}
       </div>
       <div className="font-mono font-semibold">{value}</div>
+    </div>
+  );
+}
+
+/** Desglose paso a paso del cálculo de la retención SENIAT (ISLR, Decreto 1.808). */
+function SeniatBreakdown({
+  personType,
+  grossBs,
+  retentionBs,
+  taxUnitBs,
+  result,
+}: {
+  personType: SeniatPersonType;
+  grossBs: number;
+  retentionBs: number;
+  taxUnitBs: number | null;
+  result: RetentionResult | null;
+}) {
+  const isLegal = personType === 'legal_entity';
+  const regimen = isLegal
+    ? 'Persona jurídica domiciliada (5%)'
+    : 'Persona natural residente (3%)';
+
+  const tiles: { label: string; value: string; tone?: 'warning' }[] = [];
+  if (result) {
+    tiles.push({ label: 'Base imponible', value: `${formatMoney(grossBs)} Bs.` });
+    tiles.push({ label: 'Tasa aplicada', value: `${(result.taxRate * 100).toFixed(0)}%` });
+    if (!isLegal) {
+      tiles.push({ label: 'Valor UT', value: `${formatMoney(taxUnitBs ?? 0)} Bs.` });
+      tiles.push({ label: 'Sustraendo', value: `${formatMoney(result.subtrahendBs)} Bs.` });
+      tiles.push({
+        label: 'Mínimo no sujeto',
+        value: `${formatMoney(result.thresholdBs)} Bs.`,
+      });
+    }
+    tiles.push(
+      result.belowThreshold
+        ? { label: 'Retención', value: 'Exento', tone: 'warning' }
+        : {
+            label: 'Retención',
+            value: `${formatMoney(result.taxAmountBs)} Bs.`,
+            tone: 'warning',
+          },
+    );
+  }
+
+  return (
+    <div className="mt-4 space-y-2">
+      <div className="flex items-baseline justify-between gap-2 flex-wrap">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+          Desglose de la retención · ISLR (Decreto 1.808)
+        </div>
+        <div className="text-xs text-muted-foreground">{regimen}</div>
+      </div>
+      {!result ? (
+        <p className="text-xs italic text-muted-foreground">
+          No hay Unidad Tributaria vigente configurada; no se puede desglosar el
+          cálculo. La retención mostrada ({formatMoney(retentionBs)} Bs.) proviene del
+          servidor.
+        </p>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+          {tiles.map((t) => (
+            <SummaryTile key={t.label} label={t.label} value={t.value} tone={t.tone} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

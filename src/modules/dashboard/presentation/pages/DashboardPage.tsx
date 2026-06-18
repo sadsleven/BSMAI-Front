@@ -130,126 +130,158 @@ function KpiCard({ label, value, delta, trend = 'neutral', icon: Icon, tone, loa
   );
 }
 
-function useCount(
-  enabled: boolean,
-  fetcher: () => Promise<{ count: number }>,
-) {
-  const [value, setValue] = useState<number | null>(null);
-  const [loading, setLoading] = useState(enabled);
-  useEffect(() => {
-    if (!enabled) return;
-    let cancelled = false;
-    setLoading(true);
-    fetcher()
-      .then((r) => {
-        if (!cancelled) setValue(r.count);
-      })
-      .catch(() => {
-        if (!cancelled) setValue(0);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled]);
-  return { value, loading };
-}
-
-function useAmountUsd(
-  enabled: boolean,
-  fetcher: () => Promise<{ amount: number }>,
-) {
-  const [value, setValue] = useState<number | null>(null);
-  const [loading, setLoading] = useState(enabled);
-  useEffect(() => {
-    if (!enabled) return;
-    let cancelled = false;
-    setLoading(true);
-    fetcher()
-      .then((r) => {
-        if (!cancelled) setValue(r.amount);
-      })
-      .catch(() => {
-        if (!cancelled) setValue(0);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled]);
-  return { value, loading };
-}
-
 function formatUsd(amount: number): string {
   return formatMoney(amount);
 }
 
-function useRecentOrders(enabled: boolean) {
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(enabled);
-  useEffect(() => {
-    if (!enabled) return;
-    let cancelled = false;
-    setLoading(true);
-    orderGateway
-      .list({ page: 1, limit: 5, sortBy: 'createdAt', sortDir: 'DESC' })
-      .then((r) => {
-        if (!cancelled) setOrders(r.data);
-      })
-      .catch(() => {
-        if (!cancelled) setOrders([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-  }, [enabled]);
-  return { orders, loading };
+function pickUpcoming(list: Order[]): Order[] {
+  const nowMs = Date.now();
+  return list
+    .filter((o) => {
+      const t = new Date(o.appointmentDate).getTime();
+      return Number.isFinite(t) && t >= nowMs;
+    })
+    .sort(
+      (a, b) => new Date(a.appointmentDate).getTime() - new Date(b.appointmentDate).getTime(),
+    )
+    .slice(0, 5);
 }
 
-function useUpcomingAppointments(enabled: boolean) {
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(enabled);
+type DashboardFlags = {
+  canListPatients: boolean;
+  canListOrders: boolean;
+  canListAr: boolean;
+  canListAp: boolean;
+  canListTp: boolean;
+  canSeeBilled: boolean;
+};
+
+type DashboardData = {
+  patients: number | null;
+  todayAppts: number | null;
+  pending: number | null;
+  billed: number | null;
+  collected: number | null;
+  arTotal: number | null;
+  apTotal: number | null;
+  tpTotal: number | null;
+  recent: Order[];
+  upcoming: Order[];
+};
+
+const EMPTY_DATA: DashboardData = {
+  patients: null,
+  todayAppts: null,
+  pending: null,
+  billed: null,
+  collected: null,
+  arTotal: null,
+  apTotal: null,
+  tpTotal: null,
+  recent: [],
+  upcoming: [],
+};
+
+/**
+ * Carga todas las métricas del dashboard en paralelo con un único Promise.all.
+ * Cada tarea trae su propio .catch (fallback), por lo que el Promise.all nunca
+ * rechaza y un endpoint caído no tumba el resto. Resultado: un solo re-render
+ * al terminar en vez de uno por petición.
+ */
+function useDashboardData(flags: DashboardFlags) {
+  const { canListPatients, canListOrders, canListAr, canListAp, canListTp, canSeeBilled } = flags;
+  const [data, setData] = useState<DashboardData>(EMPTY_DATA);
+  const [loading, setLoading] = useState(true);
+
   useEffect(() => {
-    if (!enabled) return;
     let cancelled = false;
     setLoading(true);
-    orderGateway
-      .list({
-        page: 1,
-        limit: 20,
-        appointmentDateFrom: todayIso(),
-        sortBy: 'appointmentDate',
-        sortDir: 'ASC',
-      })
-      .then((r) => {
-        if (cancelled) return;
-        const nowMs = Date.now();
-        const future = r.data
-          .filter((o) => {
-            const t = new Date(o.appointmentDate).getTime();
-            return Number.isFinite(t) && t >= nowMs;
+
+    const tasks: Array<Promise<Partial<DashboardData>>> = [];
+
+    if (canListPatients) {
+      tasks.push(
+        dashboardGateway
+          .patientsActiveCount()
+          .then((r) => ({ patients: r.count }))
+          .catch(() => ({ patients: 0 })),
+      );
+    }
+    if (canListOrders) {
+      tasks.push(
+        dashboardGateway
+          .ordersTodayCount()
+          .then((r) => ({ todayAppts: r.count }))
+          .catch(() => ({ todayAppts: 0 })),
+        dashboardGateway
+          .ordersPendingCount()
+          .then((r) => ({ pending: r.count }))
+          .catch(() => ({ pending: 0 })),
+        orderGateway
+          .list({ page: 1, limit: 5, sortBy: 'createdAt', sortDir: 'DESC' })
+          .then((r) => ({ recent: r.data }))
+          .catch(() => ({ recent: [] })),
+        orderGateway
+          .list({
+            page: 1,
+            limit: 20,
+            appointmentDateFrom: todayIso(),
+            sortBy: 'appointmentDate',
+            sortDir: 'ASC',
           })
-          .sort(
-            (a, b) =>
-              new Date(a.appointmentDate).getTime() - new Date(b.appointmentDate).getTime(),
-          )
-          .slice(0, 5);
-        setOrders(future);
-      })
-      .catch(() => {
-        if (!cancelled) setOrders([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-  }, [enabled]);
-  return { orders, loading };
+          .then((r) => ({ upcoming: pickUpcoming(r.data) }))
+          .catch(() => ({ upcoming: [] })),
+      );
+    }
+    if (canSeeBilled) {
+      tasks.push(
+        dashboardGateway
+          .billedMonthUsd()
+          .then((r) => ({ billed: r.amount }))
+          .catch(() => ({ billed: 0 })),
+      );
+    }
+    if (canListAr) {
+      tasks.push(
+        dashboardGateway
+          .collectedMonthUsd()
+          .then((r) => ({ collected: r.amount }))
+          .catch(() => ({ collected: 0 })),
+        dashboardGateway
+          .receivableTotalUsd()
+          .then((r) => ({ arTotal: r.amount }))
+          .catch(() => ({ arTotal: 0 })),
+      );
+    }
+    if (canListAp) {
+      tasks.push(
+        dashboardGateway
+          .payableTotalUsd()
+          .then((r) => ({ apTotal: r.amount }))
+          .catch(() => ({ apTotal: 0 })),
+      );
+    }
+    if (canListTp) {
+      tasks.push(
+        dashboardGateway
+          .taxesPayableTotalBs()
+          .then((r) => ({ tpTotal: r.amount }))
+          .catch(() => ({ tpTotal: 0 })),
+      );
+    }
+
+    Promise.all(tasks).then((parts) => {
+      if (cancelled) return;
+      setData(Object.assign({ ...EMPTY_DATA }, ...parts));
+      setLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canListPatients, canListOrders, canListAr, canListAp, canListTp, canSeeBilled]);
+
+  return { data, loading };
 }
 
 function formatHour(iso: string): string {
@@ -294,16 +326,14 @@ export function DashboardPage() {
   const greeting = greetingFor(now);
   const dateLabel = formatDateEs(now);
 
-  const patients = useCount(canListPatients, dashboardGateway.patientsActiveCount);
-  const todayAppts = useCount(canListOrders, dashboardGateway.ordersTodayCount);
-  const pending = useCount(canListOrders, dashboardGateway.ordersPendingCount);
-  const billed = useAmountUsd(canSeeBilled, dashboardGateway.billedMonthUsd);
-  const collected = useAmountUsd(canListAr, dashboardGateway.collectedMonthUsd);
-  const arTotal = useAmountUsd(canListAr, dashboardGateway.receivableTotalUsd);
-  const apTotal = useAmountUsd(canListAp, dashboardGateway.payableTotalUsd);
-  const tpTotal = useAmountUsd(canListTp, dashboardGateway.taxesPayableTotalBs);
-  const recent = useRecentOrders(canListOrders);
-  const upcoming = useUpcomingAppointments(canListOrders);
+  const { data, loading } = useDashboardData({
+    canListPatients,
+    canListOrders,
+    canListAr,
+    canListAp,
+    canListTp,
+    canSeeBilled,
+  });
 
   if (isProvider) {
     return <Navigate to="/orders" replace />;
@@ -327,73 +357,73 @@ export function DashboardPage() {
         {canListPatients ? (
           <KpiCard
             label="Pacientes activos"
-            value={patients.value === null ? null : formatMoney(patients.value, { decimals: 0 })}
+            value={data.patients === null ? null : formatMoney(data.patients, { decimals: 0 })}
             icon={UserRound}
             tone="blue"
-            loading={patients.loading}
+            loading={loading}
           />
         ) : null}
         {canListOrders ? (
           <KpiCard
             label="Citas hoy"
-            value={todayAppts.value === null ? null : formatMoney(todayAppts.value, { decimals: 0 })}
+            value={data.todayAppts === null ? null : formatMoney(data.todayAppts, { decimals: 0 })}
             icon={CalendarClock}
             tone="cyan"
-            loading={todayAppts.loading}
+            loading={loading}
           />
         ) : null}
         {canListOrders ? (
           <KpiCard
             label="Órdenes pendientes"
-            value={pending.value === null ? null : formatMoney(pending.value, { decimals: 0 })}
+            value={data.pending === null ? null : formatMoney(data.pending, { decimals: 0 })}
             icon={FileText}
             tone="amber"
-            loading={pending.loading}
+            loading={loading}
           />
         ) : null}
         {canSeeBilled ? (
           <KpiCard
             label="Facturado mes"
-            value={billed.value === null ? null : `$ ${formatUsd(billed.value)}`}
+            value={data.billed === null ? null : `$ ${formatUsd(data.billed)}`}
             icon={Receipt}
             tone="green"
-            loading={billed.loading}
+            loading={loading}
           />
         ) : null}
         {canListAr ? (
           <KpiCard
             label="Cobrado mes"
-            value={collected.value === null ? null : `$ ${formatUsd(collected.value)}`}
+            value={data.collected === null ? null : `$ ${formatUsd(data.collected)}`}
             icon={Coins}
             tone="green"
-            loading={collected.loading}
+            loading={loading}
           />
         ) : null}
         {canListAr ? (
           <KpiCard
             label="Por cobrar"
-            value={arTotal.value === null ? null : `$ ${formatUsd(arTotal.value)}`}
+            value={data.arTotal === null ? null : `$ ${formatUsd(data.arTotal)}`}
             icon={HandCoins}
             tone="cyan"
-            loading={arTotal.loading}
+            loading={loading}
           />
         ) : null}
         {canListAp ? (
           <KpiCard
             label="Por pagar"
-            value={apTotal.value === null ? null : `$ ${formatUsd(apTotal.value)}`}
+            value={data.apTotal === null ? null : `$ ${formatUsd(data.apTotal)}`}
             icon={Wallet}
             tone="amber"
-            loading={apTotal.loading}
+            loading={loading}
           />
         ) : null}
         {canListTp ? (
           <KpiCard
             label="Retenciones por pagar"
-            value={tpTotal.value === null ? null : formatBs(tpTotal.value)}
+            value={data.tpTotal === null ? null : formatBs(data.tpTotal)}
             icon={Landmark}
             tone="amber"
-            loading={tpTotal.loading}
+            loading={loading}
           />
         ) : null}
       </div>
@@ -432,7 +462,7 @@ export function DashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {recent.loading
+                {loading
                   ? Array.from({ length: 5 }).map((_, i) => (
                       <tr key={`sk-r-${i}`} className="border-t">
                         <td className="px-5 py-3">
@@ -450,7 +480,7 @@ export function DashboardPage() {
                         </td>
                       </tr>
                     ))
-                  : recent.orders.length === 0
+                  : data.recent.length === 0
                     ? (
                         <tr className="border-t">
                           <td colSpan={4} className="px-5 py-8 text-center text-sm text-muted-foreground">
@@ -458,7 +488,7 @@ export function DashboardPage() {
                           </td>
                         </tr>
                       )
-                    : recent.orders.map((o) => (
+                    : data.recent.map((o) => (
                         <tr key={o.id} className="border-t hover:bg-[oklch(0.985_0.003_250)]">
                           <td className="px-5 py-3 font-mono text-xs text-foreground">
                             {(() => {
@@ -500,7 +530,7 @@ export function DashboardPage() {
               <p className="text-xs text-muted-foreground">Desde hoy</p>
             </div>
             <ul className="divide-y flex-1">
-              {upcoming.loading
+              {loading
                 ? Array.from({ length: 5 }).map((_, i) => (
                     <li key={`sk-u-${i}`} className="flex items-center gap-3 px-5 py-3">
                       <Skeleton className="w-[56px] h-[56px] rounded-lg" />
@@ -510,13 +540,13 @@ export function DashboardPage() {
                       </div>
                     </li>
                   ))
-                : upcoming.orders.length === 0
+                : data.upcoming.length === 0
                   ? (
                       <li className="px-5 py-8 text-center text-sm text-muted-foreground">
                         Sin citas próximas.
                       </li>
                     )
-                  : upcoming.orders.map((o) => (
+                  : data.upcoming.map((o) => (
                       <li
                         key={o.id}
                         className="flex items-center gap-3 px-5 py-3 hover:bg-[oklch(0.985_0.003_250)]"

@@ -39,7 +39,7 @@ import { FormSection } from '@/components/ui/form-section';
 import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { getHttpErrorMessage } from '@/lib/api';
-import { formatMoney } from '@/lib/format/money';
+import { formatBs, formatMoney } from '@/lib/format/money';
 import { orderPaymentSchema, type OrderPaymentValues } from '@/lib/validations/schemas';
 import {
   OrderPaymentForm,
@@ -541,6 +541,13 @@ function BatchDetail({ id }: { id: string }) {
   const liveForm = fixed ? totalPaymentsBs : totalPaymentsUsd;
   const liveRemaining = pendingVal - liveForm;
 
+  // En modo USD las cifras del resumen están en USD; mostramos su equivalente
+  // en Bs como referencia a la tasa seleccionada (la misma del form de cobro).
+  // En modo tasa fija el valor ya está en Bs, no hace falta convertir.
+  const rateBs = Number(selectedMarketRate?.amountBs ?? 0);
+  const bsRef = (usd: number): string | undefined =>
+    !fixed && rateBs > 0 ? `≈ ${formatBs(usd * rateBs)}` : undefined;
+
   const onSubmitPayment = async (values: PaymentFormValues) => {
     setBusy(true);
     try {
@@ -705,19 +712,31 @@ function BatchDetail({ id }: { id: string }) {
         description={
           fixed
             ? 'Modo tasa fija — los cobros se comparan en bolívares.'
-            : 'Sin tope — el deudor puede pagar por encima del agregado.'
+            : rateBs > 0
+              ? 'Sin tope — el deudor puede pagar por encima del agregado. Bs de referencia a la tasa seleccionada.'
+              : 'Sin tope — el deudor puede pagar por encima del agregado.'
         }
       >
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
-          <SummaryTile label="Total a cobrar" value={`${formatMoney(target)} ${unit}`} />
+          <SummaryTile
+            label="Total a cobrar"
+            value={`${formatMoney(target)} ${unit}`}
+            sub={bsRef(target)}
+          />
           <SummaryTile
             label="Total cobrado"
             value={`${formatMoney(collected)} ${unit}`}
             tone="success"
+            sub={bsRef(collected)}
           />
           <SummaryTile
             label="Falta por cobrar"
             value={`${pendingVal < 0 ? '+' : ''}${formatMoney(Math.abs(pendingVal))} ${unit}`}
+            sub={
+              bsRef(Math.abs(pendingVal))
+                ? `${pendingVal < 0 ? '+' : ''}${bsRef(Math.abs(pendingVal))}`
+                : undefined
+            }
           />
         </div>
       </FormSection>
@@ -963,10 +982,14 @@ function BatchDetail({ id }: { id: string }) {
                   ) : liveRemaining < 0 ? (
                     <Badge className="bg-brand-blue text-white shrink-0">
                       Excede {formatMoney(Math.abs(liveRemaining))} {unit}
+                      {bsRef(Math.abs(liveRemaining))
+                        ? ` · ${bsRef(Math.abs(liveRemaining))}`
+                        : ''}
                     </Badge>
                   ) : (
                     <Badge className="bg-warning text-white shrink-0">
                       Falta {formatMoney(liveRemaining)} {unit}
+                      {bsRef(liveRemaining) ? ` · ${bsRef(liveRemaining)}` : ''}
                     </Badge>
                   )}
                 </div>
@@ -1091,10 +1114,12 @@ function SummaryTile({
   label,
   value,
   tone,
+  sub,
 }: {
   label: string;
   value: string;
   tone?: 'success';
+  sub?: string;
 }) {
   return (
     <div
@@ -1108,6 +1133,9 @@ function SummaryTile({
         {label}
       </div>
       <div className="font-mono font-semibold">{value}</div>
+      {sub ? (
+        <div className="font-mono text-[11px] text-muted-foreground mt-0.5">{sub}</div>
+      ) : null}
     </div>
   );
 }

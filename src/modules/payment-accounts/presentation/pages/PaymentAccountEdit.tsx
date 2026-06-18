@@ -22,7 +22,7 @@ function toUpdateDto(v: PaymentAccountValues): UpdatePaymentAccountDto {
     out.phoneNumber = v.phoneNumber?.trim();
     out.idDocument = v.idDocument?.trim();
     out.accountHolderName = v.accountHolderName?.trim();
-  } else if (v.type === 'bank_transfer') {
+  } else if (v.type === 'bank_transfer' || v.type === 'bank_transfer_usd') {
     out.bankCode = v.bankCode?.trim();
     out.accountNumber = v.accountNumber?.trim();
     out.accountHolderName = v.accountHolderName?.trim();
