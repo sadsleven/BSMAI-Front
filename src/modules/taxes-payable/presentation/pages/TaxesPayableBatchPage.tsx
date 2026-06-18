@@ -50,11 +50,9 @@ import {
 } from '@/modules/orders/presentation/components/OrderPaymentForm';
 import { taxesPayableGateway } from '../../infrastructure/taxesPayableGateway';
 import {
-  batchRecipientName,
-  obligationProviderId,
+  batchProvidersSummary,
   recipientName,
   taxAmountBs,
-  type RecipientType,
   type TaxBatch,
   type TaxObligation,
 } from '../../domain/models/taxesPayable';
@@ -82,17 +80,8 @@ type PaymentFormValues = z.infer<typeof paymentSchema>;
 const STANDARD_TYPES: OrderPaymentType[] = ['mobile_payment', 'bank_transfer', 'cash_bs'];
 
 type CreateState = {
-  recipientType: 'doctor' | 'care_center';
-  providerId: string;
-  providerName: string;
   taxPayableIds: string[];
 } | null;
-
-type CreateProvider = {
-  recipientType: RecipientType;
-  providerId: string;
-  providerName: string;
-};
 
 function buildPaymentErrors(raw: unknown): PaymentItemErrors[] | undefined {
   if (!Array.isArray(raw)) return undefined;
@@ -127,18 +116,6 @@ export function TaxesPayableBatchPage() {
     () => new Set(createState?.taxPayableIds ?? []),
   );
   const [search, setSearch] = useState('');
-  // Si vino selección de la lista, fijamos el proveedor de entrada.
-  const lockedProvider = useMemo<CreateProvider | null>(
-    () =>
-      createState
-        ? {
-            recipientType: createState.recipientType,
-            providerId: createState.providerId,
-            providerName: createState.providerName,
-          }
-        : null,
-    [createState],
-  );
 
   useEffect(() => {
     if (!isCreate) return;
@@ -169,31 +146,8 @@ export function TaxesPayableBatchPage() {
     [pending, selected],
   );
 
-  // Proveedor derivado: fijado por router state o por la primera fila marcada.
-  const activeProvider = useMemo<CreateProvider | null>(() => {
-    if (lockedProvider) return lockedProvider;
-    if (selectedRows.length === 0) return null;
-    const first = selectedRows[0];
-    return {
-      recipientType: first.recipientType,
-      providerId: obligationProviderId(first) as string,
-      providerName: recipientName(first),
-    };
-  }, [lockedProvider, selectedRows]);
-
-  const providerKey = activeProvider
-    ? `${activeProvider.recipientType}:${activeProvider.providerId}`
-    : null;
-
-  const sameProvider = useMemo(
-    () =>
-      selectedRows.every(
-        (r) => `${r.recipientType}:${obligationProviderId(r)}` === providerKey,
-      ),
-    [selectedRows, providerKey],
-  );
-
-  const canCreate = selectedRows.length >= 1 && !!activeProvider && sameProvider;
+  // Un lote SENIAT puede mezclar proveedores: el pago va al fisco, no al proveedor.
+  const canCreate = selectedRows.length >= 1;
 
   const filteredPending = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -214,11 +168,6 @@ export function TaxesPayableBatchPage() {
       return next;
     });
 
-  const rowOtherProvider = (t: TaxObligation): boolean =>
-    !!providerKey &&
-    `${t.recipientType}:${obligationProviderId(t)}` !== providerKey &&
-    !selected.has(t.id);
-
   const selectedTotalBs = useMemo(
     () => selectedRows.reduce((s, t) => s + taxAmountBs(t), 0),
     [selectedRows],
@@ -232,19 +181,10 @@ export function TaxesPayableBatchPage() {
   };
 
   const onCreate = async () => {
-    if (!canCreate || !activeProvider) return;
+    if (!canCreate) return;
     setCreating(true);
     try {
       const batch = await taxesPayableGateway.createBatch({
-        recipientType: activeProvider.recipientType,
-        doctorId:
-          activeProvider.recipientType === 'doctor'
-            ? activeProvider.providerId
-            : undefined,
-        careCenterId:
-          activeProvider.recipientType === 'care_center'
-            ? activeProvider.providerId
-            : undefined,
         taxPayableIds: selectedRows.map((r) => r.id),
       });
       notify.success('Lote creado');
@@ -266,11 +206,8 @@ export function TaxesPayableBatchPage() {
               Pagar retenciones
             </h1>
             <p className="text-sm text-muted-foreground">
-              {activeProvider
-                ? `Proveedor: ${activeProvider.providerName} · ${
-                    activeProvider.recipientType === 'doctor' ? 'Doctor' : 'Centro'
-                  }`
-                : 'Seleccioná las retenciones pendientes de un mismo proveedor.'}
+              Seleccioná las retenciones pendientes a incluir en el lote. Pueden
+              ser de varios proveedores.
             </p>
           </div>
           <button
@@ -284,7 +221,7 @@ export function TaxesPayableBatchPage() {
 
         <FormSection
           title="Retenciones pendientes"
-          description="Marcá las retenciones a incluir en el lote. Todas deben ser del mismo proveedor."
+          description="Marcá las retenciones a incluir en el lote. Pueden ser de proveedores distintos."
         >
           <div className="relative mb-3">
             <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
@@ -338,20 +275,15 @@ export function TaxesPayableBatchPage() {
                     </TableRow>
                   ) : (
                     filteredPending.map((t) => {
-                      const disabled = rowOtherProvider(t);
                       return (
                         <TableRow
                           key={t.id}
-                          className={
-                            disabled ? 'opacity-50' : 'hover:bg-muted/30 cursor-pointer'
-                          }
-                          title={disabled ? 'Otro proveedor' : undefined}
-                          onClick={() => !disabled && toggleSelect(t.id)}
+                          className="hover:bg-muted/30 cursor-pointer"
+                          onClick={() => toggleSelect(t.id)}
                         >
                           <TableCell className="py-3 px-4">
                             <Checkbox
                               checked={selected.has(t.id)}
-                              disabled={disabled}
                               onCheckedChange={() => toggleSelect(t.id)}
                               aria-label="Seleccionar retención"
                             />
@@ -384,11 +316,6 @@ export function TaxesPayableBatchPage() {
             <div className="text-[11px] text-muted-foreground font-mono">
               {selectedRows.length} retención(es) · {formatMoney(selectedTotalBs)} Bs.
             </div>
-            {selectedRows.length > 0 && !sameProvider ? (
-              <Badge className="bg-warning text-white shrink-0">
-                Hay retenciones de otro proveedor
-              </Badge>
-            ) : null}
           </div>
         </FormSection>
 
@@ -446,14 +373,12 @@ function BatchDetail({ id }: { id: string }) {
   }, [load]);
 
   const isPaid = batch?.status === 'paid';
-  const providerId =
-    batch?.recipientType === 'doctor' ? batch?.doctorId : batch?.careCenterId;
 
   const loadCandidates = useCallback(async () => {
-    if (!batch || !providerId) return;
+    if (!batch) return;
     try {
+      // Un lote SENIAT puede mezclar proveedores → candidatos = todas las pendientes.
       const res = await taxesPayableGateway.listPending({
-        [batch.recipientType === 'doctor' ? 'doctorId' : 'careCenterId']: providerId,
         limit: 200,
         search: candidateSearch || undefined,
       });
@@ -461,7 +386,7 @@ function BatchDetail({ id }: { id: string }) {
     } catch {
       setCandidates([]);
     }
-  }, [batch, providerId, candidateSearch]);
+  }, [batch, candidateSearch]);
 
   useEffect(() => {
     if (candidatesOpen) loadCandidates();
@@ -679,9 +604,7 @@ function BatchDetail({ id }: { id: string }) {
             Lote de pago al SENIAT N° {batch.taxBatchNumber}
           </h1>
           <p className="text-sm text-muted-foreground">
-            {batchRecipientName(batch)} ·{' '}
-            {batch.recipientType === 'doctor' ? 'Doctor' : 'Centro'} ·{' '}
-            {STATUS_TEXT[batch.status]}
+            {batchProvidersSummary(batch)} · {STATUS_TEXT[batch.status]}
           </p>
         </div>
         <button
@@ -760,7 +683,7 @@ function BatchDetail({ id }: { id: string }) {
                 <div className="max-h-72 overflow-y-auto py-1">
                   {eligibleCandidates.length === 0 ? (
                     <p className="px-3 py-4 text-xs text-muted-foreground text-center">
-                      Sin retenciones pendientes para este proveedor.
+                      Sin retenciones pendientes.
                     </p>
                   ) : (
                     eligibleCandidates.map((c) => (
@@ -784,8 +707,8 @@ function BatchDetail({ id }: { id: string }) {
                           <div className="text-xs font-mono font-semibold">
                             {c.taxPayableNumber}
                           </div>
-                          <div className="text-[11px] text-muted-foreground">
-                            {formatMoney(taxAmountBs(c))} Bs.
+                          <div className="text-[11px] text-muted-foreground truncate">
+                            {recipientName(c)} · {formatMoney(taxAmountBs(c))} Bs.
                           </div>
                         </div>
                       </label>

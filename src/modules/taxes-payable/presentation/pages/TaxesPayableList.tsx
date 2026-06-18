@@ -33,8 +33,8 @@ import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { getHttpErrorMessage } from '@/lib/api';
 import { taxesPayableGateway } from '../../infrastructure/taxesPayableGateway';
 import {
-  batchRecipientName,
-  obligationProviderId,
+  batchProviderNames,
+  batchProvidersSummary,
   recipientName,
   STATUS_LABEL,
   taxAmountBs,
@@ -232,32 +232,13 @@ export function TaxesPayableList() {
     [pending, selected],
   );
 
-  const sharedProvider = useMemo(() => {
-    if (selectedRows.length === 0) return null;
-    const first = selectedRows[0];
-    const key = `${first.recipientType}:${obligationProviderId(first)}`;
-    const allSame = selectedRows.every(
-      (r) => `${r.recipientType}:${obligationProviderId(r)}` === key,
-    );
-    if (!allSame) return null;
-    return {
-      recipientType: first.recipientType,
-      providerId: obligationProviderId(first) as string,
-      providerName: recipientName(first),
-    };
-  }, [selectedRows]);
-
-  const canCreate = selectedRows.length >= 1 && sharedProvider !== null;
+  // Un lote SENIAT puede mezclar proveedores: el pago va al fisco, no al proveedor.
+  const canCreate = selectedRows.length >= 1;
 
   const goCreate = () => {
-    if (canCreate && sharedProvider) {
+    if (canCreate) {
       navigate('/taxes-payable/new', {
-        state: {
-          recipientType: sharedProvider.recipientType,
-          providerId: sharedProvider.providerId,
-          providerName: sharedProvider.providerName,
-          taxPayableIds: selectedRows.map((r) => r.id),
-        },
+        state: { taxPayableIds: selectedRows.map((r) => r.id) },
       });
       return;
     }
@@ -357,12 +338,6 @@ export function TaxesPayableList() {
                 </Can>
               }
             />
-            {selectedRows.length > 0 && !sharedProvider ? (
-              <div className="mx-4 mt-3 rounded-lg border border-warning/30 bg-warning-soft p-2.5 text-xs text-warning">
-                Las retenciones seleccionadas son de proveedores distintos. Un lote
-                agrupa retenciones de un solo proveedor.
-              </div>
-            ) : null}
             {pendingError ? (
               <div className="px-4 py-2 text-sm text-destructive border-b bg-destructive-soft">
                 {pendingError}
@@ -588,9 +563,12 @@ export function TaxesPayableList() {
                           {b.taxBatchNumber}
                         </TableCell>
                         <TableCell className="py-3.5 px-4 text-sm">
-                          <div>{batchRecipientName(b)}</div>
+                          <div>{batchProvidersSummary(b)}</div>
                           <div className="text-[11px] text-muted-foreground">
-                            {b.recipientType === 'doctor' ? 'Doctor' : 'Centro'}
+                            {(() => {
+                              const n = batchProviderNames(b).length;
+                              return n === 1 ? '1 proveedor' : `${n} proveedores`;
+                            })()}
                           </div>
                         </TableCell>
                         <TableCell className="py-3.5 px-4 text-sm text-muted-foreground">

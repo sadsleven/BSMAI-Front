@@ -2,7 +2,6 @@ import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import {
   PERSON_TYPE_LABEL,
-  batchRecipientName,
   recipientName,
   taxAmountBs,
   type TaxBatch,
@@ -35,8 +34,8 @@ function safeFilenameSegment(s: string): string {
 }
 
 /**
- * Factura agrupada del lote SENIAT: lista de obligaciones de retención del
- * proveedor con sus montos y el total. Una factura por lote.
+ * Factura agrupada del lote SENIAT: lista de obligaciones de retención (de uno o
+ * varios proveedores) con sus montos y el total. Una factura por lote.
  */
 export async function downloadBatchInvoiceXlsx(batch: TaxBatch): Promise<void> {
   const wb = new ExcelJS.Workbook();
@@ -45,7 +44,8 @@ export async function downloadBatchInvoiceXlsx(batch: TaxBatch): Promise<void> {
   const ws = wb.addWorksheet('Factura');
   ws.columns = [
     { width: 18 }, // N° comprobante
-    { width: 32 }, // Órdenes
+    { width: 30 }, // Proveedor
+    { width: 28 }, // Órdenes
     { width: 16 }, // Retención Bs.
   ];
 
@@ -63,19 +63,16 @@ export async function downloadBatchInvoiceXlsx(batch: TaxBatch): Promise<void> {
   ws.getCell(row, 1).value = `FACTURA AGRUPADA — LOTE SENIAT N° ${batch.taxBatchNumber}`;
   ws.getCell(row, 1).font = { bold: true, size: 12 };
   row++;
-  ws.getCell(row, 1).value = `Proveedor: ${batchRecipientName(batch)} (${
-    batch.recipientType === 'doctor' ? 'Doctor' : 'Centro de atención'
-  })`;
-  row++;
   ws.getCell(row, 1).value = `Fecha: ${new Date(
     batch.createdAt ?? new Date().toISOString(),
   ).toLocaleDateString('es-VE')}`;
   row += 2;
 
   ws.getCell(row, 1).value = 'N° comprobante';
-  ws.getCell(row, 2).value = 'Órdenes';
-  ws.getCell(row, 3).value = 'Retención Bs.';
-  for (let c = 1; c <= 3; c++) {
+  ws.getCell(row, 2).value = 'Proveedor';
+  ws.getCell(row, 3).value = 'Órdenes';
+  ws.getCell(row, 4).value = 'Retención Bs.';
+  for (let c = 1; c <= 4; c++) {
     ws.getCell(row, c).font = { bold: true };
     ws.getCell(row, c).fill = {
       type: 'pattern',
@@ -90,16 +87,17 @@ export async function downloadBatchInvoiceXlsx(batch: TaxBatch): Promise<void> {
     const amt = taxAmountBs(o);
     total += amt;
     ws.getCell(row, 1).value = o.taxPayableNumber;
-    ws.getCell(row, 2).value = (o.internalNumbers ?? []).join(', ') || '—';
-    ws.getCell(row, 3).value = amt;
-    ws.getCell(row, 3).numFmt = '#,##0.00';
+    ws.getCell(row, 2).value = recipientName(o);
+    ws.getCell(row, 3).value = (o.internalNumbers ?? []).join(', ') || '—';
+    ws.getCell(row, 4).value = amt;
+    ws.getCell(row, 4).numFmt = '#,##0.00';
     row++;
   }
   ws.getCell(row, 1).value = 'Total al SENIAT Bs.';
   ws.getCell(row, 1).font = { bold: true };
-  ws.getCell(row, 3).value = total;
-  ws.getCell(row, 3).numFmt = '#,##0.00';
-  ws.getCell(row, 3).font = { bold: true };
+  ws.getCell(row, 4).value = total;
+  ws.getCell(row, 4).numFmt = '#,##0.00';
+  ws.getCell(row, 4).font = { bold: true };
 
   const buf = await wb.xlsx.writeBuffer();
   const filename = `Factura-Lote-${safeFilenameSegment(batch.taxBatchNumber)}.xlsx`;

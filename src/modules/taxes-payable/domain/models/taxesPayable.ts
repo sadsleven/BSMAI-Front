@@ -68,20 +68,10 @@ export interface TaxObligation {
   updatedAt?: string;
 }
 
-/** Lote SENIAT (un proveedor, N obligaciones de retención, M pagos). */
+/** Lote SENIAT (N obligaciones de retención de uno o varios proveedores, M pagos). */
 export interface TaxBatch {
   id: string;
   taxBatchNumber: string;
-  recipientType: RecipientType;
-  doctorId?: string | null;
-  doctor?: {
-    id: string;
-    firstName?: string | null;
-    lastName?: string | null;
-    isLegalEntity?: boolean;
-  } | null;
-  careCenterId?: string | null;
-  careCenter?: { id: string; businessName?: string | null } | null;
   status: TaxBatchStatus;
   paidAt?: string | null;
   obligations: TaxObligation[];
@@ -127,9 +117,6 @@ export interface TaxPayablePaymentInput {
 }
 
 export interface CreateTaxBatchDto {
-  recipientType: RecipientType;
-  doctorId?: string;
-  careCenterId?: string;
   taxPayableIds: string[];
 }
 
@@ -162,14 +149,25 @@ export function recipientName(t: {
   return t.careCenter?.businessName ?? '—';
 }
 
-/** Nombre del proveedor de un lote SENIAT. */
-export function batchRecipientName(b: TaxBatch): string {
-  return recipientName(b);
+/** Nombres de proveedores distintos de las obligaciones de un lote. */
+export function batchProviderNames(b: TaxBatch): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const o of b.obligations ?? []) {
+    const key = `${o.recipientType}:${obligationProviderId(o)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    names.push(recipientName(o));
+  }
+  return names;
 }
 
-/** ID del proveedor de un lote (doctor o centro). */
-export function batchProviderId(b: TaxBatch): string | null {
-  return b.recipientType === 'doctor' ? b.doctorId ?? null : b.careCenterId ?? null;
+/** Resumen de proveedores de un lote SENIAT para la UI. */
+export function batchProvidersSummary(b: TaxBatch): string {
+  const names = batchProviderNames(b);
+  if (names.length === 0) return '—';
+  if (names.length === 1) return names[0];
+  return `${names[0]} +${names.length - 1}`;
 }
 
 /** ID del proveedor de una obligación pendiente (doctor o centro). */

@@ -83,6 +83,40 @@ export type PaymentMethodInfo = {
   description?: string | null;
 };
 
+/**
+ * Cuenta de pago registrada del BENEFICIARIO (doctor/centro), para flujos de
+ * egreso (cuentas por pagar). Misma forma que `DoctorPaymentMethod` /
+ * `CareCenterPaymentMethod`. Al elegirla se precarga banco/cuenta del pago.
+ */
+export type RecipientPaymentMethod = {
+  id?: string;
+  type: 'mobile_payment' | 'bank_transfer' | 'other';
+  bankCode?: string | null;
+  phoneNumber?: string | null;
+  idDocument?: string | null;
+  accountNumber?: string | null;
+  accountHolderName?: string | null;
+  description?: string | null;
+};
+
+/** Sentinel del selector de cuenta del proveedor → ingreso manual (no se persiste). */
+const RECIPIENT_MANUAL = '__manual__';
+
+/** Etiqueta legible de una cuenta registrada del proveedor. */
+function recipientMethodLabel(m: RecipientPaymentMethod, banks: Bank[]): string {
+  const bankName = m.bankCode
+    ? banks.find((b) => b.code === m.bankCode)?.name ?? m.bankCode
+    : null;
+  if (m.type === 'mobile_payment') {
+    return ['Pago móvil', bankName, m.phoneNumber].filter(Boolean).join(' · ');
+  }
+  if (m.type === 'bank_transfer') {
+    const acct = m.accountNumber ? `…${String(m.accountNumber).slice(-4)}` : null;
+    return ['Transferencia', bankName, acct].filter(Boolean).join(' · ');
+  }
+  return m.description?.trim() || 'Otra cuenta';
+}
+
 export type OrderPaymentFormProps = {
   payments: OrderPaymentValues[];
   onChange: (next: OrderPaymentValues[]) => void;
@@ -107,6 +141,13 @@ export type OrderPaymentFormProps = {
    * de bancos del beneficiario en lugar de cuentas propias.
    */
   usePaymentAccount?: boolean;
+  /**
+   * Cuentas registradas del beneficiario (doctor/centro). Cuando se provee y
+   * `usePaymentAccount` es false, las filas mobile_payment/bank_transfer/other
+   * ofrecen un selector "Cuenta del proveedor" que precarga banco/cuenta. Si el
+   * proveedor no tiene cuenta del tipo de la fila, se cae al ingreso manual.
+   */
+  recipientMethods?: RecipientPaymentMethod[];
   /**
    * Restringe los tipos de pago seleccionables por fila y en los botones
    * internos. Default: todos. Retenciones (Bs fijos) pasan solo tipos en BS.
@@ -166,6 +207,7 @@ export function OrderPaymentForm({
   methodInfo,
   onRemovePayment,
   usePaymentAccount = true,
+  recipientMethods,
   allowedTypes = ALL_TYPES,
   hideExchangeRate = false,
 }: OrderPaymentFormProps) {
@@ -289,6 +331,16 @@ export function OrderPaymentForm({
             const bankLocked = !!lock?.bankCode;
             const accountLocked = !!lock?.accountNumber;
             const rowRate = isEur ? eurRate : usdRate;
+            // Cuentas registradas del beneficiario que aplican a esta fila.
+            const recipientPickable =
+              !!recipientMethods && !usePaymentAccount && (isMobileOrTransfer || isOther);
+            const rowMethods = recipientPickable
+              ? recipientMethods!.filter((m) => m.type === p.type && m.id)
+              : [];
+            const chosenRecipient =
+              recipientPickable && p.paymentAccountId
+                ? rowMethods.find((m) => m.id === p.paymentAccountId) ?? null
+                : null;
             return (
               <div key={i} className="rounded-lg border p-3 space-y-3 bg-card">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -395,7 +447,47 @@ export function OrderPaymentForm({
                     </div>
                   ) : null}
 
-                  {isMobileOrTransfer && !usePaymentAccount ? (
+                  {recipientPickable && rowMethods.length > 0 ? (
+                    <div className="space-y-1">
+                      <Label className="text-xs">Cuenta del proveedor</Label>
+                      <Select
+                        value={p.paymentAccountId || RECIPIENT_MANUAL}
+                        onValueChange={(v) => {
+                          if (v === RECIPIENT_MANUAL) {
+                            update(i, {
+                              paymentAccountId: '',
+                              bankCode: '',
+                              accountNumber: '',
+                            });
+                            return;
+                          }
+                          const m = rowMethods.find((x) => x.id === v);
+                          update(i, {
+                            paymentAccountId: v,
+                            bankCode: m?.bankCode ?? '',
+                            accountNumber: m?.accountNumber ?? '',
+                          });
+                        }}
+                        disabled={disabled}
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="Seleccioná una cuenta" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {rowMethods.map((m) => (
+                            <SelectItem key={m.id} value={m.id as string}>
+                              {recipientMethodLabel(m, banks)}
+                            </SelectItem>
+                          ))}
+                          <SelectItem value={RECIPIENT_MANUAL}>
+                            Otra cuenta (ingresar manual)
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : null}
+
+                  {isMobileOrTransfer && !usePaymentAccount && !chosenRecipient ? (
                     <div className="space-y-1">
                       <Label className="text-xs">Banco</Label>
                       <Select
@@ -464,7 +556,7 @@ export function OrderPaymentForm({
                     </div>
                   ) : null}
 
-                  {isOther && !usePaymentAccount ? (
+                  {isOther && !usePaymentAccount && !chosenRecipient ? (
                     <div className="space-y-1">
                       <Label className="text-xs">Cuenta (opcional)</Label>
                       <Input
@@ -524,6 +616,28 @@ export function OrderPaymentForm({
                           ? a.description
                           : paymentAccountSummary(a) || null,
                     };
+                  }
+                  // Egreso: cuenta registrada del proveedor seleccionada.
+                  if (
+                    !derivedInfo &&
+                    !usePaymentAccount &&
+                    recipientMethods &&
+                    p.paymentAccountId
+                  ) {
+                    const m = recipientMethods.find((x) => x.id === p.paymentAccountId);
+                    if (m) {
+                      const bankName = m.bankCode
+                        ? banks.find((b) => b.code === m.bankCode)?.name ?? m.bankCode
+                        : null;
+                      derivedInfo = {
+                        label: 'Cuenta registrada del proveedor',
+                        bankName: bankName ?? null,
+                        phoneNumber: m.phoneNumber,
+                        accountHolderName: m.accountHolderName,
+                        idDocument: m.idDocument,
+                        description: m.type === 'other' ? m.description : null,
+                      };
+                    }
                   }
                   if (!derivedInfo) return null;
                   return (
