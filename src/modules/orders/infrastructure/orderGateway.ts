@@ -46,6 +46,13 @@ export const orderGateway = {
     const { data } = await api.get<Order>(`/orders/${id}`);
     return data;
   },
+  /** Nombres personalizados ya usados para un ST (autocompletar Paso 1). */
+  async customNameSuggestions(serviceTypeId: string): Promise<string[]> {
+    const { data } = await api.get<string[]>(
+      `/orders/service-types/${serviceTypeId}/custom-names`,
+    );
+    return data;
+  },
   async create(dto: CreateOrderDto): Promise<Order> {
     const { data } = await api.post<Order>('/orders', dto);
     return data;

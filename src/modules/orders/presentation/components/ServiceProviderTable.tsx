@@ -12,7 +12,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { formatMoney } from '@/lib/format/money';
 import { ProviderSearchSelect, type ProviderSelectValue } from './ProviderSearchSelect';
+import { orderGateway } from '@/modules/orders/infrastructure/orderGateway';
 import type { ServiceType } from '@/modules/service-types/domain/models/serviceType';
 import type { Doctor } from '@/modules/doctors/domain/models/doctor';
 import type { CareCenter } from '@/modules/care-centers/domain/models/careCenter';
@@ -23,6 +25,8 @@ export type ServiceProviderRowValue = {
   doctorId?: string;
   careCenterId?: string;
   quantity?: number;
+  /** Nombre personalizado del ST en la orden (override de serviceType.name). */
+  customName?: string | null;
 };
 
 export type ServiceProviderRowErrors = {
@@ -31,6 +35,7 @@ export type ServiceProviderRowErrors = {
   doctorId?: string;
   careCenterId?: string;
   quantity?: string;
+  customName?: string;
 };
 
 export type ServiceProviderTableProps = {
@@ -42,6 +47,16 @@ export type ServiceProviderTableProps = {
   /** Hidrata el chip de proveedor en modo edición. Map key `${type}:${id}`. */
   initialProviders?: Map<string, Doctor | CareCenter>;
   disabled?: boolean;
+  /**
+   * Precio unitario USD por Tipo de Servicio (seguro→baremo / particular→particularPriceUsd).
+   * Se muestra en el selector junto al nombre.
+   */
+  priceByServiceTypeId?: Map<string, number>;
+  /**
+   * Si true (orden seguro con seguro elegido), sólo se ofrecen STs con precio
+   * (baremo) definido. El ST ya elegido en la fila se mantiene aunque no tenga.
+   */
+  restrictToPriced?: boolean;
 };
 
 /**
@@ -56,17 +71,51 @@ export function ServiceProviderTable({
   errors,
   initialProviders,
   disabled,
+  priceByServiceTypeId,
+  restrictToPriced,
 }: ServiceProviderTableProps) {
-  const stById = useMemo(() => {
-    const m = new Map<string, ServiceType>();
-    for (const s of serviceTypes) m.set(s.id, s);
-    return m;
-  }, [serviceTypes]);
+  // Etiqueta de opción: nombre + precio USD (si hay) para el selector.
+  const optionLabel = (s: ServiceType): string => {
+    const p = priceByServiceTypeId?.get(s.id);
+    return p != null ? `${s.name} · $${formatMoney(p)}` : s.name;
+  };
 
   const usedIds = useMemo(
     () => new Set(value.map((r) => r.serviceTypeId).filter(Boolean)),
     [value],
   );
+
+  // Sugerencias de nombres personalizados ya usados, por ST (autocompletar).
+  // Se traen una vez por ST y se cachean por id.
+  const [customNameSuggestions, setCustomNameSuggestions] = useState<
+    Record<string, string[]>
+  >({});
+  useEffect(() => {
+    const ids = Array.from(
+      new Set(value.map((r) => r.serviceTypeId).filter(Boolean)),
+    );
+    const missing = ids.filter((id) => !(id in customNameSuggestions));
+    if (missing.length === 0) return;
+    let cancelled = false;
+    Promise.all(
+      missing.map((id) =>
+        orderGateway
+          .customNameSuggestions(id)
+          .then((list) => [id, list] as const)
+          .catch(() => [id, [] as string[]] as const),
+      ),
+    ).then((pairs) => {
+      if (cancelled) return;
+      setCustomNameSuggestions((prev) => {
+        const next = { ...prev };
+        for (const [id, list] of pairs) next[id] = list;
+        return next;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [value, customNameSuggestions]);
 
   // Cache per-row del objeto provider para mostrar chip en ProviderSearchSelect.
   // Las filas se identifican por índice; al agregar/quitar reordenamos el cache.
@@ -98,7 +147,7 @@ export function ServiceProviderTable({
   const addRow = () => {
     onChange([
       ...value,
-      { serviceTypeId: '', providerType: 'doctor' },
+      { serviceTypeId: '', providerType: 'doctor', quantity: 1 },
     ]);
   };
 
@@ -171,11 +220,13 @@ export function ServiceProviderTable({
           {value.map((row, idx) => {
             const rowError = errors?.[idx];
             const available = serviceTypes.filter(
-              (s) => !usedIds.has(s.id) || s.id === row.serviceTypeId,
+              (s) =>
+                (!usedIds.has(s.id) || s.id === row.serviceTypeId) &&
+                (!restrictToPriced ||
+                  priceByServiceTypeId?.has(s.id) ||
+                  s.id === row.serviceTypeId),
             );
-            const currentST = row.serviceTypeId ? stById.get(row.serviceTypeId) : null;
             const cachedProvider = providerCache[idx] ?? null;
-            const showQuantity = !!currentST?.allowsQuantity;
             return (
               <div key={idx} className="rounded-lg border bg-card p-3 space-y-3">
                 {/* Fila 1: Tipo de Servicio (ocupa todo el ancho) + quitar */}
@@ -186,12 +237,11 @@ export function ServiceProviderTable({
                     </label>
                     <ServiceTypeSelect
                       value={row.serviceTypeId || ''}
-                      options={available.map((s) => ({ id: s.id, label: s.name }))}
+                      options={available.map((s) => ({ id: s.id, label: optionLabel(s) }))}
                       onChange={(v) => {
-                        const st = stById.get(v);
                         updateRow(idx, {
                           serviceTypeId: v,
-                          quantity: st?.allowsQuantity ? row.quantity ?? 1 : undefined,
+                          quantity: row.quantity ?? 1,
                         });
                       }}
                       disabled={disabled}
@@ -203,6 +253,42 @@ export function ServiceProviderTable({
                         {rowError.serviceTypeId}
                       </p>
                     )}
+                    <div className="space-y-1 pt-1">
+                      <label className="block text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                        Nombre para esta orden{' '}
+                        <span className="font-normal normal-case tracking-normal text-muted-foreground">
+                          (opcional)
+                        </span>
+                      </label>
+                      <Input
+                        type="text"
+                        list={`cn-opts-${idx}`}
+                        value={row.customName ?? ''}
+                        onChange={(e) =>
+                          updateRow(idx, { customName: e.target.value })
+                        }
+                        disabled={disabled}
+                        maxLength={300}
+                        placeholder="Nombre específico (ej. RX tórax frontal)"
+                        className={cn('h-9', rowError?.customName && 'border-destructive')}
+                      />
+                      <datalist id={`cn-opts-${idx}`}>
+                        {(customNameSuggestions[row.serviceTypeId] ?? []).map((s) => (
+                          <option key={s} value={s} />
+                        ))}
+                      </datalist>
+                      {rowError?.customName ? (
+                        <p className="text-xs text-destructive flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" />
+                          {rowError.customName}
+                        </p>
+                      ) : (
+                        <p className="text-[11px] text-muted-foreground">
+                          Si lo dejás vacío se usa el nombre del baremo. Aparece en
+                          órdenes internas y en la factura.
+                        </p>
+                      )}
+                    </div>
                   </div>
                   <button
                     type="button"
@@ -251,33 +337,31 @@ export function ServiceProviderTable({
                       error={rowError?.doctorId ?? rowError?.careCenterId}
                     />
                   </div>
-                  {showQuantity && (
-                    <div className="w-24 space-y-1">
-                      <label className="block text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                        Cantidad
-                      </label>
-                      <Input
-                        type="number"
-                        min={1}
-                        step={1}
-                        value={row.quantity ?? 1}
-                        onChange={(e) => {
-                          const n = Math.trunc(Number(e.target.value));
-                          updateRow(idx, {
-                            quantity: Number.isFinite(n) && n >= 1 ? n : 1,
-                          });
-                        }}
-                        disabled={disabled}
-                        className={cn('h-9', rowError?.quantity && 'border-destructive')}
-                      />
-                      {rowError?.quantity && (
-                        <p className="text-xs text-destructive flex items-center gap-1">
-                          <AlertTriangle className="w-3 h-3" />
-                          {rowError.quantity}
-                        </p>
-                      )}
-                    </div>
-                  )}
+                  <div className="w-24 space-y-1">
+                    <label className="block text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      Cantidad
+                    </label>
+                    <Input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={row.quantity ?? 1}
+                      onChange={(e) => {
+                        const n = Math.trunc(Number(e.target.value));
+                        updateRow(idx, {
+                          quantity: Number.isFinite(n) && n >= 1 ? n : 1,
+                        });
+                      }}
+                      disabled={disabled}
+                      className={cn('h-9', rowError?.quantity && 'border-destructive')}
+                    />
+                    {rowError?.quantity && (
+                      <p className="text-xs text-destructive flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" />
+                        {rowError.quantity}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             );

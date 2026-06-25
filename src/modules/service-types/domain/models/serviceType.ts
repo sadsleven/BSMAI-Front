@@ -8,8 +8,6 @@ export interface ServiceType {
   description?: string | null;
   isActive: boolean;
   particularPriceUsd: string | number | null;
-  /** Si true, puede asignarse cantidad en la orden (ej. sesiones). */
-  allowsQuantity?: boolean;
   createdAt?: string;
   updatedAt?: string;
   deletedAt?: string | null;
@@ -20,7 +18,6 @@ export interface CreateServiceTypeDto {
   description?: string;
   isActive?: boolean;
   particularPriceUsd?: number;
-  allowsQuantity?: boolean;
 }
 
 export type UpdateServiceTypeDto = Partial<CreateServiceTypeDto>;

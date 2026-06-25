@@ -108,7 +108,7 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
           const pid =
             row.providerType === 'doctor' ? row.doctorId : row.careCenterId;
           return {
-            name: row.serviceType?.name ?? '',
+            name: row.customName?.trim() || row.serviceType?.name || '',
             qty,
             unitBs,
             totalRowBs: unitBs * qty,
@@ -374,7 +374,7 @@ export async function downloadOrdenInternaPdfForProvider(
     group.providerType === 'doctor' ? 'Médico Tratante:' : 'Centro:';
   const centerAddress = group.providerCenterAddress;
   const sts = group.rows.map((r) => {
-    const base = r.serviceType?.name ?? r.serviceTypeId;
+    const base = r.customName?.trim() || r.serviceType?.name || r.serviceTypeId;
     return r.quantity && r.quantity > 1 ? `${base} (x${r.quantity})` : base;
   });
 

@@ -26,6 +26,7 @@ const PATH_LABELS: Record<string, string> = {
   'exchange-rates': 'Tasas de cambio',
   'tax-units': 'Unidades tributarias',
   branches: 'Sucursales',
+  'payment-accounts': 'Cuentas bancarias',
   'accounts-payable': 'Cuentas por pagar',
   'accounts-receivable': 'Cuentas por cobrar',
   'taxes-payable': 'Retenciones por pagar',

@@ -44,6 +44,7 @@ export function PatientCreateModal({ open, onOpenChange, onCreated }: PatientCre
       address: '',
       phones: [],
       contractorIds: [],
+      directInsuranceIds: [],
       isActive: true,
     },
   });
@@ -56,9 +57,10 @@ export function PatientCreateModal({ open, onOpenChange, onCreated }: PatientCre
         personType: values.personType,
         email: values.email,
         birthDate: values.birthDate || undefined,
-        address: values.address,
+        address: values.address || undefined,
         phones: values.phones.map((p) => ({ number: p.number, label: p.label || undefined })),
         contractorIds: values.contractorIds ?? [],
+        directInsuranceIds: values.directInsuranceIds ?? [],
         isActive: values.isActive,
       };
       if (values.personType === 'natural') {
@@ -107,7 +109,13 @@ export function PatientCreateModal({ open, onOpenChange, onCreated }: PatientCre
         </AlertDialogHeader>
         <FormProvider {...methods}>
           <form
-            onSubmit={handleSubmit(onSubmit, (errs) => notifyFormErrors(errs))}
+            onSubmit={(e) => {
+              // Modal embebido dentro del <form> de la orden (portal Radix; los
+              // eventos de React igual burbujean por el árbol de componentes).
+              // Frená la propagación para no disparar el submit/guardado de la orden.
+              e.stopPropagation();
+              void handleSubmit(onSubmit, (errs) => notifyFormErrors(errs))(e);
+            }}
             className="flex flex-col flex-1 overflow-hidden"
           >
             <div className="px-6 overflow-y-auto flex-1 py-4">

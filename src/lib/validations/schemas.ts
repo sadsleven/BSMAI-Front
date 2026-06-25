@@ -230,9 +230,13 @@ export const patientSchema = z
         message: 'La fecha no puede ser posterior a hoy',
       }),
     address: z
-      .string({ error: 'La dirección es obligatoria' })
-      .min(3, 'La dirección debe tener al menos 3 caracteres')
-      .max(500, 'La dirección no puede superar 500 caracteres'),
+      .string()
+      .max(500, 'La dirección no puede superar 500 caracteres')
+      .optional()
+      .or(z.literal(''))
+      .refine((v) => !v || v.length >= 3, {
+        message: 'La dirección debe tener al menos 3 caracteres',
+      }),
     phones: phonesArraySchema,
     contractorIds: z
       .array(z.string().uuid())
@@ -353,7 +357,6 @@ export const serviceTypeSchema = z.object({
     .positive('Debe ser > 0')
     .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' })
     .optional(),
-  allowsQuantity: z.boolean().optional(),
 });
 export type ServiceTypeValues = z.infer<typeof serviceTypeSchema>;
 
@@ -815,7 +818,7 @@ function makeOrderPaymentSchema(
         ctx.addIssue({
           code: 'custom',
           path: ['paymentAccountId'],
-          message: 'Cuenta de pago requerida',
+          message: 'Cuenta bancaria requerida',
         });
       }
       if (
@@ -951,6 +954,11 @@ export const orderSchema = z
             .min(1, 'La cantidad debe ser ≥ 1')
             .max(100000, 'Cantidad demasiado alta')
             .optional(),
+          customName: z
+            .string()
+            .max(300, 'Máximo 300 caracteres')
+            .optional()
+            .or(z.literal('')),
         }),
       )
       .min(1, 'Asigná al menos un tipo de servicio')

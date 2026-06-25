@@ -58,16 +58,6 @@ export function ServiceTypeDetail({ serviceTypeId, open, onOpenChange }: Service
             <DetailRow label="Nombre" value={serviceType.name} />
             <DetailRow label="Descripción" value={serviceType.description} />
             <DetailRow
-              label="Por cantidad"
-              value={
-                serviceType.allowsQuantity ? (
-                  <DetailBadge tone="success">Sí</DetailBadge>
-                ) : (
-                  <DetailBadge tone="neutral">No</DetailBadge>
-                )
-              }
-            />
-            <DetailRow
               label="Estado"
               value={
                 serviceType.deletedAt ? (

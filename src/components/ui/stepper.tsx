@@ -15,6 +15,13 @@ export type StepperProps = {
   steps: StepDef[];
   current: string;
   onSelect?: (id: string) => void;
+  /**
+   * IDs de pasos ya completados. Se pintan en verde aunque navegues a un paso
+   * anterior (el color de "completado" no depende de la posición actual). Se
+   * unen con la heurística por posición (`i < current`) para no perder el verde
+   * de los pasos previos al actual.
+   */
+  completedIds?: string[];
 };
 
 /**
@@ -22,13 +29,15 @@ export type StepperProps = {
  * completo. Pasos no implementados llevan `available: false` y se rinden
  * deshabilitados con etiqueta "Próximamente".
  */
-export function Stepper({ steps, current, onSelect }: StepperProps) {
+export function Stepper({ steps, current, onSelect, completedIds }: StepperProps) {
   const currentIdx = steps.findIndex((s) => s.id === current);
+  const completed = new Set(completedIds ?? []);
   return (
     <ol className="flex items-stretch gap-2 overflow-x-auto pb-1">
       {steps.map((s, i) => {
         const isCurrent = s.id === current;
-        const isCompleted = i < currentIdx && s.available;
+        const isCompleted =
+          !isCurrent && s.available && (completed.has(s.id) || i < currentIdx);
         const isDisabled = !s.available;
         const clickable = !!onSelect && s.available && !isCurrent;
         return (

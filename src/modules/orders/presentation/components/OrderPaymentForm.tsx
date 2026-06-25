@@ -411,7 +411,7 @@ export function OrderPaymentForm({
 
                   {usesOwnAccount && usePaymentAccount ? (
                     <div className="space-y-1">
-                      <Label className="text-xs">Cuenta de pago propia</Label>
+                      <Label className="text-xs">Cuenta bancaria propia</Label>
                       <PaymentAccountSelect
                         value={p.paymentAccountId ?? ''}
                         onChange={(id, account) => {
@@ -514,7 +514,7 @@ export function OrderPaymentForm({
 
                   {isOther && usePaymentAccount ? (
                     <div className="space-y-1">
-                      <Label className="text-xs">Cuenta de pago propia</Label>
+                      <Label className="text-xs">Cuenta bancaria propia</Label>
                       <PaymentAccountSelect
                         value={p.paymentAccountId ?? ''}
                         onChange={(id, account) => {

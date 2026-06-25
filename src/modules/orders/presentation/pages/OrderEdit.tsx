@@ -54,6 +54,7 @@ function buildDto(values: OrderValues): CreateOrderDto {
       careCenterId:
         r.providerType === 'care_center' ? r.careCenterId || undefined : undefined,
       quantity: r.quantity ?? undefined,
+      customName: r.customName?.trim() ? r.customName.trim() : undefined,
     })),
     pathologyIds: values.pathologyIds ?? [],
     orderDate: values.orderDate,
@@ -185,6 +186,7 @@ export function OrderEdit() {
             doctorId: row.doctorId ?? '',
             careCenterId: row.careCenterId ?? '',
             quantity: row.quantity ?? undefined,
+            customName: row.customName ?? '',
           })),
           pathologyIds: (order.pathologies ?? []).map((p) => p.id),
           orderDate: order.orderDate.slice(0, 10),

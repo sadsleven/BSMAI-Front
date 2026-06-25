@@ -173,7 +173,7 @@ export function OrderDetailBody({
               <ul className="space-y-0.5">
                 {order.orderServiceTypes.map((row) => (
                   <li key={row.serviceTypeId}>
-                    {row.serviceType?.name ?? row.serviceTypeId}
+                    {row.customName?.trim() || row.serviceType?.name || row.serviceTypeId}
                     {(row.quantity ?? 1) > 1 && (
                       <span className="ml-1 text-xs text-muted-foreground">
                         (x{row.quantity})
