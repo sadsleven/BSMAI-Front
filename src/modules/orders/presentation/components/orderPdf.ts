@@ -124,13 +124,13 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
 
   const fmtMoney = (n: number): string => formatMoney(n);
 
-  // Anchos proporcionales al Excel (cols 17.57/6.14/39/10.57/12.86 → 86.14 total)
-  // Página A4 útil ≈ 182mm. Mapeo a mm.
+  // Anchos (mm). col0 ancho para que "Nombre o Razón Social :" no parta en 2
+  // líneas; resto calca las proporciones del Excel.
   const colW = {
-    0: 37.0,
+    0: 42.0,
     1: 13.0,
-    2: 82.0,
-    3: 22.2,
+    2: 70.0,
+    3: 22.0,
     4: 27.0,
   };
 
@@ -145,13 +145,12 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
   const body: Row[] = [];
   const HEADER_ROW_IDX = (): number => body.length;
 
-  // R3 — Fecha de emisión
+  // R3 — Fecha de emisión (etiqueta abarca C:D para no partir en 2 líneas)
   body.push([
     '',
     '',
-    '',
-    { content: 'Fecha de Emisión:', styles: { halign: 'right' } },
-    { content: fmtDate(order.orderDate), styles: { halign: 'center', fontSize: 8 } },
+    { content: 'Fecha de Emisión:', colSpan: 2, styles: { halign: 'right' } },
+    { content: fmtDate(order.orderDate), styles: { halign: 'center', fontSize: 9 } },
   ]);
 
   if (isInsurance) {
@@ -219,6 +218,9 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
       '',
     ]);
   }
+
+  // Espaciador antes de la tabla de detalle (separa datos del recuadro)
+  body.push(['', '', '', '', '']);
 
   // R11 — Condiciones de pago (con bordes en D y E)
   const condRowIdx = HEADER_ROW_IDX();
@@ -304,16 +306,17 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
   ]);
 
   autoTable(doc, {
-    startY: 14,
+    startY: 16,
     body,
     theme: 'plain',
     styles: {
       font: 'helvetica',
       fontSize: 9,
-      cellPadding: 1.2,
+      cellPadding: { top: 0.7, bottom: 0.7, left: 1.4, right: 1.4 },
       lineColor: [0, 0, 0],
       lineWidth: 0,
       valign: 'middle',
+      minCellHeight: 5,
     },
     columnStyles: {
       0: { cellWidth: colW[0] },
@@ -348,23 +351,21 @@ export async function downloadOrdenInternaPdfForProvider(
 ): Promise<void> {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
 
-  // Logo AFMI top-left
-  const logoUrl = await loadLogoDataUrl();
-  if (logoUrl) {
-    // 304x90 px aprox → 46mm x 13.6mm
-    doc.addImage(logoUrl, 'PNG', 14, 14, 46, 13.6);
-  }
+  const pageW = doc.internal.pageSize.getWidth();
 
-  // Anchos cols proporcionales al Excel (12/12/14/14/14/14/14 → 94 total → 182mm)
-  const colW = {
-    0: 23.0,
-    1: 23.0,
-    2: 27.0,
-    3: 27.0,
-    4: 27.0,
-    5: 27.0,
-    6: 27.0,
+  // Anchos cols (mm). col5/col6 anchos para que "Clave de Servicio:" y su valor
+  // entren en una sola línea, y el teléfono no se parta. Total 172 → centrado.
+  const colW: Record<number, number> = {
+    0: 22.0,
+    1: 14.0,
+    2: 20.0,
+    3: 20.0,
+    4: 24.0,
+    5: 35.0,
+    6: 37.0,
   };
+  const totalW = Object.values(colW).reduce((a, b) => a + b, 0);
+  const marginL = (pageW - totalW) / 2;
 
   const age = ageFromBirthDate(order.patient?.birthDate);
   const phone = order.patient?.phones?.[0]?.number ?? '';
@@ -378,6 +379,9 @@ export async function downloadOrdenInternaPdfForProvider(
     return r.quantity && r.quantity > 1 ? `${base} (x${r.quantity})` : base;
   });
 
+  // RIF azul corporativo (mismo tono que el Excel)
+  const RIF_BLUE: [number, number, number] = [0, 32, 96];
+
   type Cell =
     | string
     | {
@@ -387,103 +391,103 @@ export async function downloadOrdenInternaPdfForProvider(
         rowSpan?: number;
       };
 
-  const empty7: Cell[] = ['', '', '', '', '', '', ''];
-
   const body: Cell[][] = [];
 
-  // R1 — zona logo (vacía, logo overlay)
-  body.push(empty7);
-
-  // R2 — Título central + Fecha
+  // R1 — fila del logo (izquierda vacía) + recuadro FECHA (cols F:G)
   body.push([
-    '',
-    '',
+    { content: '', colSpan: 5 },
+    { content: 'FECHA', styles: { halign: 'center', fontSize: 11 } },
+    { content: fmtDate(order.orderDate), styles: { halign: 'center', fontSize: 11 } },
+  ]);
+
+  // R2 — Título central + recuadro N° (cols F:G)
+  body.push([
+    { content: '', colSpan: 2 },
     {
       content: 'ORDEN INTERNA SERVICIOS',
       colSpan: 3,
       styles: { halign: 'center', valign: 'middle', fontSize: 12 },
     },
-    { content: 'FECHA', styles: { halign: 'center', fontSize: 12 } },
-    { content: fmtDate(order.orderDate), styles: { halign: 'center', fontSize: 12 } },
+    { content: 'N°', styles: { halign: 'center', fontSize: 11 } },
+    { content: group.providerOrderNumber, styles: { halign: 'center', fontSize: 11 } },
   ]);
 
-  // R3 — RIF + AFMI + N°
+  // R3 — RIF (azul, bajo el logo) + razón social AFMI (centrada como el título)
   body.push([
     {
       content: `RIF ${COMPANY.rif}`,
       colSpan: 2,
-      styles: { halign: 'center', fontStyle: 'bold', fontSize: 9 },
+      styles: { halign: 'center', fontStyle: 'bold', fontSize: 9, textColor: RIF_BLUE },
     },
     {
       content: COMPANY.name,
       colSpan: 3,
       styles: { halign: 'center', fontSize: 12 },
     },
-    { content: 'N°', styles: { halign: 'center', fontSize: 12 } },
-    { content: group.providerOrderNumber, styles: { halign: 'center', fontSize: 12 } },
+    { content: '', colSpan: 2 },
   ]);
+
+  // ===== Bloque de datos (rejilla negra completa) =====
+  const dataStart = body.length;
 
   // R5 — Médico Tratante/Centro + Especialidad
   body.push([
-    { content: providerLabel, styles: { fontSize: 11 } },
+    { content: providerLabel, styles: { fontSize: 10 } },
     '',
     {
       content: group.providerName.toUpperCase(),
       colSpan: 3,
       styles: { halign: 'center', valign: 'middle', fontSize: 10 },
     },
-    { content: 'Especialidad:', styles: { fontSize: 11 } },
+    { content: 'Especialidad:', styles: { fontSize: 10 } },
     {
       content: (order.specialty?.name ?? '').toUpperCase(),
-      styles: { halign: 'center', valign: 'middle', fontSize: 8 },
+      styles: { halign: 'center', valign: 'middle', fontSize: 9 },
     },
   ]);
 
   // R6 — Centro/Dirección
   body.push([
-    { content: 'Centro/Dirección:', colSpan: 2, styles: { fontSize: 11 } },
-    { content: centerAddress, colSpan: 5, styles: { halign: 'left', fontSize: 11 } },
+    { content: 'Centro/Dirección:', colSpan: 2, styles: { fontSize: 10 } },
+    { content: centerAddress, colSpan: 5, styles: { halign: 'left', fontSize: 10 } },
   ]);
 
   // R7 — Paciente + Cédula
   body.push([
-    { content: 'Paciente', colSpan: 2, styles: { halign: 'left', fontSize: 11 } },
+    { content: 'Paciente', colSpan: 2, styles: { halign: 'left', fontSize: 10 } },
     {
       content: patient,
       colSpan: 3,
-      styles: { halign: 'left', fontSize: 11 },
+      styles: { halign: 'left', fontSize: 10 },
     },
-    { content: 'Cédula:', styles: { fontSize: 11 } },
-    {
-      content: patientCi,
-      styles: { halign: 'center', valign: 'top', fontSize: 11 },
-    },
+    { content: 'Cédula:', styles: { fontSize: 10 } },
+    { content: patientCi, styles: { halign: 'center', fontSize: 10 } },
   ]);
 
   // R8 — Edad + Teléfono + Referencia
   body.push([
-    { content: 'Edad:', styles: { fontStyle: 'bold', fontSize: 11 } },
+    { content: 'Edad:', styles: { fontStyle: 'bold', fontSize: 10 } },
     {
       content: age,
       colSpan: 2,
-      styles: { halign: 'center', fontSize: 11 },
+      styles: { halign: 'center', fontSize: 10 },
     },
-    { content: 'Teléfono:', styles: { fontStyle: 'bold', fontSize: 11 } },
-    { content: phone, styles: { fontSize: 11 } },
-    { content: 'Referencia:', styles: { fontStyle: 'bold', fontSize: 11 } },
+    { content: 'Teléfono:', styles: { fontStyle: 'bold', fontSize: 10 } },
+    { content: phone, styles: { halign: 'left', fontSize: 10 } },
+    { content: 'Referencia:', styles: { fontStyle: 'bold', fontSize: 10 } },
     {
       content: orderReferenceLabel(order),
-      styles: { halign: 'center', fontSize: 11 },
+      styles: { halign: 'center', fontSize: 10 },
     },
   ]);
 
   // R9 — Dirección
   body.push([
-    { content: 'Dirección:', styles: { fontSize: 11 } },
+    { content: 'Dirección:', styles: { fontSize: 10 } },
     {
       content: order.patient?.address ?? '',
       colSpan: 6,
-      styles: { halign: 'left', fontSize: 11 },
+      styles: { halign: 'left', fontSize: 10 },
     },
   ]);
 
@@ -493,22 +497,21 @@ export async function downloadOrdenInternaPdfForProvider(
     .filter(Boolean)
     .join(', ');
   body.push([
-    { content: 'Patología:', styles: { fontSize: 11 } },
+    { content: 'Patología:', styles: { fontSize: 10 } },
     {
       content: pathologyText,
       colSpan: 4,
-      styles: { halign: 'left', fontSize: 11 },
+      styles: { halign: 'left', fontSize: 10 },
     },
-    { content: 'Clave de Servicio:', styles: { fontSize: 11 } },
+    { content: 'Clave de Servicio:', styles: { fontSize: 10 } },
     {
       // Clave de servicio = la capturada en el Paso 1 (sólo seguro la persiste).
       content: order.serviceKey ?? '',
-      styles: { halign: 'center', fontSize: 11 },
+      styles: { halign: 'center', fontSize: 10 },
     },
   ]);
 
   // R11 — Header tabla "Tipos de Servicios"
-  const tiposHeaderIdx = body.length;
   body.push([
     {
       content: 'Tipos de Servicios',
@@ -517,35 +520,37 @@ export async function downloadOrdenInternaPdfForProvider(
     },
   ]);
 
-  // R12+ — STs 2 por fila (A:D + E:G)
-  for (let i = 0; i < sts.length; i += 2) {
+  // R12+ — STs 2 por fila (A:D + E:G), mínimo 2 filas como el template
+  const stRows = Math.max(2, Math.ceil(sts.length / 2));
+  for (let i = 0; i < stRows; i++) {
     body.push([
       {
-        content: sts[i] ?? '',
+        content: sts[i * 2] ?? '',
         colSpan: 4,
-        styles: { halign: 'left', valign: 'top', fontSize: 11 },
+        styles: { halign: 'left', valign: 'top', fontSize: 10 },
       },
       {
-        content: sts[i + 1] ?? '',
+        content: sts[i * 2 + 1] ?? '',
         colSpan: 3,
-        styles: { halign: 'left', valign: 'top', fontSize: 11 },
+        styles: { halign: 'left', valign: 'top', fontSize: 10 },
       },
     ]);
   }
-  if (sts.length === 0) body.push(empty7);
-  const tiposEnd = body.length;
+  const dataEnd = body.length; // exclusivo
 
   autoTable(doc, {
     startY: 14,
+    margin: { left: marginL, right: marginL },
     body,
     theme: 'plain',
     styles: {
       font: 'helvetica',
-      fontSize: 11,
-      cellPadding: 1.5,
+      fontSize: 10,
+      cellPadding: { top: 0.8, bottom: 0.8, left: 1.4, right: 1.4 },
       lineColor: [0, 0, 0],
       lineWidth: 0,
       valign: 'middle',
+      minCellHeight: 6,
     },
     columnStyles: {
       0: { cellWidth: colW[0] },
@@ -557,38 +562,44 @@ export async function downloadOrdenInternaPdfForProvider(
       6: { cellWidth: colW[6] },
     },
     didParseCell: (data) => {
-      // Bordes en header tabla + filas STs
-      if (data.row.index >= tiposHeaderIdx && data.row.index < tiposEnd) {
+      const i = data.row.index;
+      // Recuadro FECHA/N° (filas 0-1, columnas F:G)
+      if (
+        (i === 0 || i === 1) &&
+        (data.column.index === 5 || data.column.index === 6)
+      ) {
+        data.cell.styles.lineWidth = 0.2;
+        data.cell.styles.lineColor = [0, 0, 0];
+      }
+      // Rejilla completa del bloque de datos (R5 → última fila de servicios)
+      if (i >= dataStart && i < dataEnd) {
         data.cell.styles.lineWidth = 0.2;
         data.cell.styles.lineColor = [0, 0, 0];
       }
     },
   });
 
+  // Logo AFMI — overlay sobre la fila 1 (izquierda; ancho ≤ cols A:B para no
+  // pisar el título). Se dibuja tras la tabla para quedar encima.
+  const logoUrl = await loadLogoDataUrl();
+  if (logoUrl) {
+    doc.addImage(logoUrl, 'PNG', marginL, 13.5, 34, 11);
+  }
+
   // @ts-expect-error lastAutoTable runtime
-  let y = doc.lastAutoTable.finalY + 6;
+  let y = doc.lastAutoTable.finalY + 7;
 
   // Footer empresa
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
-  doc.text(`Dirección:   ${COMPANY.domicilio}`, doc.internal.pageSize.getWidth() / 2, y, {
+  doc.text(`Dirección:   ${COMPANY.domicilio}`, pageW / 2, y, { align: 'center' });
+  y += 4.5;
+  doc.setFontSize(8);
+  doc.text(`${COMPANY.ciudad} Teléfonos: ${COMPANY.telefono}`, pageW / 2, y, {
     align: 'center',
   });
-  y += 4;
-  doc.setFontSize(8);
-  doc.text(
-    `${COMPANY.ciudad} Teléfonos: ${COMPANY.telefono}`,
-    doc.internal.pageSize.getWidth() / 2,
-    y,
-    { align: 'center' },
-  );
-  y += 4;
-  doc.text(
-    `Correo electrónico: ${COMPANY.email}`,
-    doc.internal.pageSize.getWidth() / 2,
-    y,
-    { align: 'center' },
-  );
+  y += 4.5;
+  doc.text(`Correo electrónico: ${COMPANY.email}`, pageW / 2, y, { align: 'center' });
   y += 14;
 
   // Firma usuario creador
@@ -600,9 +611,9 @@ export async function downloadOrdenInternaPdfForProvider(
     : '';
   const jobTitle = cb?.jobTitle?.trim() ?? '';
   doc.setFontSize(10);
-  doc.text(fullName, doc.internal.pageSize.getWidth() / 2, y, { align: 'center' });
-  y += 4;
-  doc.text(jobTitle, doc.internal.pageSize.getWidth() / 2, y, { align: 'center' });
+  doc.text(fullName, pageW / 2, y, { align: 'center' });
+  y += 4.5;
+  doc.text(jobTitle, pageW / 2, y, { align: 'center' });
 
   const providerSlug = safeFilenameSegment(group.providerName);
   const typeSlug = group.providerType === 'doctor' ? 'doctor' : 'centro';
