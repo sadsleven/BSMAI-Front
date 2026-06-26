@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
+import { PageLoader } from '@/components/ui/spinner';
 import { ChevronLeft, AlertTriangle, ArrowRight } from 'lucide-react';
 import { OrderForm } from '../components/OrderForm';
 import { orderGateway } from '../../infrastructure/orderGateway';
@@ -54,7 +55,7 @@ function buildDto(values: OrderValues): CreateOrderDto {
       careCenterId:
         r.providerType === 'care_center' ? r.careCenterId || undefined : undefined,
       quantity: r.quantity ?? undefined,
-      customName: r.customName?.trim() ? r.customName.trim() : undefined,
+      customName: (r.customName ?? '').trim(),
     })),
     pathologyIds: values.pathologyIds ?? [],
     orderDate: values.orderDate,
@@ -256,7 +257,7 @@ export function OrderEdit() {
   };
 
   if (fetching) {
-    return <div className="text-sm text-muted-foreground">Cargando orden…</div>;
+    return <PageLoader label="Cargando orden…" />;
   }
 
   // Vista mínima de proveedor: sólo su informe (Paso 3), sin stepper ni form.

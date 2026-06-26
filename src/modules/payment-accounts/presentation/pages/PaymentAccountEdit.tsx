@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { ChevronLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
+import { PageLoader } from '@/components/ui/spinner';
 import { paymentAccountSchema, type PaymentAccountValues } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
@@ -96,7 +97,7 @@ export function PaymentAccountEdit() {
   };
 
   if (fetching) {
-    return <div className="text-sm text-muted-foreground">Cargando cuenta…</div>;
+    return <PageLoader label="Cargando cuenta…" />;
   }
 
   return (

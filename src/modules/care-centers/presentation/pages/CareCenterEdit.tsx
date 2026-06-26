@@ -16,8 +16,7 @@ import {
 import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { servicePricesToPayload } from '@/components/ui/service-prices-table';
-import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
-import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
+import { PageLoader } from '@/components/ui/spinner';
 import { ChevronLeft } from 'lucide-react';
 
 function cleanPaymentMethod(m: PaymentMethodValues): CareCenterPaymentMethod {
@@ -44,7 +43,6 @@ function cleanPaymentMethod(m: PaymentMethodValues): CareCenterPaymentMethod {
 export function CareCenterEdit() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { has } = usePermissions();
   const [fetching, setFetching] = useState(true);
   const [displayName, setDisplayName] = useState('');
   const [existingSpecialties, setExistingSpecialties] = useState<Specialty[]>([]);
@@ -133,6 +131,7 @@ export function CareCenterEdit() {
         paymentMethods: (values.paymentMethods ?? []).map(cleanPaymentMethod),
         servicePrices: servicePricesToPayload(values.servicePrices ?? []),
         isActive: values.isActive,
+        password: values.password?.trim() || undefined,
       });
       notify.success('Centro actualizado');
       navigate('/care-centers');
@@ -142,7 +141,7 @@ export function CareCenterEdit() {
   };
 
   if (fetching) {
-    return <div className="text-sm text-muted-foreground">Cargando centro…</div>;
+    return <PageLoader label="Cargando centro…" />;
   }
 
   return (
@@ -170,8 +169,6 @@ export function CareCenterEdit() {
             existingSpecialties={existingSpecialties}
             mode="edit"
             accountExists={accountExists}
-            canChangePassword={has(PERMISSIONS.CARE_CENTERS.CHANGE_PASSWORD)}
-            onChangePassword={() => navigate(`/care-centers/${id}/change-password`)}
           />
 
           <div className="flex items-center justify-between gap-3 pt-2">

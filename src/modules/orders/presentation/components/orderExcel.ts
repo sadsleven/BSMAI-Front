@@ -523,8 +523,11 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
 }
 
 /**
- * Genera 1 XLSX de "Orden interna" para UN proveedor de la orden. Layout y
- * dimensiones espejan el template `Orden interna.xlsx` de AFMI.
+ * Genera 1 XLSX de "Orden interna" para UN proveedor de la orden. Layout,
+ * dimensiones, bordes y estilos calcan el template `Orden interna.xlsx` de AFMI:
+ * rejilla negra completa (recuadros FECHA/N° + bloque de datos A5:G13 con sus
+ * acentos en línea media), RIF en azul corporativo y anchos uniformes del
+ * original (sin <cols> propios). Fuentes/estilos = índices del styles.xml.
  */
 export async function downloadOrdenInternaForProvider(
   order: Order,
@@ -532,37 +535,89 @@ export async function downloadOrdenInternaForProvider(
 ): Promise<void> {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'AFMI';
-  const ws = wb.addWorksheet('ORDENES INTERNAS');
+  const ws = wb.addWorksheet('ORDENES INTERNAS', {
+    properties: { defaultRowHeight: 15 },
+  });
 
-  // Anchos pensados para encajar logo en A-B y mantener layout del template
-  ws.columns = [
-    { width: 12 },
-    { width: 12 },
-    { width: 14 },
-    { width: 14 },
-    { width: 14 },
-    { width: 14 },
-    { width: 14 },
-  ];
+  // Anchos uniformes del template (baseColWidth 10 ≈ 10.71, A-G).
+  ws.columns = Array.from({ length: 7 }, () => ({ width: 10.71 }));
 
-  // Logo AFMI sobre A1:B3
+  // Logo AFMI — tamaño absoluto del template (1247775×409575 EMU = 131×43 px),
+  // anclado a A1 (oneCell: se mueve con la celda, no se redimensiona).
   const logoBuf = await loadLogoBuffer();
   if (logoBuf) {
     const imageId = wb.addImage({ buffer: logoBuf, extension: 'png' });
     ws.addImage(imageId, {
       tl: { col: 0, row: 0 },
-      br: { col: 1.76, row: 2.12 },
-    } as ExcelJS.ImageRange);
+      ext: { width: 131, height: 43 },
+    } as ExcelJS.ImagePosition);
   }
 
-  // Alturas de fila del template
+  // ---- Fuentes (espejan los índices de fonts del styles.xml del template) ----
+  const F12: Partial<ExcelJS.Font> = { name: 'Calibri', size: 12 };
+  const RIF_BLUE: Partial<ExcelJS.Font> = {
+    name: 'Calibri',
+    size: 9,
+    bold: true,
+    color: { argb: 'FF002060' },
+  };
+  const C11: Partial<ExcelJS.Font> = { name: 'Calibri', size: 11 };
+  const C11B: Partial<ExcelJS.Font> = { name: 'Calibri', size: 11, bold: true };
+  const C10: Partial<ExcelJS.Font> = { name: 'Calibri', size: 10 };
+  const C10B: Partial<ExcelJS.Font> = {
+    name: 'Calibri',
+    size: 10,
+    bold: true,
+    color: { argb: 'FF000000' },
+  };
+  const C9B: Partial<ExcelJS.Font> = { name: 'Calibri', size: 9, bold: true };
+  const C8: Partial<ExcelJS.Font> = { name: 'Calibri', size: 8 };
+  const C8B: Partial<ExcelJS.Font> = { name: 'Calibri', size: 8, bold: true };
+
+  // ---- Bordes negros (líneas de las celdas del template) ----
+  const BLACK = { argb: 'FF000000' };
+  const T: Partial<ExcelJS.Border> = { style: 'thin', color: BLACK };
+  const M: Partial<ExcelJS.Border> = { style: 'medium', color: BLACK };
+  const box: Partial<ExcelJS.Borders> = { top: T, bottom: T, left: T, right: T };
+  /**
+   * Recuadro fino negro en toda una fila A..G (o sub-rango). En celdas
+   * mergeadas, ExcelJS pinta correctamente el perímetro exterior y descarta las
+   * líneas interiores (Excel no las dibuja), por lo que aplicar el recuadro a
+   * cada celda del merge equivale visualmente a las líneas del template.
+   */
+  const boxRow = (rowNum: number, from = 1, to = 7): void => {
+    for (let c = from; c <= to; c++) ws.getCell(rowNum, c).border = { ...box };
+  };
+
+  // ---- Alineaciones ----
+  const center: Partial<ExcelJS.Alignment> = { horizontal: 'center', vertical: 'middle' };
+  const centerWrap: Partial<ExcelJS.Alignment> = { ...center, wrapText: true };
+  const leftMid: Partial<ExcelJS.Alignment> = { horizontal: 'left', vertical: 'middle' };
+
+  /** Escribe valor + estilo en una celda de forma compacta. */
+  const put = (
+    addr: string,
+    value: ExcelJS.CellValue,
+    font: Partial<ExcelJS.Font>,
+    align?: Partial<ExcelJS.Alignment>,
+    numFmt?: string,
+  ): ExcelJS.Cell => {
+    const c = ws.getCell(addr);
+    c.value = value;
+    c.font = font;
+    if (align) c.alignment = align;
+    if (numFmt) c.numFmt = numFmt;
+    return c;
+  };
+
+  // ---- Alturas de fila del template ----
   ws.getRow(2).height = 15.75;
   ws.getRow(3).height = 15.75;
   ws.getRow(5).height = 30;
   ws.getRow(8).height = 30;
   ws.getRow(11).height = 15.75;
 
-  // Merges del template
+  // ---- Merges del template (cabecera + bloque de datos) ----
   ws.mergeCells('C2:E2');
   ws.mergeCells('A3:B3');
   ws.mergeCells('C3:E3');
@@ -576,194 +631,133 @@ export async function downloadOrdenInternaForProvider(
   ws.mergeCells('B10:E10');
   ws.mergeCells('A11:G11');
 
-  // Fuentes
-  const TITLE: Partial<ExcelJS.Font> = { name: 'Calibri', size: 12 };
-  const RIF: Partial<ExcelJS.Font> = { name: 'Calibri', size: 9, bold: true };
-  const LBL: Partial<ExcelJS.Font> = { name: 'Calibri', size: 11 };
-  const LBL_BOLD: Partial<ExcelJS.Font> = { name: 'Calibri', size: 11, bold: true };
-  const SMALL: Partial<ExcelJS.Font> = { name: 'Calibri', size: 10 };
-  const SMALL_BOLD: Partial<ExcelJS.Font> = { name: 'Calibri', size: 10, bold: true };
-  const TINY_BOLD: Partial<ExcelJS.Font> = { name: 'Calibri', size: 8, bold: true };
+  // ====== Cabecera ======
+  // R2 — Título central + recuadro FECHA (F2:G2)
+  put('C2', 'ORDEN INTERNA SERVICIOS', F12, center);
+  put('F2', 'FECHA', F12, center);
+  put('G2', fmtDate(order.orderDate), F12, center, '@');
+  boxRow(2, 6, 7);
 
-  const center: Partial<ExcelJS.Alignment> = { horizontal: 'center', vertical: 'middle' };
-  const centerWrap: Partial<ExcelJS.Alignment> = { ...center, wrapText: true };
-  const leftMid: Partial<ExcelJS.Alignment> = { horizontal: 'left', vertical: 'middle' };
-
-  // R2 — Título central + Fecha
-  ws.getCell('C2').value = 'ORDEN INTERNA SERVICIOS';
-  ws.getCell('C2').font = TITLE;
-  ws.getCell('C2').alignment = centerWrap;
-  ws.getCell('F2').value = 'FECHA';
-  ws.getCell('F2').font = TITLE;
-  ws.getCell('F2').alignment = center;
-  ws.getCell('G2').value = fmtDate(order.orderDate);
-  ws.getCell('G2').font = TITLE;
-  ws.getCell('G2').alignment = center;
-
-  // R3 — RIF + Razón Social AFMI + N°
-  ws.getCell('A3').value = `      RIF ${COMPANY.rif}`;
-  ws.getCell('A3').font = RIF;
-  ws.getCell('A3').alignment = { horizontal: 'center', wrapText: true };
-  ws.getCell('C3').value = COMPANY.name;
-  ws.getCell('C3').font = TITLE;
-  ws.getCell('C3').alignment = center;
-  ws.getCell('F3').value = 'N°';
-  ws.getCell('F3').font = TITLE;
-  ws.getCell('F3').alignment = center;
+  // R3 — RIF (azul) + Razón Social AFMI + recuadro N° (F3:G3)
+  put('A3', `      RIF ${COMPANY.rif}`, RIF_BLUE, { horizontal: 'center', wrapText: true });
+  put('C3', COMPANY.name, F12, center);
+  put('F3', 'N°', F12, center);
   // N° de orden interna de ESTE proveedor (cada orden interna su propio número).
-  ws.getCell('G3').value = group.providerOrderNumber;
-  ws.getCell('G3').font = TITLE;
-  ws.getCell('G3').alignment = center;
+  put('G3', group.providerOrderNumber, F12, center, '@');
+  boxRow(3, 6, 7);
 
+  // ====== Bloque de datos (rejilla negra A5:G13) ======
   // R5 — Médico Tratante/Centro + Especialidad
-  ws.getCell('A5').value =
-    group.providerType === 'doctor' ? 'Médico Tratante:' : 'Centro:';
-  ws.getCell('A5').font = LBL;
-  ws.getCell('C5').value = group.providerName.toUpperCase();
-  ws.getCell('C5').font = SMALL;
-  ws.getCell('C5').alignment = centerWrap;
-  ws.getCell('F5').value = 'Especialidad:';
-  ws.getCell('F5').font = LBL;
-  ws.getCell('F5').alignment = { wrapText: true };
-  ws.getCell('G5').value = (order.specialty?.name ?? '').toUpperCase();
-  ws.getCell('G5').font = { name: 'Calibri', size: 8 };
-  ws.getCell('G5').alignment = centerWrap;
+  put('A5', group.providerType === 'doctor' ? 'Médico Tratante:' : 'Centro:', C11, leftMid);
+  put('C5', group.providerName.toUpperCase(), C10, centerWrap);
+  put('F5', 'Especialidad:', C11, { vertical: 'middle', wrapText: true });
+  put('G5', (order.specialty?.name ?? '').toUpperCase(), C8, centerWrap);
+  boxRow(5);
 
   // R6 — Centro/Dirección del proveedor (doctor o centro). C6:G6 mergeado.
-  ws.getCell('A6').value = 'Centro/Dirección: ';
-  ws.getCell('A6').font = LBL;
-  ws.getCell('A6').alignment = { wrapText: true };
-  ws.getCell('C6').value = group.providerCenterAddress;
-  ws.getCell('C6').font = LBL;
-  ws.getCell('C6').alignment = { ...leftMid, wrapText: true };
+  put('A6', 'Centro/Dirección: ', C11, { vertical: 'middle', wrapText: true });
+  put('C6', group.providerCenterAddress, C11, { ...leftMid, wrapText: true });
+  boxRow(6);
 
-  // R7 — Paciente + Cédula
-  ws.getCell('A7').value = 'Paciente';
-  ws.getCell('A7').font = LBL;
-  ws.getCell('A7').alignment = { horizontal: 'left', wrapText: true };
-  ws.getCell('C7').value = holderDisplayName(order.patient);
-  ws.getCell('C7').font = LBL;
-  ws.getCell('C7').alignment = { horizontal: 'left' };
-  ws.getCell('F7').value = 'Cédula:';
-  ws.getCell('F7').font = LBL;
-  ws.getCell('G7').value = holderId(order.patient);
-  ws.getCell('G7').font = LBL;
-  ws.getCell('G7').alignment = { horizontal: 'center', vertical: 'top' };
+  // R7 — Paciente + Cédula (acento medium a la derecha en G7)
+  put('A7', 'Paciente', C11, { horizontal: 'left', vertical: 'middle', wrapText: true });
+  put('C7', holderDisplayName(order.patient), C11, { horizontal: 'left', vertical: 'middle' });
+  put('F7', 'Cédula:', C11, leftMid);
+  put('G7', holderId(order.patient), C11, { horizontal: 'center', vertical: 'top' });
+  boxRow(7);
+  ws.getCell('G7').border = { top: T, bottom: T, left: T, right: M };
 
-  // R8 — Edad + Teléfono + Referencia
+  // R8 — Edad + Teléfono + Referencia (acentos medium A8/F8/G8 del template)
   const age = ageFromBirthDate(order.patient?.birthDate);
   const phone = order.patient?.phones?.[0]?.number ?? '';
-  ws.getCell('A8').value = 'Edad: ';
-  ws.getCell('A8').font = LBL_BOLD;
-  ws.getCell('B8').value = age ? Number(age) : '';
-  ws.getCell('B8').font = LBL;
-  ws.getCell('B8').alignment = center;
-  ws.getCell('D8').value = 'Teléfono:';
-  ws.getCell('D8').font = LBL_BOLD;
-  ws.getCell('D8').alignment = { wrapText: true };
-  ws.getCell('E8').value = phone;
-  ws.getCell('E8').font = LBL;
-  ws.getCell('E8').alignment = { vertical: 'middle', wrapText: true };
-  ws.getCell('F8').value = 'Referencia:';
-  ws.getCell('F8').font = LBL_BOLD;
-  ws.getCell('F8').alignment = { wrapText: true };
-  ws.getCell('G8').value = orderReferenceLabel(order);
-  ws.getCell('G8').font = LBL;
-  ws.getCell('G8').alignment = center;
+  put('A8', 'Edad: ', C11B, leftMid);
+  put('B8', age ? Number(age) : '', C11, center);
+  put('D8', 'Teléfono:', C11B, { vertical: 'middle', wrapText: true });
+  put('E8', phone, C11, { vertical: 'middle', wrapText: true }, '@');
+  put('F8', 'Referencia:', C11B, { vertical: 'middle', wrapText: true });
+  put('G8', orderReferenceLabel(order), C11, { horizontal: 'center', vertical: 'top' });
+  boxRow(8);
+  ws.getCell('A8').border = { top: T, bottom: T, left: M, right: T };
+  ws.getCell('F8').border = { top: T, bottom: T, left: M, right: T };
+  ws.getCell('G8').border = { top: T, bottom: T, left: T, right: M };
 
-  // R9 — Dirección
-  ws.getCell('A9').value = 'Dirección: ';
-  ws.getCell('A9').font = LBL;
-  ws.getCell('B9').value = order.patient?.address ?? '';
-  ws.getCell('B9').font = LBL;
-  ws.getCell('B9').alignment = { horizontal: 'left' };
+  // R9 — Dirección (B9:G9 mergeado)
+  put('A9', 'Dirección: ', C11, leftMid);
+  put('B9', order.patient?.address ?? '', C11, { horizontal: 'left', vertical: 'middle' });
+  boxRow(9);
 
   // R10 — Patología + Clave de Servicio. Valor mergeado B10:E10.
   const pathologyText = (order.pathologies ?? [])
     .map((p) => p.name)
     .filter(Boolean)
     .join(', ');
-  ws.getCell('A10').value = 'Patología:';
-  ws.getCell('A10').font = LBL;
-  ws.getCell('A10').alignment = { vertical: 'middle', wrapText: true };
-  ws.getCell('B10').value = pathologyText;
-  ws.getCell('B10').font = LBL;
-  ws.getCell('B10').alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
-  // Excel no auto-ajusta filas con celdas mergeadas: altura explícita.
-  // Merge B:E ≈ 54 unidades ≈ 64 chars en Calibri 11.
-  const pathologyLines = Math.max(1, Math.ceil(pathologyText.length / 64));
-  ws.getRow(10).height = Math.max(15.75, pathologyLines * 15);
-  ws.getCell('F10').value = 'Clave de Servicio:';
-  ws.getCell('F10').font = LBL;
+  put('A10', 'Patología:', C11, { vertical: 'middle', wrapText: true });
+  put('B10', pathologyText, C11, { horizontal: 'left', vertical: 'middle', wrapText: true });
+  put('F10', 'Clave de Servicio:', C11, leftMid);
   // Clave de servicio = la capturada en el Paso 1 (sólo seguro la persiste).
-  ws.getCell('G10').value = order.serviceKey ?? '';
-  ws.getCell('G10').font = LBL;
-  ws.getCell('G10').alignment = center;
+  put('G10', order.serviceKey ?? '', C11, center);
+  boxRow(10);
+  // Excel no auto-ajusta filas con celdas mergeadas: altura explícita.
+  // Merge B:E ≈ 4 cols × 10.71 ≈ 40 chars en Calibri 11.
+  const pathologyLines = Math.max(1, Math.ceil(pathologyText.length / 40));
+  ws.getRow(10).height = Math.max(15, pathologyLines * 15);
 
-  // R11 — Header tabla "Tipos de Servicios"
-  ws.getCell('A11').value = 'Tipos de Servicios';
-  ws.getCell('A11').font = TITLE;
-  ws.getCell('A11').alignment = center;
+  // R11 — Header tabla "Tipos de Servicios" (A11:G11 mergeado)
+  put('A11', 'Tipos de Servicios', F12, center);
+  boxRow(11);
 
-  // R12+ — STs: 2 por fila (A:D y E:G)
+  // ====== Tabla de servicios — mín. 2 filas, 2 STs por fila (A:D y E:G) ======
   const sts = group.rows.map((row) => {
     const base =
       row.customName?.trim() || row.serviceType?.name || row.serviceTypeId;
     return row.quantity && row.quantity > 1 ? `${base} (x${row.quantity})` : base;
   });
-  let r = 12;
-  for (let i = 0; i < sts.length; i += 2) {
+  const svcAlign: Partial<ExcelJS.Alignment> = {
+    horizontal: 'left',
+    vertical: 'top',
+    wrapText: true,
+  };
+  const tableStart = 12;
+  const tableRows = Math.max(2, Math.ceil(sts.length / 2));
+  for (let i = 0; i < tableRows; i++) {
+    const r = tableStart + i;
     ws.mergeCells(`A${r}:D${r}`);
     ws.mergeCells(`E${r}:G${r}`);
-    const left1 = ws.getCell(`A${r}`);
-    left1.value = sts[i] ?? '';
-    left1.font = LBL;
-    left1.alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
-    if (sts[i + 1]) {
-      const right1 = ws.getCell(`E${r}`);
-      right1.value = sts[i + 1];
-      right1.font = LBL;
-      right1.alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
-    }
-    r += 1;
+    put(`A${r}`, sts[i * 2] ?? '', C11, svcAlign);
+    put(`E${r}`, sts[i * 2 + 1] ?? '', C11, svcAlign);
+    boxRow(r);
   }
-  if (sts.length === 0) r += 1;
+  const tableEnd = tableStart + tableRows - 1;
 
-  // Footer empresa (R14-R16 estilo template)
-  const fr = Math.max(r + 1, 14);
-  ws.getCell(`B${fr}`).value =
-    `                Dirección:   ${COMPANY.domicilio}`;
-  ws.getCell(`B${fr}`).font = RIF;
-  ws.getCell(`C${fr + 1}`).value =
-    `                                          ${COMPANY.ciudad} Teléfonos: ${COMPANY.telefono}`;
-  ws.getCell(`C${fr + 1}`).font = TINY_BOLD;
-  ws.getCell(`C${fr + 1}`).alignment = { vertical: 'middle' };
-  ws.getCell(`C${fr + 2}`).value =
-    `                         Correo electrónico: ${COMPANY.email}`;
-  ws.getCell(`C${fr + 2}`).font = TINY_BOLD;
-  ws.getCell(`C${fr + 2}`).alignment = { horizontal: 'center', vertical: 'middle' };
+  // ====== Footer empresa (sin bordes) ======
+  const f1 = tableEnd + 1;
+  put(`B${f1}`, `                Dirección:   ${COMPANY.domicilio}`, C9B);
+  put(
+    `C${f1 + 1}`,
+    `                                          ${COMPANY.ciudad} Teléfonos: ${COMPANY.telefono}`,
+    C8B,
+    { vertical: 'middle' },
+  );
+  put(
+    `C${f1 + 2}`,
+    `                         Correo electrónico: ${COMPANY.email}`,
+    C8B,
+    center,
+  );
 
-  // Firma — usuario creador (R18-R19 estilo template)
+  // ====== Firma — usuario creador (D:E mergeado) ======
   const cb = order.createdBy;
   const fullName = cb
-    ? [
-        cb.academicDegree?.trim(),
-        cb.firstName?.trim(),
-        cb.lastName?.trim(),
-      ]
+    ? [cb.academicDegree?.trim(), cb.firstName?.trim(), cb.lastName?.trim()]
         .filter(Boolean)
         .join(' ')
     : '';
   const jobTitle = cb?.jobTitle?.trim() ?? '';
-  const sigRow = Math.max(fr + 4, 18);
+  const sigRow = tableEnd + 5;
   ws.mergeCells(`D${sigRow}:E${sigRow}`);
   ws.mergeCells(`D${sigRow + 1}:E${sigRow + 1}`);
-  ws.getCell(`D${sigRow}`).value = fullName;
-  ws.getCell(`D${sigRow}`).font = SMALL_BOLD;
-  ws.getCell(`D${sigRow}`).alignment = center;
-  ws.getCell(`D${sigRow + 1}`).value = jobTitle;
-  ws.getCell(`D${sigRow + 1}`).font = SMALL_BOLD;
-  ws.getCell(`D${sigRow + 1}`).alignment = center;
+  put(`D${sigRow}`, fullName, C10B, center);
+  put(`D${sigRow + 1}`, jobTitle, C10B, center);
 
   const buf = await wb.xlsx.writeBuffer();
   const providerSlug = safeFilenameSegment(group.providerName);

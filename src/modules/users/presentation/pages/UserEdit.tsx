@@ -11,6 +11,7 @@ import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import type { BranchSummary, RoleSummary } from '../../domain/models/user';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
+import { PageLoader } from '@/components/ui/spinner';
 import { ChevronLeft } from 'lucide-react';
 
 export function UserEdit() {
@@ -91,7 +92,7 @@ export function UserEdit() {
   };
 
   if (fetching) {
-    return <div className="text-sm text-muted-foreground">Cargando usuario…</div>;
+    return <PageLoader label="Cargando usuario…" />;
   }
 
   return (

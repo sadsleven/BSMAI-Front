@@ -23,12 +23,10 @@ import { PatientDetailPage } from './modules/patients/presentation/pages/Patient
 import { DoctorList } from './modules/doctors/presentation/pages/DoctorList';
 import { DoctorCreate } from './modules/doctors/presentation/pages/DoctorCreate';
 import { DoctorEdit } from './modules/doctors/presentation/pages/DoctorEdit';
-import { DoctorChangePassword } from './modules/doctors/presentation/pages/DoctorChangePassword';
 import { DoctorDetailPage } from './modules/doctors/presentation/pages/DoctorDetailPage';
 import { CareCenterList } from './modules/care-centers/presentation/pages/CareCenterList';
 import { CareCenterCreate } from './modules/care-centers/presentation/pages/CareCenterCreate';
 import { CareCenterEdit } from './modules/care-centers/presentation/pages/CareCenterEdit';
-import { CareCenterChangePassword } from './modules/care-centers/presentation/pages/CareCenterChangePassword';
 import { CareCenterDetailPage } from './modules/care-centers/presentation/pages/CareCenterDetailPage';
 import { InsuranceList } from './modules/insurances/presentation/pages/InsuranceList';
 import { InsuranceCreate } from './modules/insurances/presentation/pages/InsuranceCreate';
@@ -137,14 +135,12 @@ function App() {
             <Route index element={<DoctorList />} />
             <Route path="create" element={<DoctorCreate />} />
             <Route path="edit/:id" element={<DoctorEdit />} />
-            <Route path=":id/change-password" element={<DoctorChangePassword />} />
             <Route path=":id" element={<DoctorDetailPage />} />
           </Route>
           <Route path="care-centers">
             <Route index element={<CareCenterList />} />
             <Route path="create" element={<CareCenterCreate />} />
             <Route path="edit/:id" element={<CareCenterEdit />} />
-            <Route path=":id/change-password" element={<CareCenterChangePassword />} />
             <Route path=":id" element={<CareCenterDetailPage />} />
           </Route>
           <Route path="insurances">

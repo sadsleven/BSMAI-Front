@@ -2,7 +2,6 @@ import { Controller, useFormContext } from 'react-hook-form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Button } from '@/components/ui/button';
 import { RifInput } from '@/components/ui/rif-input';
 import { PasswordInput } from '@/components/ui/password-input';
 import { PhoneListInput } from '@/components/ui/phone-list-input';
@@ -14,7 +13,7 @@ import {
 import { ServicePricesTable } from '@/components/ui/service-prices-table';
 import { FormSwitch } from '@/components/ui/form-switch';
 import { FormSection, FormGrid } from '@/components/ui/form-section';
-import { AlertTriangle, KeyRound, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type {
   CareCenterValues,
@@ -38,18 +37,12 @@ export type CareCenterFormProps = {
   mode?: 'create' | 'edit';
   /** En edición: si el centro ya tiene cuenta de acceso (userId). */
   accountExists?: boolean;
-  /** En edición: callback para abrir el cambio de contraseña. */
-  onChangePassword?: () => void;
-  /** Permiso para cambiar/establecer la contraseña (controla el botón en edición). */
-  canChangePassword?: boolean;
 };
 
 export function CareCenterForm({
   existingSpecialties,
   mode = 'create',
   accountExists = false,
-  onChangePassword,
-  canChangePassword = false,
 }: CareCenterFormProps) {
   const {
     register,
@@ -107,11 +100,19 @@ export function CareCenterForm({
             <Label htmlFor="email" className="text-sm font-medium">
               Email <span className="text-destructive">*</span>
             </Label>
-            <Input
-              id="email"
-              type="email"
-              {...register('email')}
-              className={cn('h-9', invalid('email'))}
+            <Controller
+              name="email"
+              control={control}
+              render={({ field }) => (
+                <Input
+                  id="email"
+                  type="email"
+                  value={field.value ?? ''}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  className={cn('h-9', invalid('email'))}
+                />
+              )}
             />
             <FieldError message={errors.email?.message} />
           </div>
@@ -255,7 +256,46 @@ export function CareCenterForm({
         title="Acceso al sistema"
         description="Habilitá que el centro inicie sesión como usuario proveedor para cargar el informe (Paso 3) de sus órdenes."
       >
-        {mode === 'create' ? (
+        <div className="space-y-4">
+          {mode === 'edit' && (
+            <div className="flex items-center gap-2 text-sm">
+              {accountExists ? (
+                <span className="inline-flex items-center gap-1.5 text-success">
+                  <ShieldCheck className="w-4 h-4" /> Acceso habilitado
+                </span>
+              ) : (
+                <span className="text-muted-foreground">
+                  Sin acceso. Establecé una contraseña para habilitarlo.
+                </span>
+              )}
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <Label htmlFor="accessEmail" className="text-sm font-medium">
+              Email de acceso (usuario) <span className="text-destructive">*</span>
+            </Label>
+            <Controller
+              name="email"
+              control={control}
+              render={({ field }) => (
+                <Input
+                  id="accessEmail"
+                  type="email"
+                  value={field.value ?? ''}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  className={cn('h-9', invalid('email'))}
+                />
+              )}
+            />
+            <FieldError message={errors.email?.message} />
+            <p className="text-xs text-muted-foreground">
+              Es el mismo email del centro y funciona como usuario de inicio de sesión.
+              Corregilo si está vacío o si ya está en uso por otra cuenta.
+            </p>
+          </div>
+
           <FormGrid>
             <div className="space-y-1.5">
               <Label htmlFor="password" className="text-sm font-medium">
@@ -281,38 +321,15 @@ export function CareCenterForm({
               <FieldError message={errors.confirmPassword?.message} />
             </div>
             <p className="text-xs text-muted-foreground sm:col-span-2">
-              Dejá la contraseña vacía si el centro no necesita acceso. Si la definís, el
-              email pasa a ser su usuario. Mínimo 8 caracteres con mayúscula, minúscula,
-              número y carácter especial.
+              {mode === 'edit'
+                ? accountExists
+                  ? 'Dejá la contraseña vacía para mantener la actual. Si la defines, se actualiza el acceso del centro.'
+                  : 'Definí una contraseña para habilitar el acceso. El email de arriba será su usuario.'
+                : 'Dejá la contraseña vacía si el centro no necesita acceso. Si la defines, el email pasa a ser su usuario.'}{' '}
+              Mínimo 8 caracteres con mayúscula, minúscula, número y carácter especial.
             </p>
           </FormGrid>
-        ) : (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 text-sm">
-              {accountExists ? (
-                <span className="inline-flex items-center gap-1.5 text-success">
-                  <ShieldCheck className="w-4 h-4" /> Acceso habilitado
-                </span>
-              ) : (
-                <span className="text-muted-foreground">
-                  Sin acceso. Establecé una contraseña para habilitarlo.
-                </span>
-              )}
-            </div>
-            {canChangePassword && onChangePassword ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={onChangePassword}
-                className="gap-1.5"
-              >
-                <KeyRound className="w-4 h-4" />
-                {accountExists ? 'Cambiar contraseña' : 'Establecer contraseña'}
-              </Button>
-            ) : null}
-          </div>
-        )}
+        </div>
       </FormSection>
 
       <FormSection title="Estado">

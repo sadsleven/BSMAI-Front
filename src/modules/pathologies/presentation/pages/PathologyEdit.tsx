@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { FormSwitch } from '@/components/ui/form-switch';
 import { FormSection, FormGrid } from '@/components/ui/form-section';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
+import { PageLoader } from '@/components/ui/spinner';
 import { pathologySchema, type PathologyValues } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
@@ -73,7 +74,7 @@ export function PathologyEdit() {
   };
 
   if (fetching) {
-    return <div className="text-sm text-muted-foreground">Cargando patología…</div>;
+    return <PageLoader label="Cargando patología…" />;
   }
 
   const invalid = (k: 'name' | 'description') =>
