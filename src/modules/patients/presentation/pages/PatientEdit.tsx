@@ -10,6 +10,7 @@ import type { Insurance } from '@/modules/insurances/domain/models/insurance';
 import { Button } from '@/components/ui/button';
 import { PatientForm } from '../components/PatientForm';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
+import { PageLoader } from '@/components/ui/spinner';
 import { patientSchema, type PatientValues } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
@@ -111,7 +112,7 @@ export function PatientEdit() {
   };
 
   if (fetching) {
-    return <div className="text-sm text-muted-foreground">Cargando paciente…</div>;
+    return <PageLoader label="Cargando paciente…" />;
   }
 
   return (

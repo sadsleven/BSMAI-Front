@@ -237,7 +237,8 @@ export interface OrderServiceTypeRowInput {
   doctorId?: string;
   careCenterId?: string;
   quantity?: number;
-  customName?: string;
+  /** Nombre de este ST para la orden. Obligatorio. */
+  customName: string;
 }
 
 export interface CreateOrderDto {

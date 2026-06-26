@@ -16,6 +16,7 @@ import {
   servicePricesToPayload,
 } from '@/components/ui/service-prices-table';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
+import { PageLoader } from '@/components/ui/spinner';
 import { insuranceSchema, type InsuranceValues } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
@@ -116,7 +117,7 @@ export function InsuranceEdit() {
   };
 
   if (fetching) {
-    return <div className="text-sm text-muted-foreground">Cargando seguro…</div>;
+    return <PageLoader label="Cargando seguro…" />;
   }
 
   const invalid = (

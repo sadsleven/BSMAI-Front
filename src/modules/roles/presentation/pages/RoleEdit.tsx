@@ -12,6 +12,7 @@ import { FormSwitch } from '@/components/ui/form-switch';
 import { FormSection, FormGrid } from '@/components/ui/form-section';
 import { PermissionsPicker } from '../components/PermissionsPicker';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
+import { PageLoader } from '@/components/ui/spinner';
 import { Can } from '@/modules/auth/presentation/components/Can';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { roleSchema, type RoleValues } from '@/lib/validations/schemas';
@@ -95,7 +96,7 @@ export function RoleEdit() {
     }
   };
 
-  if (fetching) return <div className="text-sm text-muted-foreground">Cargando rol…</div>;
+  if (fetching) return <PageLoader label="Cargando rol…" />;
 
   const invalid = (k: 'name' | 'description') =>
     errors[k] ? 'border-destructive focus-visible:ring-destructive/30' : '';

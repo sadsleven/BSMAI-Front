@@ -110,7 +110,8 @@ export function OrderBillingStep({
         }
         groups.get(k)!.rows.push({
           serviceTypeId: ost.serviceTypeId,
-          serviceTypeName: ost.serviceType?.name ?? ost.serviceTypeId,
+          serviceTypeName:
+            ost.customName?.trim() || ost.serviceType?.name || ost.serviceTypeId,
           qty: Math.max(1, Math.trunc(ost.quantity ?? 1)),
         });
       }

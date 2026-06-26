@@ -8,6 +8,7 @@ import type { Specialty } from '@/modules/specialties/domain/models/specialty';
 import { Button } from '@/components/ui/button';
 import { DoctorForm } from '../components/DoctorForm';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
+import { PageLoader } from '@/components/ui/spinner';
 import {
   doctorSchema,
   type DoctorValues,
@@ -16,8 +17,6 @@ import {
 import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { servicePricesToPayload } from '@/components/ui/service-prices-table';
-import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
-import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { ChevronLeft } from 'lucide-react';
 
 function cleanPaymentMethod(m: PaymentMethodValues): DoctorPaymentMethod {
@@ -44,7 +43,6 @@ function cleanPaymentMethod(m: PaymentMethodValues): DoctorPaymentMethod {
 export function DoctorEdit() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { has } = usePermissions();
   const [fetching, setFetching] = useState(true);
   const [displayName, setDisplayName] = useState('');
   const [existingSpecialties, setExistingSpecialties] = useState<Specialty[]>([]);
@@ -142,6 +140,7 @@ export function DoctorEdit() {
         paymentMethods: (values.paymentMethods ?? []).map(cleanPaymentMethod),
         servicePrices: servicePricesToPayload(values.servicePrices ?? []),
         isActive: values.isActive,
+        password: values.password?.trim() || undefined,
       });
       notify.success('Doctor actualizado');
       navigate('/doctors');
@@ -151,7 +150,7 @@ export function DoctorEdit() {
   };
 
   if (fetching) {
-    return <div className="text-sm text-muted-foreground">Cargando doctor…</div>;
+    return <PageLoader label="Cargando doctor…" />;
   }
 
   return (
@@ -179,8 +178,6 @@ export function DoctorEdit() {
             existingSpecialties={existingSpecialties}
             mode="edit"
             accountExists={accountExists}
-            canChangePassword={has(PERMISSIONS.DOCTORS.CHANGE_PASSWORD)}
-            onChangePassword={() => navigate(`/doctors/${id}/change-password`)}
           />
 
           <div className="flex items-center justify-between gap-3 pt-2">

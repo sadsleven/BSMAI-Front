@@ -138,7 +138,7 @@ export function OrderAttendStep({
                       </span>{' '}
                       · {g.rows.length} servicio{g.rows.length === 1 ? '' : 's'} ·{' '}
                       {g.rows
-                        .map((r) => r.serviceType?.name)
+                        .map((r) => r.customName?.trim() || r.serviceType?.name)
                         .filter(Boolean)
                         .join(', ')}
                     </div>

@@ -41,6 +41,7 @@ function buildDto(values: OrderValues): CreateOrderDto {
       careCenterId:
         r.providerType === 'care_center' ? r.careCenterId || undefined : undefined,
       quantity: r.quantity ?? undefined,
+      customName: (r.customName ?? '').trim(),
     })),
     pathologyIds: values.pathologyIds ?? [],
     orderDate: values.orderDate,

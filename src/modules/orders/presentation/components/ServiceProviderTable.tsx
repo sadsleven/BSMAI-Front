@@ -256,27 +256,20 @@ export function ServiceProviderTable({
                     <div className="space-y-1 pt-1">
                       <label className="block text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                         Nombre para esta orden{' '}
-                        <span className="font-normal normal-case tracking-normal text-muted-foreground">
-                          (opcional)
-                        </span>
+                        <span className="text-destructive">*</span>
                       </label>
-                      <Input
-                        type="text"
-                        list={`cn-opts-${idx}`}
+                      <CustomNameSelect
                         value={row.customName ?? ''}
-                        onChange={(e) =>
-                          updateRow(idx, { customName: e.target.value })
+                        suggestions={customNameSuggestions[row.serviceTypeId] ?? []}
+                        onChange={(name) => updateRow(idx, { customName: name })}
+                        disabled={disabled || !row.serviceTypeId}
+                        invalid={!!rowError?.customName}
+                        placeholder={
+                          row.serviceTypeId
+                            ? 'Elegí uno previo o escribí uno nuevo'
+                            : 'Elegí primero el Tipo de Servicio'
                         }
-                        disabled={disabled}
-                        maxLength={300}
-                        placeholder="Nombre específico (ej. RX tórax frontal)"
-                        className={cn('h-9', rowError?.customName && 'border-destructive')}
                       />
-                      <datalist id={`cn-opts-${idx}`}>
-                        {(customNameSuggestions[row.serviceTypeId] ?? []).map((s) => (
-                          <option key={s} value={s} />
-                        ))}
-                      </datalist>
                       {rowError?.customName ? (
                         <p className="text-xs text-destructive flex items-center gap-1">
                           <AlertTriangle className="w-3 h-3" />
@@ -284,8 +277,8 @@ export function ServiceProviderTable({
                         </p>
                       ) : (
                         <p className="text-[11px] text-muted-foreground">
-                          Si lo dejás vacío se usa el nombre del baremo. Aparece en
-                          órdenes internas y en la factura.
+                          Reutilizá un nombre ya usado para este servicio o agregá
+                          uno nuevo. Aparece en las órdenes internas y en la factura.
                         </p>
                       )}
                     </div>
@@ -573,6 +566,199 @@ function ServiceTypeSelect({
                         Mostrando {visibleCount} de {filtered.length} · seguí bajando…
                       </li>
                     )}
+                  </ul>
+                )}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+    </div>
+  );
+}
+
+/**
+ * Selector del "Nombre para esta orden" de un ST. Combobox que reutiliza los
+ * nombres ya usados para ese ST (sugerencias) y permite dar de alta uno nuevo
+ * escribiéndolo (opción "Usar «…»" o Enter). Mismo patrón de portal anclado que
+ * `ServiceTypeSelect` para evitar recortes dentro del overflow de la tabla.
+ */
+function CustomNameSelect({
+  value,
+  suggestions,
+  onChange,
+  disabled,
+  invalid,
+  placeholder,
+}: {
+  value: string;
+  suggestions: string[];
+  onChange: (name: string) => void;
+  disabled?: boolean;
+  invalid?: boolean;
+  placeholder?: string;
+}) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      const t = e.target as Node;
+      if (wrapRef.current?.contains(t) || dropdownRef.current?.contains(t)) return;
+      setOpen(false);
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
+
+  // Posiciona el dropdown (portal fixed) anclado al trigger. Recalcula en scroll/resize.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const update = () => {
+      const el = anchorRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setRect({ top: r.bottom + 4, left: r.left, width: r.width });
+    };
+    update();
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('resize', update);
+    };
+  }, [open]);
+
+  const toggleOpen = () => {
+    if (disabled) return;
+    setOpen((v) => {
+      const next = !v;
+      if (next) setQuery(''); // arranca la búsqueda limpia en cada apertura
+      return next;
+    });
+  };
+
+  const commit = (name: string) => {
+    const v = name.trim();
+    if (!v) return;
+    onChange(v);
+    setOpen(false);
+  };
+
+  const q = query.trim();
+  const filtered = useMemo(() => {
+    const ql = q.toLowerCase();
+    if (!ql) return suggestions;
+    return suggestions.filter((s) => s.toLowerCase().includes(ql));
+  }, [suggestions, q]);
+  const exactExists = useMemo(
+    () => suggestions.some((s) => s.toLowerCase() === q.toLowerCase()),
+    [suggestions, q],
+  );
+  const canAddNew = q.length > 0 && !exactExists;
+
+  return (
+    <div ref={wrapRef}>
+      <div ref={anchorRef}>
+        <button
+          type="button"
+          onClick={toggleOpen}
+          disabled={disabled}
+          title={value || undefined}
+          className={cn(
+            'flex h-9 w-full items-center justify-between gap-1.5 rounded-md border border-input bg-transparent py-2 pr-2 pl-2.5 text-sm shadow-xs outline-none transition-[color,box-shadow] disabled:cursor-not-allowed disabled:opacity-50',
+            'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]',
+            invalid && 'border-destructive',
+          )}
+        >
+          <span
+            className={cn(
+              'min-w-0 flex-1 truncate text-left',
+              !value && 'text-muted-foreground',
+            )}
+          >
+            {value || placeholder || 'Elegí o escribí un nombre'}
+          </span>
+          <ChevronDown
+            className={cn(
+              'size-4 shrink-0 text-muted-foreground transition-transform',
+              open && 'rotate-180',
+            )}
+          />
+        </button>
+      </div>
+      {open && rect
+        ? createPortal(
+            <div
+              ref={dropdownRef}
+              style={{ position: 'fixed', top: rect.top, left: rect.left, width: rect.width }}
+              className="z-50 overflow-hidden rounded-lg border bg-card shadow-md"
+            >
+              <div className="relative border-b p-1.5">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  type="text"
+                  autoFocus
+                  maxLength={300}
+                  placeholder="Buscar o escribir un nombre…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (q) commit(q);
+                    }
+                  }}
+                  className="h-8 pl-9"
+                />
+              </div>
+              <div className="max-h-[232px] overflow-y-auto py-1">
+                {canAddNew && (
+                  <button
+                    type="button"
+                    onClick={() => commit(q)}
+                    className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 text-brand-blue-strong hover:bg-accent"
+                  >
+                    <Plus className="size-4 shrink-0" />
+                    <span className="flex-1 truncate">Usar «{q}»</span>
+                  </button>
+                )}
+                {filtered.length === 0 && !canAddNew ? (
+                  <div className="px-3 py-2 text-sm text-muted-foreground">
+                    {suggestions.length === 0
+                      ? 'Sin nombres previos. Escribí uno nuevo.'
+                      : 'Sin resultados.'}
+                  </div>
+                ) : (
+                  <ul>
+                    {filtered.map((s) => {
+                      const selected = s === value;
+                      return (
+                        <li key={s}>
+                          <button
+                            type="button"
+                            title={s}
+                            onClick={() => commit(s)}
+                            className={cn(
+                              'w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-accent',
+                              selected && 'bg-accent/60',
+                            )}
+                          >
+                            <Check
+                              className={cn(
+                                'size-4 shrink-0',
+                                selected ? 'opacity-100' : 'opacity-0',
+                              )}
+                            />
+                            <span className="flex-1 truncate">{s}</span>
+                          </button>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>

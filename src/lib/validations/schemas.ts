@@ -955,10 +955,10 @@ export const orderSchema = z
             .max(100000, 'Cantidad demasiado alta')
             .optional(),
           customName: z
-            .string()
-            .max(300, 'Máximo 300 caracteres')
-            .optional()
-            .or(z.literal('')),
+            .string({ error: 'El nombre para la orden es obligatorio' })
+            .trim()
+            .min(1, 'El nombre para la orden es obligatorio')
+            .max(300, 'Máximo 300 caracteres'),
         }),
       )
       .min(1, 'Asigná al menos un tipo de servicio')
