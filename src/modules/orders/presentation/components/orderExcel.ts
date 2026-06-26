@@ -539,8 +539,18 @@ export async function downloadOrdenInternaForProvider(
     properties: { defaultRowHeight: 15 },
   });
 
-  // Anchos uniformes del template (baseColWidth 10 ≈ 10.71, A-G).
-  ws.columns = Array.from({ length: 7 }, () => ({ width: 10.71 }));
+  // Anchos por columna — dan aire a etiquetas/valores de la derecha
+  // (Especialidad / Teléfono / Referencia / Clave de Servicio) y evitan que
+  // partan en 2 líneas o se recorten.
+  ws.columns = [
+    { width: 12 }, // A — etiquetas izquierda
+    { width: 9 }, // B
+    { width: 11 }, // C — valores
+    { width: 11 }, // D — etiqueta "Teléfono:"
+    { width: 12 }, // E — teléfono
+    { width: 19 }, // F — etiquetas derecha (cabe "Clave de Servicio:")
+    { width: 13 }, // G — valores derecha
+  ];
 
   // Logo AFMI — tamaño absoluto del template (1247775×409575 EMU = 131×43 px),
   // anclado a A1 (oneCell: se mueve con la celda, no se redimensiona).
@@ -577,7 +587,6 @@ export async function downloadOrdenInternaForProvider(
   // ---- Bordes negros (líneas de las celdas del template) ----
   const BLACK = { argb: 'FF000000' };
   const T: Partial<ExcelJS.Border> = { style: 'thin', color: BLACK };
-  const M: Partial<ExcelJS.Border> = { style: 'medium', color: BLACK };
   const box: Partial<ExcelJS.Borders> = { top: T, bottom: T, left: T, right: T };
   /**
    * Recuadro fino negro en toda una fila A..G (o sub-rango). En celdas
@@ -650,36 +659,32 @@ export async function downloadOrdenInternaForProvider(
   // R5 — Médico Tratante/Centro + Especialidad
   put('A5', group.providerType === 'doctor' ? 'Médico Tratante:' : 'Centro:', C11, leftMid);
   put('C5', group.providerName.toUpperCase(), C10, centerWrap);
-  put('F5', 'Especialidad:', C11, { vertical: 'middle', wrapText: true });
+  put('F5', 'Especialidad:', C11, leftMid);
   put('G5', (order.specialty?.name ?? '').toUpperCase(), C8, centerWrap);
   boxRow(5);
 
   // R6 — Centro/Dirección del proveedor (doctor o centro). C6:G6 mergeado.
-  put('A6', 'Centro/Dirección: ', C11, { vertical: 'middle', wrapText: true });
+  put('A6', 'Centro/Dirección: ', C11, leftMid);
   put('C6', group.providerCenterAddress, C11, { ...leftMid, wrapText: true });
   boxRow(6);
 
-  // R7 — Paciente + Cédula (acento medium a la derecha en G7)
-  put('A7', 'Paciente', C11, { horizontal: 'left', vertical: 'middle', wrapText: true });
+  // R7 — Paciente + Cédula
+  put('A7', 'Paciente', C11, leftMid);
   put('C7', holderDisplayName(order.patient), C11, { horizontal: 'left', vertical: 'middle' });
   put('F7', 'Cédula:', C11, leftMid);
-  put('G7', holderId(order.patient), C11, { horizontal: 'center', vertical: 'top' });
+  put('G7', holderId(order.patient), C11, center);
   boxRow(7);
-  ws.getCell('G7').border = { top: T, bottom: T, left: T, right: M };
 
-  // R8 — Edad + Teléfono + Referencia (acentos medium A8/F8/G8 del template)
+  // R8 — Edad + Teléfono + Referencia
   const age = ageFromBirthDate(order.patient?.birthDate);
   const phone = order.patient?.phones?.[0]?.number ?? '';
   put('A8', 'Edad: ', C11B, leftMid);
   put('B8', age ? Number(age) : '', C11, center);
-  put('D8', 'Teléfono:', C11B, { vertical: 'middle', wrapText: true });
-  put('E8', phone, C11, { vertical: 'middle', wrapText: true }, '@');
-  put('F8', 'Referencia:', C11B, { vertical: 'middle', wrapText: true });
-  put('G8', orderReferenceLabel(order), C11, { horizontal: 'center', vertical: 'top' });
+  put('D8', 'Teléfono:', C11B, leftMid);
+  put('E8', phone, C11, { horizontal: 'left', vertical: 'middle' }, '@');
+  put('F8', 'Referencia:', C11B, leftMid);
+  put('G8', orderReferenceLabel(order), C11, center);
   boxRow(8);
-  ws.getCell('A8').border = { top: T, bottom: T, left: M, right: T };
-  ws.getCell('F8').border = { top: T, bottom: T, left: M, right: T };
-  ws.getCell('G8').border = { top: T, bottom: T, left: T, right: M };
 
   // R9 — Dirección (B9:G9 mergeado)
   put('A9', 'Dirección: ', C11, leftMid);
@@ -729,23 +734,20 @@ export async function downloadOrdenInternaForProvider(
   }
   const tableEnd = tableStart + tableRows - 1;
 
-  // ====== Footer empresa (sin bordes) ======
-  const f1 = tableEnd + 1;
-  put(`B${f1}`, `                Dirección:   ${COMPANY.domicilio}`, C9B);
-  put(
-    `C${f1 + 1}`,
-    `                                          ${COMPANY.ciudad} Teléfonos: ${COMPANY.telefono}`,
-    C8B,
-    { vertical: 'middle' },
-  );
-  put(
-    `C${f1 + 2}`,
-    `                         Correo electrónico: ${COMPANY.email}`,
-    C8B,
-    center,
-  );
+  // ====== Footer empresa — centrado (A:G), sin bordes, con fila de aire ======
+  const f1 = tableEnd + 2; // tableEnd+1 = fila en blanco de separación
+  const footerLines = [
+    { text: `Dirección: ${COMPANY.domicilio}`, font: C9B },
+    { text: `${COMPANY.ciudad} Teléfonos: ${COMPANY.telefono}`, font: C8B },
+    { text: `Correo electrónico: ${COMPANY.email}`, font: C8B },
+  ];
+  footerLines.forEach((l, i) => {
+    const r = f1 + i;
+    ws.mergeCells(`A${r}:G${r}`);
+    put(`A${r}`, l.text, l.font, center);
+  });
 
-  // ====== Firma — usuario creador (D:E mergeado) ======
+  // ====== Firma — usuario creador, centrada (A:G) con aire arriba ======
   const cb = order.createdBy;
   const fullName = cb
     ? [cb.academicDegree?.trim(), cb.firstName?.trim(), cb.lastName?.trim()]
@@ -753,11 +755,11 @@ export async function downloadOrdenInternaForProvider(
         .join(' ')
     : '';
   const jobTitle = cb?.jobTitle?.trim() ?? '';
-  const sigRow = tableEnd + 5;
-  ws.mergeCells(`D${sigRow}:E${sigRow}`);
-  ws.mergeCells(`D${sigRow + 1}:E${sigRow + 1}`);
-  put(`D${sigRow}`, fullName, C10B, center);
-  put(`D${sigRow + 1}`, jobTitle, C10B, center);
+  const sigRow = f1 + footerLines.length + 1; // +1 fila en blanco
+  ws.mergeCells(`A${sigRow}:G${sigRow}`);
+  ws.mergeCells(`A${sigRow + 1}:G${sigRow + 1}`);
+  put(`A${sigRow}`, fullName, C10B, center);
+  put(`A${sigRow + 1}`, jobTitle, C10B, center);
 
   const buf = await wb.xlsx.writeBuffer();
   const providerSlug = safeFilenameSegment(group.providerName);
