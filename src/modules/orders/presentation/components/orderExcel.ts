@@ -385,7 +385,7 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
           const pid =
             row.providerType === 'doctor' ? row.doctorId : row.careCenterId;
           return {
-            name: row.serviceType?.name ?? '',
+            name: row.customName?.trim() || row.serviceType?.name || '',
             qty,
             unitBs,
             totalRowBs: unitBs * qty,
@@ -707,7 +707,8 @@ export async function downloadOrdenInternaForProvider(
 
   // R12+ — STs: 2 por fila (A:D y E:G)
   const sts = group.rows.map((row) => {
-    const base = row.serviceType?.name ?? row.serviceTypeId;
+    const base =
+      row.customName?.trim() || row.serviceType?.name || row.serviceTypeId;
     return row.quantity && row.quantity > 1 ? `${base} (x${row.quantity})` : base;
   });
   let r = 12;

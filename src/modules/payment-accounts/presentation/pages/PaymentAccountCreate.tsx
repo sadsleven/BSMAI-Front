@@ -58,10 +58,10 @@ export function PaymentAccountCreate() {
   const onSubmit = async (values: PaymentAccountValues) => {
     try {
       await paymentAccountGateway.create(toCreateDto(values));
-      notify.success('Cuenta de pago creada');
+      notify.success('Cuenta bancaria creada');
       navigate('/payment-accounts');
     } catch (err) {
-      notify.fromError(err, 'No se pudo crear la cuenta de pago.');
+      notify.fromError(err, 'No se pudo crear la cuenta bancaria.');
     }
   };
 
@@ -77,7 +77,7 @@ export function PaymentAccountCreate() {
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="space-y-1">
               <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">
-                Nueva cuenta de pago
+                Nueva cuenta bancaria
               </h1>
               <p className="text-sm text-muted-foreground">
                 Definí una cuenta propia para recibir pagos y cobros.
@@ -88,7 +88,7 @@ export function PaymentAccountCreate() {
               onClick={() => navigate('/payment-accounts')}
               className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
             >
-              <ChevronLeft className="w-3.5 h-3.5" /> Volver a cuentas de pago
+              <ChevronLeft className="w-3.5 h-3.5" /> Volver a cuentas bancarias
             </button>
           </div>
 

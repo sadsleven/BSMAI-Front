@@ -57,7 +57,7 @@ export function PatientEdit() {
           businessName: p.businessName ?? '',
           rif: p.rif ?? '',
           birthDate: p.birthDate ?? '',
-          address: p.address,
+          address: p.address ?? '',
           phones:
             p.phones?.length > 0
               ? p.phones.map((ph) => ({ number: ph.number, label: ph.label ?? '' }))

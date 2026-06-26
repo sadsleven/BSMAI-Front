@@ -380,7 +380,8 @@ export function PatientForm({
       <FormSection title="Dirección" description="Domicilio actual del paciente.">
         <div className="space-y-1.5">
           <Label htmlFor="address" className="text-sm font-medium">
-            Dirección <span className="text-destructive">*</span>
+            Dirección{' '}
+            <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
           </Label>
           <Textarea
             id="address"

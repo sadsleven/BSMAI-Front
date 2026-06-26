@@ -275,7 +275,7 @@ export function PaymentAccountList() {
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div className="space-y-1">
           <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">
-            Cuentas de pago
+            Cuentas bancarias
           </h1>
           <p className="text-sm text-muted-foreground">
             {metadata.total.toLocaleString()} cuentas en total
@@ -395,11 +395,11 @@ export function PaymentAccountList() {
                 <TableCell colSpan={6} className="p-0">
                   <EmptyState
                     icon={Wallet}
-                    title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay cuentas de pago'}
+                    title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay cuentas bancarias'}
                     description={
                       hasActiveFilters
                         ? 'Ajustá los filtros para ver más resultados.'
-                        : 'Creá la primera cuenta de pago.'
+                        : 'Creá la primera cuenta bancaria.'
                     }
                     action={
                       hasActiveFilters ? (

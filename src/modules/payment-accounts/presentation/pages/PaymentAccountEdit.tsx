@@ -76,7 +76,7 @@ export function PaymentAccountEdit() {
         });
         setDisplayName(a.name);
       } catch (e) {
-        notify.fromError(e, 'No se pudo cargar la cuenta de pago.');
+        notify.fromError(e, 'No se pudo cargar la cuenta bancaria.');
       } finally {
         setFetching(false);
       }
@@ -88,10 +88,10 @@ export function PaymentAccountEdit() {
     if (!id) return;
     try {
       await paymentAccountGateway.update(id, toUpdateDto(values));
-      notify.success('Cuenta de pago actualizada');
+      notify.success('Cuenta bancaria actualizada');
       navigate('/payment-accounts');
     } catch (err) {
-      notify.fromError(err, 'No se pudo actualizar la cuenta de pago.');
+      notify.fromError(err, 'No se pudo actualizar la cuenta bancaria.');
     }
   };
 
@@ -111,7 +111,7 @@ export function PaymentAccountEdit() {
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="space-y-1">
               <h1 className="text-[26px] font-bold tracking-[-0.02em] leading-tight">
-                Editar cuenta de pago
+                Editar cuenta bancaria
               </h1>
               {displayName && <p className="text-sm text-muted-foreground">{displayName}</p>}
             </div>
@@ -120,7 +120,7 @@ export function PaymentAccountEdit() {
               onClick={() => navigate('/payment-accounts')}
               className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
             >
-              <ChevronLeft className="w-3.5 h-3.5" /> Volver a cuentas de pago
+              <ChevronLeft className="w-3.5 h-3.5" /> Volver a cuentas bancarias
             </button>
           </div>
 

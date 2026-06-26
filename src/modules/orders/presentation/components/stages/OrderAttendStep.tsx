@@ -38,6 +38,8 @@ export function OrderAttendStep({
 }) {
   const providerGroups = useMemo(() => groupOrderProviders(order), [order]);
 
+  // Orden finalizada → Paso 2 de sólo lectura (las descargas siguen disponibles).
+  const isFinalized = order.status === 'finalized';
   const [attended, setAttended] = useState(!!order.attended);
   // Estado FE-only: claves de proveedor con al menos un formato descargado.
   // Si la orden ya está atendida, asumimos todas descargadas (paso ya superado).
@@ -179,7 +181,7 @@ export function OrderAttendStep({
           description="Marcá cuando hayas descargado (Excel o PDF) e impreso la orden interna de cada proveedor."
           checked={attended}
           onCheckedChange={setAttended}
-          disabled={!allDownloaded}
+          disabled={!allDownloaded || isFinalized}
         />
         {!allDownloaded ? (
           <p className="text-xs text-warning mt-2">
@@ -191,7 +193,7 @@ export function OrderAttendStep({
           <Button
             type="button"
             onClick={onSubmit}
-            disabled={saving || !attended || !allDownloaded}
+            disabled={saving || !attended || !allDownloaded || isFinalized}
           >
             {saving
               ? 'Guardando...'

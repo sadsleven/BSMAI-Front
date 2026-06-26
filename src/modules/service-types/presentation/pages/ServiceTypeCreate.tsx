@@ -34,12 +34,10 @@ export function ServiceTypeCreate() {
       description: '',
       isActive: true,
       particularPriceUsd: undefined,
-      allowsQuantity: false,
     },
   });
 
   const isActive = watch('isActive') ?? true;
-  const allowsQuantity = watch('allowsQuantity') ?? false;
   const invalid = (k: 'name' | 'description') =>
     errors[k] ? 'border-destructive focus-visible:ring-destructive/30' : '';
 
@@ -50,7 +48,6 @@ export function ServiceTypeCreate() {
         description: values.description || undefined,
         isActive: values.isActive,
         particularPriceUsd: values.particularPriceUsd,
-        allowsQuantity: values.allowsQuantity,
       });
       notify.success('Tipo de servicio creado exitosamente');
       navigate('/service-types');
@@ -139,20 +136,6 @@ export function ServiceTypeCreate() {
               ) : null}
             </div>
           </FormGrid>
-        </FormSection>
-
-        <FormSection
-          title="Cantidad"
-          description="Activá si este servicio puede facturarse por cantidad en una orden (ej. sesiones de fisioterapia)."
-        >
-          <FormSwitch
-            label="Permite cantidad"
-            description="Al añadir este servicio a una orden, podrás indicar cuántas unidades."
-            checked={allowsQuantity}
-            onCheckedChange={(v) =>
-              setValue('allowsQuantity', v, { shouldDirty: true, shouldValidate: true })
-            }
-          />
         </FormSection>
 
         <FormSection title="Estado">

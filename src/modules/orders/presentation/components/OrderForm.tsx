@@ -18,7 +18,7 @@ import { Stepper, type StepDef } from '@/components/ui/stepper';
 import { Badge } from '@/components/ui/badge';
 import { ChipMultiSelect } from '@/components/ui/chip-multi-select';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { AlertTriangle, Building, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, Building, ShieldCheck, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatMoney } from '@/lib/format/money';
 import { casheaCommissionCents } from '@/lib/money/cashea';
@@ -45,6 +45,8 @@ import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exc
 import { appConfigGateway } from '@/modules/app-config/infrastructure/appConfigGateway';
 import { PatientSearchSelect } from './PatientSearchSelect';
 import { PatientCreateModal } from './PatientCreateModal';
+import { SpecialtyCreateModal } from './SpecialtyCreateModal';
+import { PathologyCreateModal } from './PathologyCreateModal';
 import { AuthorizeAmountModal } from './AuthorizeAmountModal';
 import { patientGateway } from '@/modules/patients/infrastructure/patientGateway';
 import { insuranceGateway } from '@/modules/insurances/infrastructure/insuranceGateway';
@@ -104,6 +106,32 @@ function buildOrderSteps(
       lockedReason: !perms.billing ? NO_STAGE_PERM : 'Emití el informe primero',
     },
   ];
+}
+
+/**
+ * Pasos completados según el estado de la orden (no según la posición del
+ * wizard). El stepper los pinta en verde aunque el usuario navegue hacia atrás.
+ * Rangos: in_progress→creación lista; attended→+atención; report_issued→+informe;
+ * finalized→todos.
+ */
+function completedStepIds(
+  status?: import('../../domain/models/order').OrderStatus,
+): string[] {
+  const rank: Record<string, number> = {
+    draft: 0,
+    in_progress: 1,
+    attended: 2,
+    report_issued: 3,
+    finalized: 4,
+    cancelled: 0,
+  };
+  const r = rank[status ?? 'draft'] ?? 0;
+  const ids: string[] = [];
+  if (r >= 1) ids.push('register');
+  if (r >= 2) ids.push('attention');
+  if (r >= 3) ids.push('report');
+  if (r >= 4) ids.push('billing');
+  return ids;
 }
 
 function FieldError({ message }: { message?: string }) {
@@ -174,7 +202,11 @@ export function OrderForm({
   const canAttention = has(PERMISSIONS.ORDERS.STAGE_ATTENTION);
   const canReport = has(PERMISSIONS.ORDERS.STAGE_REPORT);
   const canBilling = has(PERMISSIONS.ORDERS.STAGE_BILLING);
-  const { control, setValue, formState } = useFormContext<OrderValues>();
+  const canCreateSpecialty = has(PERMISSIONS.SPECIALTIES.CREATE);
+  const canCreatePathology = has(PERMISSIONS.PATHOLOGIES.CREATE);
+  // Orden finalizada → Paso 1 de sólo lectura (igual que Paso 2 y 4).
+  const isFinalized = savedOrder?.status === 'finalized';
+  const { control, setValue, getValues, formState } = useFormContext<OrderValues>();
   const errors = formState.errors as Record<string, { message?: string } | undefined>;
 
   const [internalStep, setInternalStep] = useState<string>('register');
@@ -190,6 +222,8 @@ export function OrderForm({
   );
   const [createPatientOpen, setCreatePatientOpen] = useState(false);
   const [createTarget, setCreateTarget] = useState<'holder' | 'patient' | null>(null);
+  const [createSpecialtyOpen, setCreateSpecialtyOpen] = useState(false);
+  const [createPathologyOpen, setCreatePathologyOpen] = useState(false);
   const [authorizeOpen, setAuthorizeOpen] = useState(false);
   const [confirmTypeChange, setConfirmTypeChange] = useState<OrderType | null>(null);
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]);
@@ -531,6 +565,7 @@ export function OrderForm({
     doctorId?: string;
     careCenterId?: string;
     quantity?: number;
+    customName?: string | null;
   }>;
   const serviceTypeIds = orderServiceTypeRows.map((r) => r.serviceTypeId).filter(Boolean);
   // Cantidad por ST (sólo > 1 si el ST permite cantidad). Default 1.
@@ -581,10 +616,15 @@ export function OrderForm({
     const ispByST = new Map(
       insuranceServicePrices.map((r) => [r.serviceTypeId, r]),
     );
+    // Nombre custom por ST (override del baremo) para mostrar en Paso 1.
+    const cnByST = new Map(
+      orderServiceTypeRows.map((r) => [r.serviceTypeId, (r.customName ?? '').trim()]),
+    );
     return serviceTypeIds.map((id) => {
       const st = serviceTypes.find((s) => s.id === id);
       const qty = qtyByST.get(id) ?? 1;
-      if (!st) return { id, name: '—', qty, unit: null, amount: null };
+      const custom = cnByST.get(id) || '';
+      if (!st) return { id, name: custom || '—', qty, unit: null, amount: null };
       const raw = isInsuranceOrder
         ? ispByST.get(id)?.priceUsd
         : st.particularPriceUsd;
@@ -592,19 +632,47 @@ export function OrderForm({
       const unit = num !== null && Number.isFinite(num) && num > 0 ? num : null;
       return {
         id,
-        name: st.name,
+        name: custom || st.name,
         qty,
         unit,
         amount: unit !== null ? +(unit * qty).toFixed(2) : null,
       };
     });
-  }, [serviceTypeIds, serviceTypes, insuranceServicePrices, isInsuranceOrder, qtyByST]);
+  }, [
+    serviceTypeIds,
+    serviceTypes,
+    insuranceServicePrices,
+    isInsuranceOrder,
+    qtyByST,
+    orderServiceTypeRows,
+  ]);
 
   const computedPriceSum = useMemo(
     () => priceLines.reduce((acc, l) => acc + (l.amount ?? 0), 0),
     [priceLines],
   );
   const hasMissingPrices = priceLines.some((l) => l.amount === null);
+
+  // Precio unitario por Tipo de Servicio para el selector de la tabla:
+  // seguro → baremo del seguro elegido; particular → particularPriceUsd.
+  // Cuando es seguro con seguro elegido, sólo se ofrecen STs con baremo.
+  const stPriceMap = useMemo(() => {
+    const m = new Map<string, number>();
+    if (isInsuranceOrder) {
+      for (const r of insuranceServicePrices) {
+        const n = Number(r.priceUsd);
+        if (Number.isFinite(n) && n > 0) m.set(r.serviceTypeId, n);
+      }
+    } else {
+      for (const st of serviceTypes) {
+        const raw = st.particularPriceUsd;
+        const n = raw === null || raw === undefined ? null : Number(raw);
+        if (n !== null && Number.isFinite(n) && n > 0) m.set(st.id, n);
+      }
+    }
+    return m;
+  }, [isInsuranceOrder, insuranceServicePrices, serviceTypes]);
+  const restrictToPriced = isInsuranceOrder && !!insuranceId;
 
   // Auto-set priceAmount when selección/moneda cambian.
   // Insurance: locked → siempre sincroniza con la suma calculada (ignora input manual).
@@ -654,7 +722,12 @@ export function OrderForm({
 
   return (
     <>
-      <Stepper steps={orderSteps} current={currentStep} onSelect={setCurrentStep} />
+      <Stepper
+        steps={orderSteps}
+        current={currentStep}
+        onSelect={setCurrentStep}
+        completedIds={completedStepIds(savedOrder?.status)}
+      />
 
       {!renderStep1 && currentStep === 'attention' && savedOrder ? (
         <OrderAttendStep
@@ -681,7 +754,16 @@ export function OrderForm({
       ) : null}
 
       {!renderStep1 ? null : (
-      <>
+      <fieldset
+        disabled={isFinalized}
+        className="space-y-6 border-0 p-0 m-0 min-w-0"
+      >
+      {isFinalized ? (
+        <div className="rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground flex items-start gap-2">
+          <ShieldCheck className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+          La orden está finalizada. Los datos del Paso 1 son de sólo lectura.
+        </div>
+      ) : null}
       <FormSection
         title="Sucursal y tipo de orden"
         description="Sucursal donde se emite la orden y su modalidad."
@@ -966,29 +1048,44 @@ export function OrderForm({
         <FormGrid>
           <div className="space-y-1.5">
             <RequiredLabel required>Especialidad</RequiredLabel>
-            <Controller
-              control={control}
-              name="specialtyId"
-              render={({ field }) => (
-                <Select
-                  value={field.value || ''}
-                  onValueChange={(v) => field.onChange(v)}
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <Controller
+                  control={control}
+                  name="specialtyId"
+                  render={({ field }) => (
+                    <Select
+                      value={field.value || ''}
+                      onValueChange={(v) => field.onChange(v)}
+                    >
+                      <SelectTrigger
+                        className={cn('h-9', errors.specialtyId?.message && 'border-destructive')}
+                      >
+                        <SelectValue placeholder="Seleccioná especialidad" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {specialties.map((s) => (
+                          <SelectItem key={s.id} value={s.id}>
+                            {s.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              </div>
+              {canCreateSpecialty ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 shrink-0"
+                  onClick={() => setCreateSpecialtyOpen(true)}
                 >
-                  <SelectTrigger
-                    className={cn('h-9', errors.specialtyId?.message && 'border-destructive')}
-                  >
-                    <SelectValue placeholder="Seleccioná especialidad" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {specialties.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>
-                        {s.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            />
+                  <Plus className="w-4 h-4 mr-1" /> Crear
+                </Button>
+              ) : null}
+            </div>
             <FieldError message={errors.specialtyId?.message} />
           </div>
 
@@ -1017,6 +1114,19 @@ export function OrderForm({
                 );
               }}
             />
+            {canCreatePathology ? (
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8"
+                  onClick={() => setCreatePathologyOpen(true)}
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" /> Crear patología
+                </Button>
+              </div>
+            ) : null}
           </div>
         </FormGrid>
 
@@ -1038,6 +1148,7 @@ export function OrderForm({
                     doctorId?: { message?: string };
                     careCenterId?: { message?: string };
                     quantity?: { message?: string };
+                    customName?: { message?: string };
                   }
                 | undefined
               >
@@ -1047,6 +1158,7 @@ export function OrderForm({
               doctorId: e?.doctorId?.message,
               careCenterId: e?.careCenterId?.message,
               quantity: e?.quantity?.message,
+              customName: e?.customName?.message,
             }));
             return (
               <ServiceProviderTable
@@ -1056,11 +1168,14 @@ export function OrderForm({
                   doctorId?: string;
                   careCenterId?: string;
                   quantity?: number;
+                  customName?: string | null;
                 }>}
                 onChange={field.onChange}
                 serviceTypes={serviceTypes}
                 errors={rowErrors}
                 initialProviders={initialProvidersMap}
+                priceByServiceTypeId={stPriceMap}
+                restrictToPriced={restrictToPriced}
               />
             );
           }}
@@ -1415,7 +1530,7 @@ export function OrderForm({
           ) : null}
         </FormSection>
       ) : null}
-      </>
+      </fieldset>
       )}
 
       <PatientCreateModal
@@ -1427,6 +1542,37 @@ export function OrderForm({
         onCreated={(p) => {
           if (createTarget === 'holder') onHolderChange(p);
           else if (createTarget === 'patient') onPatientChange(p);
+        }}
+      />
+
+      <SpecialtyCreateModal
+        open={createSpecialtyOpen}
+        onOpenChange={setCreateSpecialtyOpen}
+        onCreated={(sp) => {
+          setSpecialties((prev) =>
+            prev.some((s) => s.id === sp.id) ? prev : [sp, ...prev],
+          );
+          setValue('specialtyId', sp.id, {
+            shouldDirty: true,
+            shouldValidate: true,
+          });
+        }}
+      />
+
+      <PathologyCreateModal
+        open={createPathologyOpen}
+        onOpenChange={setCreatePathologyOpen}
+        onCreated={(pa) => {
+          setPathologies((prev) =>
+            prev.some((p) => p.id === pa.id) ? prev : [pa, ...prev],
+          );
+          const current = (getValues('pathologyIds') ?? []) as string[];
+          if (!current.includes(pa.id)) {
+            setValue('pathologyIds', [...current, pa.id], {
+              shouldDirty: true,
+              shouldValidate: true,
+            });
+          }
         }}
       />
 

@@ -72,7 +72,9 @@ export interface OrderInternalOrderRow {
 /** Fila ST + proveedor dentro de una orden (mapea OrderServiceType del BE). */
 export interface OrderServiceTypeRow {
   serviceTypeId: string;
-  serviceType?: { id: string; name: string; allowsQuantity?: boolean };
+  serviceType?: { id: string; name: string };
+  /** Nombre personalizado del ST en esta orden (override de serviceType.name). */
+  customName?: string | null;
   providerType: ProviderType;
   doctorId?: string | null;
   doctor?:
@@ -80,7 +82,7 @@ export interface OrderServiceTypeRow {
     | null;
   careCenterId?: string | null;
   careCenter?: (OrderRefSummary & { centerAddress?: string | null }) | null;
-  /** Cantidad del ST (≥1). Sólo > 1 si el ST tiene `allowsQuantity`. */
+  /** Cantidad del ST (≥1, default 1). Todo ST admite cantidad. */
   quantity?: number;
   /** FK a la orden interna del proveedor de esta fila. */
   internalOrderId?: string;
@@ -235,6 +237,7 @@ export interface OrderServiceTypeRowInput {
   doctorId?: string;
   careCenterId?: string;
   quantity?: number;
+  customName?: string;
 }
 
 export interface CreateOrderDto {

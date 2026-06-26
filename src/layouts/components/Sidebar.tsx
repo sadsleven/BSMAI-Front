@@ -289,7 +289,7 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
         },
         {
           icon: Wallet,
-          label: 'Cuentas de pago',
+          label: 'Cuentas bancarias',
           href: '/payment-accounts',
           show: has(PERMISSIONS.PAYMENT_ACCOUNTS.LIST),
         },

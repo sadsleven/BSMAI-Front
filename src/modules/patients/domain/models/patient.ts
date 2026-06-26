@@ -65,7 +65,7 @@ export interface Patient {
   /** Sólo legal_entity. */
   rif?: string | null;
   birthDate?: string | null;
-  address: string;
+  address?: string | null;
   isActive: boolean;
   phones: PatientPhone[];
   contractors: Contractor[];
@@ -85,7 +85,7 @@ export interface CreatePatientDto {
   businessName?: string;
   rif?: string;
   birthDate?: string;
-  address: string;
+  address?: string;
   phones: { number: string; label?: string }[];
   contractorIds?: string[];
   directInsuranceIds?: string[];
