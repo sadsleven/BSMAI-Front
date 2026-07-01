@@ -285,7 +285,7 @@ export function ReportReceivablesList() {
                     title={hasActiveFilters ? 'Sin resultados' : 'Sin cuentas por cobrar'}
                     description={
                       hasActiveFilters
-                        ? 'Ajustá los filtros para ver más resultados.'
+                        ? 'Ajusta los filtros para ver más resultados.'
                         : 'Aún no hay órdenes por cobrar.'
                     }
                   />

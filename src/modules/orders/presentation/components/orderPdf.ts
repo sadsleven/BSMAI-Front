@@ -2,7 +2,10 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { saveAs } from 'file-saver';
 import type { Order } from '../../domain/models/order';
-import { holderDisplayName } from '../../domain/models/order';
+import {
+  holderDisplayName,
+  orderServiceKeyDisplay,
+} from '../../domain/models/order';
 import {
   orderReferenceLabel,
   providerInternalNumber,
@@ -74,6 +77,22 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
   const holderCi = holderId(order.holder);
   const patientCi = holderId(order.patient);
   const condicionesPago = order.type === 'cash' ? 'CONTADO' : 'CREDITO';
+
+  // Contratante de la factura: seguro → datos del seguro;
+  // contado/crédito/cashea → datos del titular.
+  const contratanteName = isInsurance ? order.insurance?.name ?? '' : holder;
+  const contratanteAddress = isInsurance
+    ? order.insurance?.fiscalAddress ?? ''
+    : order.holder?.address ?? '';
+  const contratanteRif = isInsurance ? order.insurance?.rif ?? '' : holderCi;
+  const contratantePhone = isInsurance
+    ? insurancePhone
+    : order.holder?.phones?.[0]?.number ?? '';
+  const contratante = isInsurance
+    ? order.insuranceSource === 'direct'
+      ? holder
+      : order.contractor?.name ?? ''
+    : holder;
 
   // Conversión a Bs vía tasa más reciente vigente al crear la orden
   const rateBs = await resolveCreationRateBs(order);
@@ -153,12 +172,13 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
     { content: fmtDate(order.orderDate), styles: { halign: 'center', fontSize: 9 } },
   ]);
 
-  if (isInsurance) {
+  // R4-R7 — Contratante. Seguro → datos del seguro; resto → titular.
+  {
     // R4 — Razón social
     body.push([
       'Nombre  o Razón Social :',
       '',
-      order.insurance?.name ?? '',
+      contratanteName,
       '',
       '',
     ]);
@@ -166,26 +186,25 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
     body.push([
       'Dirección Fiscal :',
       '',
-      { content: order.insurance?.fiscalAddress ?? '', colSpan: 3 },
+      { content: contratanteAddress, colSpan: 3 },
     ]);
     // R6 — RIF + Teléfono (teléfono abarca D:E)
     body.push([
       'Rif ó CI:',
       '',
-      order.insurance?.rif ?? '',
+      contratanteRif,
       {
-        content: insurancePhone ? `Teléfono:(${insurancePhone})` : 'Teléfono:',
+        content: contratantePhone ? `Teléfono:(${contratantePhone})` : 'Teléfono:',
         colSpan: 2,
         styles: { fontSize: 8 },
       },
     ]);
-    // R7 — Contratante. Seguro directo al paciente → el titular.
+    // R7 — Contratante. Seguro directo al paciente / no seguro → el titular.
     body.push([
       'Contratante:',
       '',
       {
-        content:
-          order.insuranceSource === 'direct' ? holder : order.contractor?.name ?? '',
+        content: contratante,
         styles: { fontSize: 8 },
       },
       '',
@@ -208,16 +227,15 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
     { content: `Rif ó CI: ${patientCi}`, colSpan: 2 },
   ]);
 
-  if (isInsurance) {
-    // R10 — Clave de servicio
-    body.push([
-      'Clave de Servicio Nº:',
-      '',
-      order.serviceKey ?? '',
-      '',
-      '',
-    ]);
-  }
+  // R10 — Clave de servicio. orderServiceKeyDisplay ya resuelve la 'R' de
+  // reembolso (crédito + isReimbursement).
+  body.push([
+    'Clave de Servicio Nº:',
+    '',
+    orderServiceKeyDisplay(order),
+    '',
+    '',
+  ]);
 
   // Espaciador antes de la tabla de detalle (separa datos del recuadro)
   body.push(['', '', '', '', '']);
@@ -369,6 +387,8 @@ export async function downloadOrdenInternaPdfForProvider(
 
   const age = ageFromBirthDate(order.patient?.birthDate);
   const phone = order.patient?.phones?.[0]?.number ?? '';
+  const holder = holderDisplayName(order.holder);
+  const holderCi = holderId(order.holder);
   const patient = holderDisplayName(order.patient);
   const patientCi = holderId(order.patient);
   const providerLabel =
@@ -432,12 +452,11 @@ export async function downloadOrdenInternaPdfForProvider(
 
   // R5 — Médico Tratante/Centro + Especialidad
   body.push([
-    { content: providerLabel, styles: { fontSize: 10 } },
-    '',
+    { content: providerLabel, colSpan: 2, styles: { fontSize: 10 } },
     {
       content: group.providerName.toUpperCase(),
       colSpan: 3,
-      styles: { halign: 'center', valign: 'middle', fontSize: 10 },
+      styles: { halign: 'left', valign: 'middle', fontSize: 10 },
     },
     { content: 'Especialidad:', styles: { fontSize: 10 } },
     {
@@ -452,7 +471,19 @@ export async function downloadOrdenInternaPdfForProvider(
     { content: centerAddress, colSpan: 5, styles: { halign: 'left', fontSize: 10 } },
   ]);
 
-  // R7 — Paciente + Cédula
+  // R7 — Titular + Rif ó CI (el titular puede ser jurídico → RIF)
+  body.push([
+    { content: 'Titular', colSpan: 2, styles: { halign: 'left', fontSize: 10 } },
+    {
+      content: holder,
+      colSpan: 3,
+      styles: { halign: 'left', fontSize: 10 },
+    },
+    { content: 'Rif ó CI:', styles: { fontSize: 10 } },
+    { content: holderCi, styles: { halign: 'center', fontSize: 10 } },
+  ]);
+
+  // R8 — Paciente + Cédula
   body.push([
     { content: 'Paciente', colSpan: 2, styles: { halign: 'left', fontSize: 10 } },
     {
@@ -464,7 +495,7 @@ export async function downloadOrdenInternaPdfForProvider(
     { content: patientCi, styles: { halign: 'center', fontSize: 10 } },
   ]);
 
-  // R8 — Edad + Teléfono + Referencia
+  // R9 — Edad + Teléfono + Referencia
   body.push([
     { content: 'Edad:', styles: { fontStyle: 'bold', fontSize: 10 } },
     {
@@ -481,7 +512,7 @@ export async function downloadOrdenInternaPdfForProvider(
     },
   ]);
 
-  // R9 — Dirección
+  // R10 — Dirección
   body.push([
     { content: 'Dirección:', styles: { fontSize: 10 } },
     {
@@ -491,7 +522,7 @@ export async function downloadOrdenInternaPdfForProvider(
     },
   ]);
 
-  // R10 — Patología + Clave de Servicio
+  // R11 — Patología + Clave de Servicio
   const pathologyText = (order.pathologies ?? [])
     .map((p) => p.name)
     .filter(Boolean)
@@ -505,13 +536,13 @@ export async function downloadOrdenInternaPdfForProvider(
     },
     { content: 'Clave de Servicio:', styles: { fontSize: 10 } },
     {
-      // Clave de servicio = la capturada en el Paso 1 (sólo seguro la persiste).
-      content: order.serviceKey ?? '',
+      // Clave de servicio: seguro la captura en el Paso 1; crédito-reembolso → "R".
+      content: orderServiceKeyDisplay(order),
       styles: { halign: 'center', fontSize: 10 },
     },
   ]);
 
-  // R11 — Header tabla "Tipos de Servicios"
+  // R12 — Header tabla "Tipos de Servicios"
   body.push([
     {
       content: 'Tipos de Servicios',
@@ -520,7 +551,7 @@ export async function downloadOrdenInternaPdfForProvider(
     },
   ]);
 
-  // R12+ — STs 2 por fila (A:D + E:G), mínimo 2 filas como el template
+  // R13+ — STs 2 por fila (A:D + E:G), mínimo 2 filas como el template
   const stRows = Math.max(2, Math.ceil(sts.length / 2));
   for (let i = 0; i < stRows; i++) {
     body.push([

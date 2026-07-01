@@ -332,8 +332,8 @@ export function PathologyList() {
                     title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay patologías'}
                     description={
                       hasActiveFilters
-                        ? 'Ajustá los filtros para ver más resultados.'
-                        : 'Creá la primera patología.'
+                        ? 'Ajusta los filtros para ver más resultados.'
+                        : 'Crea la primera patología.'
                     }
                     action={
                       hasActiveFilters ? (
@@ -531,7 +531,7 @@ export function PathologyList() {
           {hardConfirm === 1 ? (
             <div className="px-6">
               <DialogBanner tone="destructive">
-                Esta acción es irreversible. Confirmá de nuevo para eliminar permanentemente.
+                Esta acción es irreversible. Confirma de nuevo para eliminar permanentemente.
               </DialogBanner>
             </div>
           ) : null}

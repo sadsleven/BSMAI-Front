@@ -105,7 +105,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
           <div className="space-y-1">
             <h1 className="text-[18px] font-semibold">No se pudo conectar con el servidor</h1>
             <p className="text-sm text-muted-foreground">
-              Verificá tu conexión y reintentá. Tu sesión sigue activa.
+              Verifica tu conexión y reintenta. Tu sesión sigue activa.
             </p>
           </div>
           <div className="flex items-center justify-center gap-2 pt-2">

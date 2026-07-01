@@ -90,7 +90,7 @@ export function PathologyCreateModal({
                 Nueva patología
               </AlertDialogTitle>
               <AlertDialogDescription className="text-sm text-muted-foreground">
-                Creá una patología. Quedará agregada y seleccionada en la orden.
+                Crea una patología. Quedará agregada y seleccionada en la orden.
               </AlertDialogDescription>
             </div>
           </div>

@@ -42,6 +42,7 @@ export function InsuranceEdit() {
       phones: [],
       servicePrices: [],
       isActive: true,
+      isIndexed: false,
     },
   });
 
@@ -56,6 +57,7 @@ export function InsuranceEdit() {
   } = methods;
 
   const isActive = watch('isActive') ?? true;
+  const isIndexed = watch('isIndexed') ?? false;
 
   useEffect(() => {
     if (!id) return;
@@ -81,6 +83,7 @@ export function InsuranceEdit() {
             priceUsd: Number(sp.priceUsd) || 0,
           })),
           isActive: i.isActive ?? true,
+          isIndexed: i.isIndexed ?? false,
         });
         setDisplayName(i.name);
       } catch (e) {
@@ -108,6 +111,7 @@ export function InsuranceEdit() {
         })),
         servicePrices: servicePricesToPayload(values.servicePrices ?? []),
         isActive: values.isActive,
+        isIndexed: values.isIndexed,
       });
       notify.success('Seguro actualizado');
       navigate('/insurances');
@@ -306,6 +310,17 @@ export function InsuranceEdit() {
                   />
                 );
               }}
+            />
+          </FormSection>
+
+          <FormSection title="Modalidad de cobro">
+            <FormSwitch
+              label="Seguro indexado"
+              description="Indexado: la cuenta por cobrar se fija en bolívares a la tasa del día de la orden (se asigna una tasa al crear la orden). No indexado: se cobra a la tasa del día del cobro."
+              checked={isIndexed}
+              onCheckedChange={(v) =>
+                setValue('isIndexed', v, { shouldDirty: true, shouldValidate: true })
+              }
             />
           </FormSection>
 

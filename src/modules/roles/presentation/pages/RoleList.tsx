@@ -352,8 +352,8 @@ export function RoleList() {
                     title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay roles'}
                     description={
                       hasActiveFilters
-                        ? 'Ajustá los filtros para ver más resultados.'
-                        : 'Creá el primer rol para asignar permisos.'
+                        ? 'Ajusta los filtros para ver más resultados.'
+                        : 'Crea el primer rol para asignar permisos.'
                     }
                     action={
                       hasActiveFilters ? (
@@ -588,7 +588,7 @@ export function RoleList() {
             description={
               deleteTarget ? (
                 <>
-                  Vas a eliminar el rol <strong>{deleteTarget.name}</strong>. Elegí entre mover a
+                  Vas a eliminar el rol <strong>{deleteTarget.name}</strong>. Elige entre mover a
                   la papelera (reversible) o eliminar permanentemente.
                 </>
               ) : null
@@ -601,7 +601,7 @@ export function RoleList() {
           {hardConfirm === 1 ? (
             <div className="px-6">
               <DialogBanner tone="destructive">
-                Esta acción es irreversible. Confirmá de nuevo para eliminar permanentemente.
+                Esta acción es irreversible. Confirma de nuevo para eliminar permanentemente.
               </DialogBanner>
             </div>
           ) : null}

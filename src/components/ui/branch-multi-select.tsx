@@ -74,7 +74,7 @@ export function BranchMultiSelect({
       searchPlaceholder="Buscar sucursal…"
       emptyLabel="No hay sucursales disponibles."
       counterSuffix={{ singular: 'seleccionada', plural: 'seleccionadas' }}
-      staleHint="Algunas sucursales asignadas no están disponibles para nuevas asignaciones; podés quitarlas pero no re-agregarlas."
+      staleHint="Algunas sucursales asignadas no están disponibles para nuevas asignaciones; puedes quitarlas pero no re-agregarlas."
     />
   );
 }

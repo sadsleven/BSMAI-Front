@@ -143,7 +143,7 @@ export function PatientForm({
       const entry = coveredByContractor.get(id);
       if (!entry) continue;
       notify.warning(
-        `El seguro "${entry.insurance.name}" ahora está cubierto por el contratista "${entry.contractor.name}". Quitalo de los seguros directos para evitar el conflicto al guardar.`,
+        `El seguro "${entry.insurance.name}" ahora está cubierto por el contratista "${entry.contractor.name}". Quítalo de los seguros directos para evitar el conflicto al guardar.`,
       );
     }
     setWarnedConflictIds((prev) => {
@@ -224,7 +224,7 @@ export function PatientForm({
     <div className="space-y-6">
       <FormSection
         title="Tipo de persona"
-        description="Elegí si el paciente es una persona natural o jurídica. Esto cambia los datos de identificación que se piden."
+        description="Elige si el paciente es una persona natural o jurídica. Esto cambia los datos de identificación que se piden."
       >
         <div className="inline-flex rounded-lg border bg-muted/30 p-1 gap-1">
           <button
@@ -415,7 +415,7 @@ export function PatientForm({
 
       <FormSection
         title="Contratistas"
-        description="Asigná uno o más contratistas al paciente. Cada contratista aporta sus propios seguros."
+        description="Asigna uno o más contratistas al paciente. Cada contratista aporta sus propios seguros."
         allowOverflow
       >
         <Controller
@@ -426,6 +426,12 @@ export function PatientForm({
               value={field.value ?? []}
               onChange={field.onChange}
               existing={existingContractors}
+              allowCreate
+              onCreated={(c) =>
+                setAssignableContractors((prev) =>
+                  prev.some((x) => x.id === c.id) ? prev : [c, ...prev],
+                )
+              }
               error={
                 typeof errors.contractorIds?.message === 'string'
                   ? errors.contractorIds.message
@@ -438,7 +444,7 @@ export function PatientForm({
 
       <FormSection
         title="Seguros directos"
-        description="Seguros asignados directamente al paciente (sin contratista). No podés elegir seguros ya cubiertos por algún contratista seleccionado."
+        description="Seguros asignados directamente al paciente (sin contratista). No puedes elegir seguros ya cubiertos por algún contratista seleccionado."
         allowOverflow
       >
         <Controller
@@ -467,7 +473,7 @@ export function PatientForm({
       >
         {availableSummary.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Sin seguros disponibles. Asigná un contratista o un seguro directo.
+            Sin seguros disponibles. Asigna un contratista o un seguro directo.
           </p>
         ) : (
           <div className="flex flex-wrap gap-2">
@@ -502,7 +508,7 @@ export function PatientForm({
       </FormSection>
 
       <p className="text-xs text-muted-foreground">
-        Tenés <strong>{phones.length}</strong> teléfono{phones.length === 1 ? '' : 's'} cargado
+        Tienes <strong>{phones.length}</strong> teléfono{phones.length === 1 ? '' : 's'} cargado
         {phones.length === 1 ? '' : 's'}.
       </p>
 

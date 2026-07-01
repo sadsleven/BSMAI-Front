@@ -299,7 +299,7 @@ export function TaxesPayableList() {
           Retenciones por pagar
         </h1>
         <p className="text-sm text-muted-foreground">
-          Armá lotes de pago al SENIAT por proveedor desde las retenciones
+          Arma lotes de pago al SENIAT por proveedor desde las retenciones
           pendientes.
         </p>
       </div>
@@ -384,7 +384,7 @@ export function TaxesPayableList() {
                           }
                           description={
                             hasActiveFilters
-                              ? 'Limpiá los filtros para ver todas las retenciones.'
+                              ? 'Limpia los filtros para ver todas las retenciones.'
                               : 'Las retenciones se generan al pagar un lote a doctor/centro en Cuentas por pagar.'
                           }
                         />
@@ -546,8 +546,8 @@ export function TaxesPayableList() {
                           }
                           description={
                             hasActiveFilters
-                              ? 'Limpiá los filtros para ver todos los lotes.'
-                              : 'Pagá retenciones desde la pestaña Pendientes.'
+                              ? 'Limpia los filtros para ver todos los lotes.'
+                              : 'Paga retenciones desde la pestaña Pendientes.'
                           }
                         />
                       </TableCell>

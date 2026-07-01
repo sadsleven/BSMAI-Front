@@ -6,7 +6,7 @@ import { z } from 'zod';
  */
 
 export const CEDULA_REGEX = /^[VE]-\d{1,2}\.\d{3}\.\d{3}$/;
-export const RIF_REGEX = /^[JGVE]-\d{1,2}\.\d{3}\.\d{3}-\d$/;
+export const RIF_REGEX = /^[JGVE]-\d{7,8}-\d$/;
 export const PHONE_REGEX = /^\d{11}$/;
 
 export const cedulaSchema = z
@@ -15,14 +15,14 @@ export const cedulaSchema = z
 
 export const rifSchema = z
   .string({ message: 'El RIF es requerido' })
-  .regex(RIF_REGEX, 'Formato inválido. Ej: J-12.345.678-9');
+  .regex(RIF_REGEX, 'Formato inválido. Ej: J-12345678-9');
 
 /** RIF opcional. Empty/undefined passes; if filled, must match RIF_REGEX. */
 export const optionalRifSchema = z
   .string()
   .optional()
   .refine((v) => !v || RIF_REGEX.test(v), {
-    message: 'Formato inválido. Ej: J-12.345.678-9',
+    message: 'Formato inválido. Ej: J-12345678-9',
   });
 
 export const phoneNumberSchema = z
@@ -63,7 +63,7 @@ export function formatCedula(input: string): string {
 }
 
 /**
- * Formatea RIF a `J-XX.XXX.XXX-D` (acepta 8-9 dígitos: base + verificador).
+ * Formatea RIF a `J-XXXXXXXX-D` (sin puntos; acepta 8-9 dígitos: base + verificador).
  * Cuando el usuario completa 8+ dígitos, separa el último como verificador.
  */
 export function formatRif(input: string): string {
@@ -73,22 +73,10 @@ export function formatRif(input: string): string {
   const prefix = prefixMatch ? prefixMatch[1] : 'J';
   const digits = upper.replace(/[^0-9]/g, '').slice(0, 9);
   if (!digits) return upper.startsWith(prefix) ? `${prefix}-` : '';
-  let baseDigits = digits;
-  let verifier = '';
   if (digits.length >= 8) {
-    baseDigits = digits.slice(0, -1);
-    verifier = digits.slice(-1);
+    return `${prefix}-${digits.slice(0, -1)}-${digits.slice(-1)}`;
   }
-  let body: string;
-  if (baseDigits.length <= 3) body = baseDigits;
-  else if (baseDigits.length <= 6)
-    body = `${baseDigits.slice(0, baseDigits.length - 3)}.${baseDigits.slice(-3)}`;
-  else
-    body = `${baseDigits.slice(0, baseDigits.length - 6)}.${baseDigits.slice(
-      -6,
-      -3,
-    )}.${baseDigits.slice(-3)}`;
-  return verifier ? `${prefix}-${body}-${verifier}` : `${prefix}-${body}`;
+  return `${prefix}-${digits}`;
 }
 
 /** Limita el número de teléfono a 11 dígitos. */

@@ -143,7 +143,7 @@ export function PaymentAccountFormFields({ lockType }: PaymentAccountFormFieldsP
               disabled={lockType}
             >
               <SelectTrigger className="h-9">
-                <SelectValue placeholder="Seleccioná un tipo" />
+                <SelectValue placeholder="Selecciona un tipo" />
               </SelectTrigger>
               <SelectContent>
                 {TYPES.map((t) => (
@@ -155,7 +155,7 @@ export function PaymentAccountFormFields({ lockType }: PaymentAccountFormFieldsP
             </Select>
             {lockType ? (
               <p className="text-xs text-muted-foreground">
-                El tipo de cuenta no se puede modificar. Creá una nueva si necesitás otro tipo.
+                El tipo de cuenta no se puede modificar. Crea una nueva si necesitas otro tipo.
               </p>
             ) : null}
             {showError('type')}
@@ -296,7 +296,7 @@ export function PaymentAccountFormFields({ lockType }: PaymentAccountFormFieldsP
               </Label>
               <Input
                 id="idDocument"
-                placeholder="J-12.345.678-9"
+                placeholder="V-12.345.678 / J-12345678-9"
                 {...register('idDocument')}
                 className={cn('h-9 font-mono', invalid('idDocument'))}
               />
@@ -365,7 +365,7 @@ export function PaymentAccountFormFields({ lockType }: PaymentAccountFormFieldsP
               </Label>
               <Input
                 id="idDocumentUsd"
-                placeholder="J-12.345.678-9"
+                placeholder="V-12.345.678 / J-12345678-9"
                 {...register('idDocument')}
                 className={cn('h-9 font-mono', invalid('idDocument'))}
               />

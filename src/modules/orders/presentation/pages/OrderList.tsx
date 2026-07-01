@@ -33,7 +33,7 @@ import { formatCreatedDateTime } from '@/lib/dates';
 import { formatMoney } from '@/lib/format/money';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
-import { Plus, Trash2, Eye, Undo2, ListChecks, FileText } from 'lucide-react';
+import { Plus, Trash2, Eye, Undo2, ListChecks, FileText, FileEdit } from 'lucide-react';
 import { useOrderStore } from '../../domain/store/orderStore';
 import { orderGateway } from '../../infrastructure/orderGateway';
 import {
@@ -275,12 +275,20 @@ export function OrderList() {
           </p>
         </div>
         <Can permission={PERMISSIONS.ORDERS.CREATE}>
-          <Link to="/orders/create">
-            <Button>
-              <Plus className="w-4 h-4 mr-1.5" />
-              Nueva orden
-            </Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link to="/orders/drafts">
+              <Button variant="outline">
+                <FileEdit className="w-4 h-4 mr-1.5" />
+                Borradores
+              </Button>
+            </Link>
+            <Link to="/orders/create">
+              <Button>
+                <Plus className="w-4 h-4 mr-1.5" />
+                Nueva orden
+              </Button>
+            </Link>
+          </div>
         </Can>
       </div>
 
@@ -458,8 +466,8 @@ export function OrderList() {
                     title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay órdenes'}
                     description={
                       hasActiveFilters
-                        ? 'Ajustá los filtros para ver más resultados.'
-                        : 'Creá la primera orden para empezar.'
+                        ? 'Ajusta los filtros para ver más resultados.'
+                        : 'Crea la primera orden para empezar.'
                     }
                     action={
                       hasActiveFilters ? (
@@ -664,7 +672,7 @@ export function OrderList() {
             tone="destructive"
             icon={Trash2}
             title="¿Eliminar orden?"
-            description="Elegí entre mover a la papelera (reversible) o eliminar permanentemente."
+            description="Elige entre mover a la papelera (reversible) o eliminar permanentemente."
             onClose={() => {
               setDeleteTarget(null);
               setHardConfirmStep(0);
@@ -673,7 +681,7 @@ export function OrderList() {
           {hardConfirmStep === 1 ? (
             <div className="px-6">
               <DialogBanner tone="destructive">
-                Esta acción es irreversible. Confirmá de nuevo.
+                Esta acción es irreversible. Confirma de nuevo.
               </DialogBanner>
             </div>
           ) : null}

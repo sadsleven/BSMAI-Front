@@ -441,8 +441,8 @@ export function PatientList() {
                     title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay pacientes'}
                     description={
                       hasActiveFilters
-                        ? 'Ajustá los filtros para ver más resultados.'
-                        : 'Creá el primer paciente para empezar a registrar atenciones.'
+                        ? 'Ajusta los filtros para ver más resultados.'
+                        : 'Crea el primer paciente para empezar a registrar atenciones.'
                     }
                     action={
                       hasActiveFilters ? (
@@ -670,7 +670,7 @@ export function PatientList() {
             description={
               deleteTarget ? (
                 <>
-                  Vas a eliminar a <strong>{displayName(deleteTarget)}</strong>. Elegí entre
+                  Vas a eliminar a <strong>{displayName(deleteTarget)}</strong>. Elige entre
                   mover a la papelera (reversible) o eliminar permanentemente.
                 </>
               ) : null
@@ -683,7 +683,7 @@ export function PatientList() {
           {hardConfirm === 1 ? (
             <div className="px-6">
               <DialogBanner tone="destructive">
-                Esta acción es irreversible. Confirmá de nuevo para eliminar permanentemente.
+                Esta acción es irreversible. Confirma de nuevo para eliminar permanentemente.
               </DialogBanner>
             </div>
           ) : null}

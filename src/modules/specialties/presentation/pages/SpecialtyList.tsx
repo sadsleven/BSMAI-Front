@@ -339,8 +339,8 @@ export function SpecialtyList() {
                     title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay especialidades'}
                     description={
                       hasActiveFilters
-                        ? 'Ajustá los filtros para ver más resultados.'
-                        : 'Creá la primera especialidad para asignarla a doctores y centros.'
+                        ? 'Ajusta los filtros para ver más resultados.'
+                        : 'Crea la primera especialidad para asignarla a doctores y centros.'
                     }
                     action={
                       hasActiveFilters ? (
@@ -530,7 +530,7 @@ export function SpecialtyList() {
             description={
               deleteTarget ? (
                 <>
-                  Vas a eliminar la especialidad <strong>{deleteTarget.name}</strong>. Elegí
+                  Vas a eliminar la especialidad <strong>{deleteTarget.name}</strong>. Elige
                   entre mover a la papelera (reversible) o eliminar permanentemente.
                 </>
               ) : null
@@ -543,7 +543,7 @@ export function SpecialtyList() {
           {hardConfirm === 1 ? (
             <div className="px-6">
               <DialogBanner tone="destructive">
-                Esta acción es irreversible. Confirmá de nuevo para eliminar permanentemente.
+                Esta acción es irreversible. Confirma de nuevo para eliminar permanentemente.
               </DialogBanner>
             </div>
           ) : null}

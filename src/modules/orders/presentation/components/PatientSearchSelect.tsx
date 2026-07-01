@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, UserRound, X, Plus, AlertTriangle, Loader2 } from 'lucide-react';
+import { Search, UserRound, X, Plus, Pencil, AlertTriangle, Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,8 @@ export type PatientSearchSelectProps = {
   hasInsuranceAndContractor?: boolean;
   /** Habilita botón "+ Crear paciente". */
   onCreateClick?: () => void;
+  /** Habilita botón "Editar" en el chip seleccionado (abre modal de edición). */
+  onEditClick?: () => void;
   placeholder?: string;
 };
 
@@ -35,6 +37,7 @@ export function PatientSearchSelect({
   error,
   hasInsuranceAndContractor,
   onCreateClick,
+  onEditClick,
   placeholder = 'Buscar por cédula, RIF, nombre o razón social…',
 }: PatientSearchSelectProps) {
   const [query, setQuery] = useState('');
@@ -87,11 +90,23 @@ export function PatientSearchSelect({
           {selectedId ? (
             <span className="text-xs text-muted-foreground">{selectedId}</span>
           ) : null}
+          {onEditClick ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="ml-auto h-7 px-2"
+              onClick={onEditClick}
+              disabled={disabled}
+            >
+              <Pencil className="w-3.5 h-3.5 mr-1" /> Editar
+            </Button>
+          ) : null}
           <button
             type="button"
             onClick={() => onChange(null)}
             disabled={disabled}
-            className="ml-auto p-1 rounded hover:bg-accent"
+            className={cn('p-1 rounded hover:bg-accent', !onEditClick && 'ml-auto')}
             title="Quitar"
           >
             <X className="w-3.5 h-3.5" />

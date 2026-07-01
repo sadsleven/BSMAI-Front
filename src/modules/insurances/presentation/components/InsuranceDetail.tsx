@@ -40,6 +40,16 @@ export function InsuranceDetailBody({ insurance }: { insurance: Insurance }) {
             )
           }
         />
+        <DetailRow
+          label="Modalidad de cobro"
+          value={
+            insurance.isIndexed ? (
+              <DetailBadge tone="info">Indexado (tasa del día de la orden)</DetailBadge>
+            ) : (
+              <DetailBadge tone="neutral">No indexado (tasa del día del cobro)</DetailBadge>
+            )
+          }
+        />
       </DetailSection>
 
       <DetailSection title={`Teléfonos (${insurance.phones?.length ?? 0})`}>

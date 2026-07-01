@@ -44,7 +44,7 @@ api.interceptors.response.use(
     // Use a stable toast id so repeated failures replace the toast instead of stacking.
     const isAuthMeProbe = requestUrl.includes('/auth/me');
     if (!error.response && error.code !== 'ERR_CANCELED' && !isAuthMeProbe) {
-      notify.error('No se pudo conectar con el servidor. Verificá tu conexión.', {
+      notify.error('No se pudo conectar con el servidor. Verifica tu conexión.', {
         id: 'network-error',
       });
     }

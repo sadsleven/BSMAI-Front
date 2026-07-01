@@ -46,7 +46,7 @@ export function DatePicker({
   onChange,
   onBlur,
   id,
-  placeholder = 'Seleccioná una fecha',
+  placeholder = 'Selecciona una fecha',
   invalid,
   disabled,
   className,

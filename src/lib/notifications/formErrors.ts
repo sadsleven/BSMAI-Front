@@ -76,6 +76,7 @@ export const COMMON_LABELS: FieldLabelMap = {
   payments: 'Pagos',
   paymentDate: 'Fecha del pago',
   referenceNumber: 'Referencia',
+  paymentAccountId: 'Cuenta bancaria',
   exchangeRateId: 'Tasa de cambio',
   amountCurrency: 'Moneda del pago',
   amountValue: 'Monto del pago',
@@ -152,7 +153,7 @@ export type NotifyFormErrorsOpts = {
   labels?: FieldLabelMap;
   /** Texto cuando no se pudo extraer detalle. */
   fallback?: string;
-  /** Prefijo del toast. Default: "No se pudo guardar. Revisá:" */
+  /** Prefijo del toast. Default: "No se pudo guardar. Revisa:" */
   heading?: string;
   /** Máximo de líneas a mostrar (resto se resume). Default 5. */
   maxItems?: number;
@@ -168,8 +169,8 @@ export function notifyFormErrors(
 ): void {
   const {
     labels: extraLabels = {},
-    fallback = 'Revisá los campos marcados.',
-    heading = 'No se pudo guardar. Revisá:',
+    fallback = 'Revisa los campos marcados.',
+    heading = 'No se pudo guardar. Revisa:',
     maxItems = 5,
   } = opts;
   const labels = { ...COMMON_LABELS, ...extraLabels };

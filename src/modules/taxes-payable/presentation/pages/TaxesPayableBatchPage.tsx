@@ -18,14 +18,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   AlertDialog,
@@ -72,7 +64,7 @@ import { Can } from '@/modules/auth/presentation/components/Can';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 
 const paymentSchema = z.object({
-  payments: z.array(taxPaymentSchema).min(1, 'Registrá al menos un pago'),
+  payments: z.array(taxPaymentSchema).min(1, 'Registra al menos un pago'),
 });
 type PaymentFormValues = z.infer<typeof paymentSchema>;
 
@@ -149,16 +141,20 @@ export function TaxesPayableBatchPage() {
   // Un lote SENIAT puede mezclar proveedores: el pago va al fisco, no al proveedor.
   const canCreate = selectedRows.length >= 1;
 
-  const filteredPending = useMemo(() => {
+  // Resultados del buscador: sólo al escribir, excluye las ya agregadas.
+  // Un lote SENIAT puede mezclar proveedores → sin restricción de proveedor.
+  const candidates = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return pending;
-    return pending.filter(
-      (t) =>
+    if (!q) return [];
+    return pending.filter((t) => {
+      if (selected.has(t.id)) return false;
+      return (
         t.taxPayableNumber.toLowerCase().includes(q) ||
         recipientName(t).toLowerCase().includes(q) ||
-        (t.internalNumbers ?? []).some((n) => n.toLowerCase().includes(q)),
-    );
-  }, [pending, search]);
+        (t.internalNumbers ?? []).some((n) => n.toLowerCase().includes(q))
+      );
+    });
+  }, [pending, search, selected]);
 
   const toggleSelect = (taxId: string) =>
     setSelected((prev) => {
@@ -206,7 +202,7 @@ export function TaxesPayableBatchPage() {
               Pagar retenciones
             </h1>
             <p className="text-sm text-muted-foreground">
-              Seleccioná las retenciones pendientes a incluir en el lote. Pueden
+              Selecciona las retenciones pendientes a incluir en el lote. Pueden
               ser de varios proveedores.
             </p>
           </div>
@@ -220,8 +216,8 @@ export function TaxesPayableBatchPage() {
         </div>
 
         <FormSection
-          title="Retenciones pendientes"
-          description="Marcá las retenciones a incluir en el lote. Pueden ser de proveedores distintos."
+          title="Retenciones del lote"
+          description="Estas retenciones forman el lote. Busca para agregar más; pueden ser de proveedores distintos."
         >
           <div className="relative mb-3">
             <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
@@ -239,77 +235,87 @@ export function TaxesPayableBatchPage() {
             </div>
           ) : createLoading ? (
             <p className="text-sm text-muted-foreground">Cargando retenciones…</p>
-          ) : pending.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No hay retenciones pendientes.
-            </p>
           ) : (
-            <div className="rounded-lg border overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-10"></TableHead>
-                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                      N° comprobante
-                    </TableHead>
-                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                      Proveedor
-                    </TableHead>
-                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                      Órdenes
-                    </TableHead>
-                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                      Retención Bs.
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredPending.length === 0 ? (
-                    <TableRow>
-                      <TableCell
-                        colSpan={5}
-                        className="py-6 text-center text-sm text-muted-foreground"
-                      >
-                        Sin resultados para “{search}”.
-                      </TableCell>
-                    </TableRow>
+            <>
+              {/* Resultados del buscador: agregar al lote */}
+              {search.trim() ? (
+                <div className="mb-4 rounded-lg border divide-y overflow-hidden">
+                  {candidates.length === 0 ? (
+                    <p className="px-3 py-4 text-center text-sm text-muted-foreground">
+                      Sin resultados para “{search}”.
+                    </p>
                   ) : (
-                    filteredPending.map((t) => {
-                      return (
-                        <TableRow
-                          key={t.id}
-                          className="hover:bg-muted/30 cursor-pointer"
-                          onClick={() => toggleSelect(t.id)}
-                        >
-                          <TableCell className="py-3 px-4">
-                            <Checkbox
-                              checked={selected.has(t.id)}
-                              onCheckedChange={() => toggleSelect(t.id)}
-                              aria-label="Seleccionar retención"
-                            />
-                          </TableCell>
-                          <TableCell className="py-3 px-4 font-mono text-sm font-semibold">
+                    candidates.map((t) => (
+                      <button
+                        type="button"
+                        key={t.id}
+                        onClick={() => toggleSelect(t.id)}
+                        className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-muted/40"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-mono text-sm font-semibold">
                             {t.taxPayableNumber}
-                          </TableCell>
-                          <TableCell className="py-3 px-4 text-sm">
-                            <div>{recipientName(t)}</div>
-                            <div className="text-[11px] text-muted-foreground">
-                              {t.recipientType === 'doctor' ? 'Doctor' : 'Centro'}
-                            </div>
-                          </TableCell>
-                          <TableCell className="py-3 px-4 text-xs font-mono truncate max-w-[160px]">
+                          </div>
+                          <div className="text-[11px] text-muted-foreground truncate">
+                            {recipientName(t)} ·{' '}
+                            {t.recipientType === 'doctor' ? 'Doctor' : 'Centro'} ·{' '}
                             {ordersLabel(t)}
-                          </TableCell>
-                          <TableCell className="py-3 px-4 text-sm font-mono">
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="font-mono text-sm">
                             {formatMoney(taxAmountBs(t))} Bs.
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })
+                          </span>
+                          <Plus className="w-4 h-4 text-brand-blue" />
+                        </div>
+                      </button>
+                    ))
                   )}
-                </TableBody>
-              </Table>
-            </div>
+                </div>
+              ) : null}
+
+              {/* Lista del lote (preseleccionadas + agregadas) */}
+              {selectedRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground italic">
+                  No hay retenciones en el lote. Busca y agrega al menos una.
+                </p>
+              ) : (
+                <ul className="text-sm divide-y rounded-lg border">
+                  {selectedRows.map((t) => (
+                    <li
+                      key={t.id}
+                      className="flex items-center justify-between gap-3 px-3 py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <div className="font-mono font-semibold">
+                          {t.taxPayableNumber}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground truncate">
+                          {recipientName(t)} ·{' '}
+                          {t.recipientType === 'doctor' ? 'Doctor' : 'Centro'} ·{' '}
+                          {ordersLabel(t)}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="font-mono">
+                          {formatMoney(taxAmountBs(t))} Bs.
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                          onClick={() => toggleSelect(t.id)}
+                          title="Quitar del lote"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
           )}
 
           <div className="mt-3 rounded-md border p-3 flex items-center justify-between gap-3 text-sm">
@@ -730,7 +736,7 @@ function BatchDetail({ id }: { id: string }) {
           </div>
         ) : (
           <p className="text-xs italic text-muted-foreground mb-2">
-            El lote está pagado: editá o quitá un pago para modificar sus retenciones.
+            El lote está pagado: edita o quita un pago para modificar sus retenciones.
           </p>
         )}
 
@@ -859,7 +865,7 @@ function BatchDetail({ id }: { id: string }) {
             >
               <FormSection
                 title={editingPaymentId ? 'Editar pago al SENIAT' : 'Registrar pago al SENIAT'}
-                description="El impuesto se paga en bolívares fijos. Podés pagar parcial."
+                description="El impuesto se paga en bolívares fijos. Puedes pagar parcial."
               >
                 <Controller
                   control={control}

@@ -312,7 +312,7 @@ export function AccountsReceivableList() {
           Cuentas por cobrar
         </h1>
         <p className="text-sm text-muted-foreground">
-          Armá lotes de cobro por deudor desde las órdenes pendientes y registrá
+          Arma lotes de cobro por deudor desde las órdenes pendientes y registra
           los cobros.
         </p>
       </div>
@@ -401,8 +401,8 @@ export function AccountsReceivableList() {
                           }
                           description={
                             hasActiveFilters
-                              ? 'Limpiá los filtros para ver todas las órdenes.'
-                              : 'Las órdenes finalizadas con deudor (seguro o titular) aparecen acá hasta que se incluyen en un lote.'
+                              ? 'Limpia los filtros para ver todas las órdenes.'
+                              : 'Las órdenes finalizadas con deudor (seguro o titular) aparecen aquí hasta que se incluyen en un lote.'
                           }
                         />
                       </TableCell>
@@ -570,8 +570,8 @@ export function AccountsReceivableList() {
                           }
                           description={
                             hasActiveFilters
-                              ? 'Limpiá los filtros para ver todos los lotes.'
-                              : 'Realizá un cobro desde la pestaña Pendientes.'
+                              ? 'Limpia los filtros para ver todos los lotes.'
+                              : 'Realiza un cobro desde la pestaña Pendientes.'
                           }
                         />
                       </TableCell>

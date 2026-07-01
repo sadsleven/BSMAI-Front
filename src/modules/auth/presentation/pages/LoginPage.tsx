@@ -95,7 +95,7 @@ export function LoginPage() {
               Bienvenido a AFMI
             </h1>
             <p className="text-[13px] text-muted-foreground">
-              Iniciá sesión para acceder al sistema de gestión.
+              Inicia sesión para acceder al sistema de gestión.
             </p>
           </div>
         </div>

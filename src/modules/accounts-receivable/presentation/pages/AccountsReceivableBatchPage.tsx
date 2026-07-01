@@ -15,14 +15,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   AlertDialog,
@@ -65,7 +57,7 @@ import { Can } from '@/modules/auth/presentation/components/Can';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 
 const paymentSchema = z.object({
-  payments: z.array(orderPaymentSchema).min(1, 'Registrá al menos un cobro'),
+  payments: z.array(orderPaymentSchema).min(1, 'Registra al menos un cobro'),
 });
 type PaymentFormValues = z.infer<typeof paymentSchema>;
 
@@ -140,7 +132,19 @@ export function AccountsReceivableBatchPage() {
       setCreateLoading(true);
       setCreateError(null);
       try {
-        const res = await accountsReceivableGateway.listPending({ limit: 200 });
+        // Con deudor fijado (vino de la lista), traemos sólo sus pendientes:
+        // el buscador queda restringido a ese mismo deudor.
+        const res = await accountsReceivableGateway.listPending({
+          limit: 200,
+          ...(lockedDebtor
+            ? {
+                debtorType: lockedDebtor.debtorType,
+                ...(lockedDebtor.debtorType === 'insurance'
+                  ? { insuranceId: lockedDebtor.debtorId }
+                  : { holderId: lockedDebtor.debtorId }),
+              }
+            : {}),
+        });
         if (cancelled) return;
         setPending(res.data);
       } catch (e) {
@@ -155,7 +159,7 @@ export function AccountsReceivableBatchPage() {
     return () => {
       cancelled = true;
     };
-  }, [isCreate]);
+  }, [isCreate, lockedDebtor]);
 
   const selectedRows = useMemo(
     () => pending.filter((p) => selected.has(p.orderId)),
@@ -191,15 +195,24 @@ export function AccountsReceivableBatchPage() {
 
   const canCreate = selectedRows.length >= 1 && !!activeDebtor && sameDebtor;
 
-  const filteredPending = useMemo(() => {
+  // Resultados del buscador: sólo al escribir, excluye las ya agregadas y
+  // (con deudor activo) restringe al mismo deudor y modo de cobro.
+  const candidates = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return pending;
-    return pending.filter(
-      (p) =>
+    if (!q) return [];
+    return pending.filter((p) => {
+      if (selected.has(p.orderId)) return false;
+      if (
+        debtorKey &&
+        `${p.debtorType}:${pendingDebtorId(p)}:${p.useFixedRate}` !== debtorKey
+      )
+        return false;
+      return (
         p.orderNumber.toLowerCase().includes(q) ||
-        pendingDebtorName(p).toLowerCase().includes(q),
-    );
-  }, [pending, search]);
+        pendingDebtorName(p).toLowerCase().includes(q)
+      );
+    });
+  }, [pending, search, selected, debtorKey]);
 
   const toggleSelect = (orderId: string) =>
     setSelected((prev) => {
@@ -208,11 +221,6 @@ export function AccountsReceivableBatchPage() {
       else next.add(orderId);
       return next;
     });
-
-  const rowOtherDebtor = (p: PendingReceivable): boolean =>
-    !!debtorKey &&
-    `${p.debtorType}:${pendingDebtorId(p)}:${p.useFixedRate}` !== debtorKey &&
-    !selected.has(p.orderId);
 
   const pendingTargetLabel = (p: PendingReceivable) =>
     p.useFixedRate && p.targetBs !== null
@@ -254,7 +262,7 @@ export function AccountsReceivableBatchPage() {
                 ? `Deudor: ${activeDebtor.debtorName} · ${
                     activeDebtor.debtorType === 'holder' ? 'Titular' : 'Seguro'
                   }${activeDebtor.useFixedRate ? ' · tasa fija' : ''}`
-                : 'Seleccioná las órdenes pendientes de un mismo deudor y modo de cobro.'}
+                : 'Selecciona las órdenes pendientes de un mismo deudor y modo de cobro.'}
             </p>
           </div>
           <button
@@ -267,8 +275,8 @@ export function AccountsReceivableBatchPage() {
         </div>
 
         <FormSection
-          title="Órdenes pendientes"
-          description="Marcá las órdenes a incluir. Todas deben ser del mismo deudor y modo (tasa fija o USD)."
+          title="Órdenes del lote"
+          description="Estas órdenes forman el lote. Busca para agregar más del mismo deudor y modo (tasa fija o USD)."
         >
           <div className="relative mb-3">
             <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
@@ -286,95 +294,107 @@ export function AccountsReceivableBatchPage() {
             </div>
           ) : createLoading ? (
             <p className="text-sm text-muted-foreground">Cargando órdenes…</p>
-          ) : pending.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No hay órdenes pendientes de cobro.
-            </p>
           ) : (
-            <div className="rounded-lg border overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-10"></TableHead>
-                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                      N° orden
-                    </TableHead>
-                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                      Deudor
-                    </TableHead>
-                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                      A cobrar
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredPending.length === 0 ? (
-                    <TableRow>
-                      <TableCell
-                        colSpan={4}
-                        className="py-6 text-center text-sm text-muted-foreground"
-                      >
-                        Sin resultados para “{search}”.
-                      </TableCell>
-                    </TableRow>
+            <>
+              {/* Resultados del buscador: agregar al lote */}
+              {search.trim() ? (
+                <div className="mb-4 rounded-lg border divide-y overflow-hidden">
+                  {candidates.length === 0 ? (
+                    <p className="px-3 py-4 text-center text-sm text-muted-foreground">
+                      {activeDebtor
+                        ? `Sin órdenes pendientes de este deudor y modo para “${search}”.`
+                        : `Sin resultados para “${search}”.`}
+                    </p>
                   ) : (
-                    filteredPending.map((p) => {
-                      const disabled = rowOtherDebtor(p);
-                      return (
-                        <TableRow
-                          key={p.orderId}
-                          className={
-                            disabled ? 'opacity-50' : 'hover:bg-muted/30 cursor-pointer'
-                          }
-                          title={
-                            disabled ? 'Otro deudor o modo de cobro' : undefined
-                          }
-                          onClick={() => !disabled && toggleSelect(p.orderId)}
-                        >
-                          <TableCell className="py-3 px-4">
-                            <Checkbox
-                              checked={selected.has(p.orderId)}
-                              disabled={disabled}
-                              onCheckedChange={() => toggleSelect(p.orderId)}
-                              aria-label="Seleccionar orden"
-                            />
-                          </TableCell>
-                          <TableCell className="py-3 px-4 font-mono text-sm font-semibold">
-                            {p.orderNumber}
-                          </TableCell>
-                          <TableCell className="py-3 px-4 text-sm">
-                            <div className="flex items-center gap-2 flex-wrap">
+                    candidates.map((p) => (
+                      <button
+                        type="button"
+                        key={p.orderId}
+                        onClick={() => toggleSelect(p.orderId)}
+                        className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-muted/40"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-mono text-sm font-semibold">
+                            N° {p.orderNumber}
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap text-[11px] text-muted-foreground">
+                            <span className="truncate">{pendingDebtorName(p)}</span>
+                            {p.useFixedRate ? (
                               <Badge
                                 variant="outline"
-                                className={
-                                  p.debtorType === 'holder'
-                                    ? 'bg-brand-cyan-soft text-brand-blue-strong border-brand-cyan/40'
-                                    : 'bg-brand-blue-soft text-brand-blue-strong border-brand-blue/30'
-                                }
+                                className="bg-brand-blue-soft text-brand-blue-strong border-brand-blue/30 text-[10px]"
                               >
-                                {p.debtorType === 'holder' ? 'Titular' : 'Seguro'}
+                                Tasa fija
                               </Badge>
-                              {p.useFixedRate ? (
-                                <Badge
-                                  variant="outline"
-                                  className="bg-brand-blue-soft text-brand-blue-strong border-brand-blue/30"
-                                >
-                                  Tasa fija
-                                </Badge>
-                              ) : null}
-                              <span className="truncate">{pendingDebtorName(p)}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="py-3 px-4 text-sm font-mono">
+                            ) : null}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="font-mono text-sm">
                             {pendingTargetLabel(p)}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })
+                          </span>
+                          <Plus className="w-4 h-4 text-brand-blue" />
+                        </div>
+                      </button>
+                    ))
                   )}
-                </TableBody>
-              </Table>
-            </div>
+                </div>
+              ) : null}
+
+              {/* Lista del lote (preseleccionadas + agregadas) */}
+              {selectedRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground italic">
+                  No hay órdenes en el lote. Busca y agrega al menos una.
+                </p>
+              ) : (
+                <ul className="text-sm divide-y rounded-lg border">
+                  {selectedRows.map((p) => (
+                    <li
+                      key={p.orderId}
+                      className="flex items-center justify-between gap-3 px-3 py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <div className="font-mono font-semibold">N° {p.orderNumber}</div>
+                        <div className="flex items-center gap-2 flex-wrap text-[11px] text-muted-foreground">
+                          <Badge
+                            variant="outline"
+                            className={
+                              p.debtorType === 'holder'
+                                ? 'bg-brand-cyan-soft text-brand-blue-strong border-brand-cyan/40 text-[10px]'
+                                : 'bg-brand-blue-soft text-brand-blue-strong border-brand-blue/30 text-[10px]'
+                            }
+                          >
+                            {p.debtorType === 'holder' ? 'Titular' : 'Seguro'}
+                          </Badge>
+                          {p.useFixedRate ? (
+                            <Badge
+                              variant="outline"
+                              className="bg-brand-blue-soft text-brand-blue-strong border-brand-blue/30 text-[10px]"
+                            >
+                              Tasa fija
+                            </Badge>
+                          ) : null}
+                          <span className="truncate">{pendingDebtorName(p)}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="font-mono">{pendingTargetLabel(p)}</span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                          onClick={() => toggleSelect(p.orderId)}
+                          title="Quitar del lote"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
           )}
 
           <div className="mt-3 rounded-md border p-3 flex items-center justify-between gap-3 text-sm">

@@ -181,36 +181,36 @@ export function GuidePage() {
             <div className="space-y-4 pl-1">
               <Step n={1} title="Creación de orden (estado: borrador)">
                 <p>
-                  Cargá sucursal, tipo de orden, titular y paciente, especialidad,
+                  Carga sucursal, tipo de orden, titular y paciente, especialidad,
                   patologías, tipos de servicio con proveedor (doctor o centro)
                   por fila, fechas y monto. El monto se prellena de los precios
                   Particular o del seguro según el tipo de orden.
                 </p>
                 <Note>
-                  Si no tenés el permiso <code>orders.edit-amount</code>, el
-                  monto queda forzado a la suma Particular. Podés pedir
+                  Si no tienes el permiso <code>orders.edit-amount</code>, el
+                  monto queda forzado a la suma Particular. Puedes pedir
                   autorización a un validador desde el botón "Solicitar
                   autorización de monto".
                 </Note>
               </Step>
               <Step n={2} title="Atención del paciente (estado: en proceso → atendida)">
                 <p>
-                  Una vez creada, descargá la "Orden interna" en XLSX por cada
-                  tipo de servicio (una por proveedor distinto). Marcá la orden
+                  Una vez creada, descarga la "Orden interna" en XLSX por cada
+                  tipo de servicio (una por proveedor distinto). Marca la orden
                   como atendida cuando se haya prestado el servicio.
                 </p>
               </Step>
               <Step n={3} title="Informe médico y estudios (estado: informe emitido)">
                 <p>
-                  Adjuntá estudios (PDF/imagen) y describí otros estudios libres.
+                  Adjunta estudios (PDF/imagen) y describe otros estudios libres.
                   Avanza la orden al estado "informe emitido".
                 </p>
               </Step>
               <Step n={4} title="Facturación y liquidación (estado: finalizada)">
                 <p>
-                  Definí cuánto cobra cada proveedor (doctor / centro) en USD,
-                  capturá la tasa USD/Bs del momento (snapshot
-                  <code>billingExchangeRateId</code>) y finalizá. Una vez
+                  Define cuánto cobra cada proveedor (doctor / centro) en USD,
+                  captura la tasa USD/Bs del momento (snapshot
+                  <code>billingExchangeRateId</code>) y finaliza. Una vez
                   finalizada la orden es inmutable salvo soft-delete.
                 </p>
                 <Note tone="success">
@@ -228,7 +228,7 @@ export function GuidePage() {
             <SectionHeader id="order-types" icon={FileText} title="Tipos de orden" />
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Card title="Contado (cash)">
-                Cobro inmediato. Registrá los pagos (efectivo USD/EUR/BS, pago
+                Cobro inmediato. Registra los pagos (efectivo USD/EUR/BS, pago
                 móvil, transferencia, otro) directamente en la orden. No genera
                 cuenta por cobrar.
               </Card>
@@ -242,8 +242,9 @@ export function GuidePage() {
                 cuenta por cobrar al seguro.
               </Card>
               <Card title="Cashea">
-                El cliente paga en cuotas vía Cashea. Cashea descuenta una
-                comisión configurable. Ver sección dedicada abajo.
+                El cliente paga una inicial y financia el resto vía Cashea, que
+                retiene comisión y financiamiento configurables. Ver sección
+                dedicada abajo.
               </Card>
             </div>
           </section>
@@ -252,26 +253,32 @@ export function GuidePage() {
           <section className="space-y-4">
             <SectionHeader id="cashea" icon={HandCoins} title="Órdenes Cashea" />
             <p className="text-sm text-muted-foreground">
-              Cashea financia al cliente en cuotas. El comercio sólo recibe el
-              precio menos una comisión que Cashea retiene. Cada cuota llega como
-              un cobro que se registra contra la cuenta por cobrar.
+              El titular paga una <strong>inicial</strong> en el Paso 1 y Cashea
+              financia el restante (total − inicial). El comercio recibe ese
+              restante menos la comisión y el financiamiento que Cashea retiene.
+              Cada cuota que Cashea remite llega como un cobro contra la cuenta
+              por cobrar.
             </p>
             <div className="space-y-3">
-              <Card title="Comisión">
+              <Card title="Comisión y financiamiento">
                 <p>
-                  El % de comisión se configura en <strong>Administración →
-                  Configuración</strong>. Al crear una orden Cashea se toma un{' '}
-                  <em>snapshot</em> del % vigente — si después cambiás el valor
-                  global, las órdenes históricas conservan el % con el que
-                  fueron creadas.
+                  Los % de <strong>comisión</strong> (sobre el total) y de{' '}
+                  <strong>financiamiento</strong> (sobre el restante) se
+                  configuran en <strong>Administración → Configuración</strong>.
+                  Al crear una orden Cashea se toma un <em>snapshot</em> de los %
+                  vigentes — si después cambias los valores globales, las órdenes
+                  históricas conservan los % con los que fueron creadas. La
+                  inicial no genera comisión propia.
                 </p>
               </Card>
               <Card title="Cuenta por cobrar">
                 <p>
                   Cada orden Cashea genera automáticamente una cuenta por cobrar
                   con el titular como deudor. El total a cobrar es{' '}
-                  <code>precio × (1 − comisión)</code> — el monto neto que
-                  Cashea le paga al comercio.
+                  <code>restante − comisión − financiamiento</code>, donde{' '}
+                  <code>restante = total − inicial</code> — el monto neto que
+                  Cashea le paga al comercio (la inicial ya la cobró el comercio
+                  en el Paso 1).
                 </p>
               </Card>
               <Card title="Registro de cuotas">
@@ -284,7 +291,7 @@ export function GuidePage() {
               </Card>
             </div>
             <Note tone="warning">
-              La comisión Cashea es por orden — modificarla en Configuración no
+              Las tasas Cashea son por orden — modificarlas en Configuración no
               afecta órdenes ya creadas, sólo las nuevas.
             </Note>
           </section>
@@ -310,7 +317,7 @@ export function GuidePage() {
               </Card>
               <Card title="Creación inline">
                 <p>
-                  Desde el selector de paciente en la orden podés crear un nuevo
+                  Desde el selector de paciente en la orden puedes crear un nuevo
                   paciente sin salir del formulario con el botón "+ Crear".
                 </p>
               </Card>
@@ -397,8 +404,8 @@ export function GuidePage() {
             </p>
             <div className="space-y-2 text-sm text-muted-foreground">
               <p>
-                Para registrar un pago: marcá las cuentas a pagar (deben ser del
-                mismo proveedor), elegí "Registrar pago" y cargá los métodos de
+                Para registrar un pago: marca las cuentas a pagar (deben ser del
+                mismo proveedor), elige "Registrar pago" y carga los métodos de
                 pago (efectivo USD/EUR/BS, transferencia, etc.). La suma debe
                 cuadrar con el monto a recibir tras retención de impuestos.
               </p>
@@ -420,14 +427,15 @@ export function GuidePage() {
             </p>
             <div className="space-y-2 text-sm text-muted-foreground">
               <p>
-                Para registrar un cobro: marcá las cuentas (deben compartir
-                deudor) y elegí "Registrar cobro". Los cobros se acumulan; la
+                Para registrar un cobro: marca las cuentas (deben compartir
+                deudor) y elige "Registrar cobro". Los cobros se acumulan; la
                 cuenta pasa a <code>collected</code> al alcanzar el target o{' '}
                 <code>overcollected</code> si lo supera.
               </p>
               <p>
-                Para Cashea, el target es el neto (precio menos comisión). El
-                listado y el detalle muestran ambos valores para claridad.
+                Para Cashea, el target es el neto (restante menos comisión y
+                financiamiento). El listado y el detalle muestran ambos valores
+                para claridad.
               </p>
             </div>
           </section>
@@ -570,8 +578,8 @@ export function GuidePage() {
 
             <Note>
               Cada reporte requiere su permiso específico (
-              <code>reports.&lt;nombre&gt;.list</code>). Asignalo al rol que
-              corresponda para que aparezca en el sidebar.
+              <code>reports.&lt;nombre&gt;.list</code>). Asígnalo al rol que
+              corresponda para que aparezca en la barra lateral.
             </Note>
           </section>
 
@@ -602,7 +610,8 @@ export function GuidePage() {
               <Card title="Configuración">
                 <p>
                   Parámetros globales editables del sistema. Hoy: % de comisión
-                  Cashea. Los cambios sólo afectan las nuevas órdenes.
+                  y de financiamiento Cashea. Los cambios sólo afectan las
+                  nuevas órdenes.
                 </p>
               </Card>
             </div>
@@ -618,7 +627,7 @@ export function GuidePage() {
             </p>
             <div className="space-y-2 text-sm text-muted-foreground">
               <p>
-                Para dar acceso a un módulo: editá el rol del usuario y asigná
+                Para dar acceso a un módulo: edita el rol del usuario y asigna
                 los permisos correspondientes desde la sección Permisos. Algunas
                 acciones combinadas (ej. ver el monto de proveedores en Paso 4)
                 requieren un permiso específico aparte del{' '}

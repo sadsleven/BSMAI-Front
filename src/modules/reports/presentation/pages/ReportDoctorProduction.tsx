@@ -214,7 +214,7 @@ export function ReportDoctorProduction() {
                     title={hasActiveFilters ? 'Sin resultados' : 'Sin producción registrada'}
                     description={
                       hasActiveFilters
-                        ? 'Ajustá los filtros para ver más resultados.'
+                        ? 'Ajusta los filtros para ver más resultados.'
                         : 'Aún no se han facturado órdenes a proveedores.'
                     }
                   />

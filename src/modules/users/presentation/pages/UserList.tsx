@@ -452,8 +452,8 @@ export function UserList() {
                     title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay usuarios'}
                     description={
                       hasActiveFilters
-                        ? 'Ajustá los filtros para ver más resultados.'
-                        : 'Creá el primer usuario para empezar a operar.'
+                        ? 'Ajusta los filtros para ver más resultados.'
+                        : 'Crea el primer usuario para empezar a operar.'
                     }
                     action={
                       hasActiveFilters ? (
@@ -744,7 +744,7 @@ export function UserList() {
             description={
               deleteTarget ? (
                 <>
-                  Vas a eliminar a <strong>{fullName(deleteTarget)}</strong>. Elegí entre mover a
+                  Vas a eliminar a <strong>{fullName(deleteTarget)}</strong>. Elige entre mover a
                   la papelera (reversible) o eliminar permanentemente.
                 </>
               ) : null
@@ -757,7 +757,7 @@ export function UserList() {
           {hardConfirmStep === 1 ? (
             <div className="px-6">
               <DialogBanner tone="destructive">
-                Esta acción es irreversible. Confirmá de nuevo para eliminar permanentemente.
+                Esta acción es irreversible. Confirma de nuevo para eliminar permanentemente.
               </DialogBanner>
             </div>
           ) : null}

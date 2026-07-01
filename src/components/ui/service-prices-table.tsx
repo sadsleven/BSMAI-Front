@@ -50,7 +50,7 @@ export function ServicePricesTable({
   onChange,
   errors,
   description,
-  emptyMessage = 'Aún no hay Tipos de Servicio cargados. Agregá los servicios que aplican.',
+  emptyMessage = 'Aún no hay Tipos de Servicio cargados. Agrega los servicios que aplican.',
 }: ServicePricesTableProps) {
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]);
   const [loading, setLoading] = useState(true);
@@ -138,7 +138,7 @@ export function ServicePricesTable({
   const addRow = useCallback(() => {
     const v = valueRef.current;
     onChangeRef.current([...v, { serviceTypeId: '', priceUsd: 0, _rk: nextRowKey() }]);
-    // La fila nueva no coincide con la búsqueda: limpiala y saltá a su página.
+    // La fila nueva no coincide con la búsqueda: limpiala y salta a su página.
     setSearch('');
     setPage(Math.max(1, Math.ceil((v.length + 1) / pageSizeRef.current)));
   }, []);
@@ -388,7 +388,7 @@ function ServiceTypeCombobox({
           )}
         >
           <span className={cn('truncate', !currentName && 'text-muted-foreground')}>
-            {currentName || (loading ? 'Cargando…' : 'Seleccioná un servicio')}
+            {currentName || (loading ? 'Cargando…' : 'Selecciona un servicio')}
           </span>
           <ChevronsUpDown className="w-4 h-4 shrink-0 text-muted-foreground" />
         </button>
@@ -449,7 +449,7 @@ function ServiceTypeCombobox({
           )}
           {hasMore && (
             <div className="px-3 py-1.5 text-center text-xs text-muted-foreground">
-              Desplazá para ver más…
+              Desplaza para ver más…
             </div>
           )}
         </div>

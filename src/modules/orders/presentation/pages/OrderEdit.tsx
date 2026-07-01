@@ -47,6 +47,7 @@ function buildDto(values: OrderValues): CreateOrderDto {
       values.type === 'insurance' && values.serviceKey?.trim()
         ? values.serviceKey.trim()
         : undefined,
+    isReimbursement: values.type === 'credit' ? !!values.isReimbursement : undefined,
     specialtyId: values.specialtyId,
     serviceTypes: (values.serviceTypes ?? []).map((r) => ({
       serviceTypeId: r.serviceTypeId,
@@ -65,7 +66,6 @@ function buildDto(values: OrderValues): CreateOrderDto {
       values.type === 'cashea'
         ? values.casheaFirstInstallmentAmount ?? 0
         : undefined,
-    useFixedRate: values.type === 'insurance' && !!values.useFixedRate,
     fixedExchangeRateId:
       values.type === 'insurance' && values.useFixedRate && values.fixedExchangeRateId
         ? values.fixedExchangeRateId
@@ -131,6 +131,7 @@ export function OrderEdit() {
       insuranceId: '',
       insuranceSource: '',
       serviceKey: '',
+      isReimbursement: false,
       specialtyId: '',
       serviceTypes: [],
       pathologyIds: [],
@@ -180,6 +181,7 @@ export function OrderEdit() {
           insuranceId: order.insuranceId ?? '',
           insuranceSource: order.insuranceSource ?? '',
           serviceKey: order.serviceKey ?? '',
+          isReimbursement: !!order.isReimbursement,
           specialtyId: order.specialtyId,
           serviceTypes: (order.orderServiceTypes ?? []).map((row) => ({
             serviceTypeId: row.serviceTypeId,
@@ -220,7 +222,7 @@ export function OrderEdit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  // Regla de pago Paso 1 reportada por OrderForm (sólo `cash` bloquea acá).
+  // Regla de pago Paso 1 reportada por OrderForm (sólo `cash` bloquea aquí).
   const step1OkRef = useRef(true);
   const handleStep1Ok = useCallback((ok: boolean) => {
     step1OkRef.current = ok;

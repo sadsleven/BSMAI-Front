@@ -1,4 +1,5 @@
-import { useForm } from 'react-hook-form';
+import { useEffect } from 'react';
+import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   AlertDialog,
@@ -12,67 +13,71 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { FormSwitch } from '@/components/ui/form-switch';
-import { specialtySchema, type SpecialtyValues } from '@/lib/validations/schemas';
+import { InsuranceMultiSelect } from '@/components/ui/insurance-multi-select';
+import { contractorSchema, type ContractorValues } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
-import { Stethoscope, X, AlertTriangle } from 'lucide-react';
+import { Briefcase, X, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { specialtyGateway } from '@/modules/specialties/infrastructure/specialtyGateway';
-import type { Specialty } from '@/modules/specialties/domain/models/specialty';
+import { contractorGateway } from '@/modules/contractors/infrastructure/contractorGateway';
+import type { Contractor } from '@/modules/contractors/domain/models/contractor';
 
-export type SpecialtyCreateModalProps = {
+export type ContractorCreateModalProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreated: (specialty: Specialty) => void;
+  onCreated: (contractor: Contractor) => void;
 };
 
 /**
- * Modal embebido para crear una especialidad sin salir de la orden. Mismo
- * patrón que `PatientCreateModal`: al guardar, `onCreated(nueva)` la
- * autoselecciona en el formulario de la orden.
+ * Modal embebido para crear un contratista sin salir del formulario actual.
+ * Mismo patrón que `PatientCreateModal`/`SpecialtyCreateModal`: al guardar,
+ * `onCreated(nuevo)` lo autoselecciona en el selector que lo invocó.
  */
-export function SpecialtyCreateModal({
+export function ContractorCreateModal({
   open,
   onOpenChange,
   onCreated,
-}: SpecialtyCreateModalProps) {
+}: ContractorCreateModalProps) {
   const {
     register,
     handleSubmit,
-    setValue,
-    watch,
     reset,
+    control,
     formState: { errors, isSubmitting },
-  } = useForm<SpecialtyValues>({
-    resolver: zodResolver(specialtySchema),
+  } = useForm<ContractorValues>({
+    resolver: zodResolver(contractorSchema),
     mode: 'onBlur',
-    defaultValues: { name: '', description: '', isActive: true },
+    defaultValues: { name: '', description: '', insuranceIds: [], isActive: true },
   });
 
-  const isActive = watch('isActive') ?? true;
+  // Cada apertura arranca limpia (la instancia persiste montada en el padre).
+  useEffect(() => {
+    if (open) reset({ name: '', description: '', insuranceIds: [], isActive: true });
+  }, [open, reset]);
+
   const invalid = (k: 'name' | 'description') =>
     errors[k] ? 'border-destructive focus-visible:ring-destructive/30' : '';
 
-  const onSubmit = async (values: SpecialtyValues) => {
+  const onSubmit = async (values: ContractorValues) => {
     try {
-      const created = await specialtyGateway.create({
+      const created = await contractorGateway.create({
         name: values.name,
         description: values.description || undefined,
         isActive: values.isActive,
+        insuranceIds: values.insuranceIds ?? [],
       });
-      notify.success('Especialidad creada');
+      notify.success('Contratista creado');
       reset();
       onCreated(created);
       onOpenChange(false);
     } catch (err) {
-      notify.fromError(err, 'No se pudo crear la especialidad.');
+      notify.fromError(err, 'No se pudo crear el contratista.');
     }
   };
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="data-[size=default]:sm:max-w-[560px] rounded-xl p-0 max-h-[90vh] overflow-hidden flex flex-col gap-0">
+      <AlertDialogContent className="data-[size=default]:sm:max-w-[640px] rounded-xl p-0 max-h-[90vh] overflow-hidden flex flex-col gap-0">
         <button
           type="button"
           onClick={() => onOpenChange(false)}
@@ -84,20 +89,22 @@ export function SpecialtyCreateModal({
         <AlertDialogHeader className="px-6 pt-5 pr-12 gap-3">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-full bg-brand-blue-soft text-brand-blue-strong flex items-center justify-center shrink-0">
-              <Stethoscope className="w-5 h-5" />
+              <Briefcase className="w-5 h-5" />
             </div>
             <div className="flex-1 min-w-0 space-y-1">
               <AlertDialogTitle className="text-[15px] font-semibold leading-tight">
-                Nueva especialidad
+                Nuevo contratista
               </AlertDialogTitle>
               <AlertDialogDescription className="text-sm text-muted-foreground">
-                Crea una especialidad. Quedará autoseleccionada en la orden.
+                Crea un contratista. Quedará autoseleccionado.
               </AlertDialogDescription>
             </div>
           </div>
         </AlertDialogHeader>
         <form
           onSubmit={(e) => {
+            // Modal embebido dentro de otro <form> (paciente/orden). Frena la
+            // propagación para no disparar el submit del formulario contenedor.
             e.stopPropagation();
             void handleSubmit(onSubmit, (errs) => notifyFormErrors(errs))(e);
           }}
@@ -105,11 +112,11 @@ export function SpecialtyCreateModal({
         >
           <div className="px-6 overflow-y-auto flex-1 py-4 space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="specialty-name" className="text-sm font-medium">
+              <Label htmlFor="contractor-name" className="text-sm font-medium">
                 Nombre <span className="text-destructive">*</span>
               </Label>
               <Input
-                id="specialty-name"
+                id="contractor-name"
                 {...register('name')}
                 className={cn('h-9', invalid('name'))}
               />
@@ -121,12 +128,12 @@ export function SpecialtyCreateModal({
               ) : null}
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="specialty-description" className="text-sm font-medium">
+              <Label htmlFor="contractor-description" className="text-sm font-medium">
                 Descripción{' '}
                 <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
               </Label>
               <Textarea
-                id="specialty-description"
+                id="contractor-description"
                 rows={3}
                 {...register('description')}
                 className={invalid('description')}
@@ -138,13 +145,20 @@ export function SpecialtyCreateModal({
                 </p>
               ) : null}
             </div>
-            <FormSwitch
-              label="Habilitada"
-              description="Si está deshabilitada, no aparecerá como opción asignable."
-              checked={isActive}
-              onCheckedChange={(v) =>
-                setValue('isActive', v, { shouldDirty: true, shouldValidate: true })
-              }
+            <Controller
+              name="insuranceIds"
+              control={control}
+              render={({ field }) => (
+                <InsuranceMultiSelect
+                  value={field.value ?? []}
+                  onChange={field.onChange}
+                  error={
+                    typeof errors.insuranceIds?.message === 'string'
+                      ? errors.insuranceIds.message
+                      : undefined
+                  }
+                />
+              )}
             />
           </div>
           <AlertDialogFooter className="px-6 py-4 border-t gap-2">
@@ -152,7 +166,7 @@ export function SpecialtyCreateModal({
               Cancelar
             </Button>
             <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? 'Creando…' : 'Crear especialidad'}
+              {isSubmitting ? 'Creando…' : 'Crear contratista'}
             </Button>
           </AlertDialogFooter>
         </form>

@@ -170,7 +170,7 @@ export function DoctorForm({
 
       <FormSection
         title="Persona jurídica"
-        description="Activá si el doctor opera como empresa o entidad. El RIF es obligatorio en ese caso."
+        description="Activa si el doctor opera como empresa o entidad. El RIF es obligatorio en ese caso."
       >
         <FormSwitch
           label="Es persona jurídica"
@@ -226,7 +226,7 @@ export function DoctorForm({
 
       <FormSection
         title="Especialidades"
-        description="Asigná al menos una especialidad clínica."
+        description="Asigna al menos una especialidad clínica."
         allowOverflow
       >
         <Controller
@@ -249,7 +249,7 @@ export function DoctorForm({
 
       <FormSection
         title="Métodos de pago"
-        description="Pago móvil, transferencia o método libre. Los datos se autocompletan desde el doctor pero podés editarlos manualmente."
+        description="Pago móvil, transferencia o método libre. Los datos se autocompletan desde el doctor pero puedes editarlos manualmente."
       >
         <Controller
           name="paymentMethods"
@@ -308,7 +308,7 @@ export function DoctorForm({
 
       <FormSection
         title="Acceso al sistema"
-        description="Habilitá que el doctor inicie sesión como usuario proveedor para cargar el informe (Paso 3) de sus órdenes."
+        description="Habilita que el doctor inicie sesión como usuario proveedor para cargar el informe (Paso 3) de sus órdenes."
       >
         <div className="space-y-4">
           {mode === 'edit' && (
@@ -319,7 +319,7 @@ export function DoctorForm({
                 </span>
               ) : (
                 <span className="text-muted-foreground">
-                  Sin acceso. Establecé una contraseña para habilitarlo.
+                  Sin acceso. Establece una contraseña para habilitarlo.
                 </span>
               )}
             </div>
@@ -377,9 +377,9 @@ export function DoctorForm({
             <p className="text-xs text-muted-foreground sm:col-span-2">
               {mode === 'edit'
                 ? accountExists
-                  ? 'Dejá la contraseña vacía para mantener la actual. Si la defines, se actualiza el acceso del doctor.'
-                  : 'Definí una contraseña para habilitar el acceso. El email de arriba será su usuario.'
-                : 'Dejá la contraseña vacía si el doctor no necesita acceso. Si la defines, el email pasa a ser su usuario.'}{' '}
+                  ? 'Deja la contraseña vacía para mantener la actual. Si la defines, se actualiza el acceso del doctor.'
+                  : 'Define una contraseña para habilitar el acceso. El email de arriba será su usuario.'
+                : 'Deja la contraseña vacía si el doctor no necesita acceso. Si la defines, el email pasa a ser su usuario.'}{' '}
               Mínimo 8 caracteres con mayúscula, minúscula, número y carácter especial.
             </p>
           </FormGrid>

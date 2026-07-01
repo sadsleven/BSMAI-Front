@@ -12,6 +12,7 @@ import { orderGateway } from '../../infrastructure/orderGateway';
 import {
   holderDisplayId,
   holderDisplayName,
+  orderServiceKeyDisplay,
   ORDER_STATUS_LABEL,
   ORDER_TYPE_LABEL,
   PAYMENT_TYPE_LABEL,
@@ -140,8 +141,14 @@ export function OrderDetailBody({
             }
           />
         )}
-        {order.serviceKey ? (
-          <DetailRow label="Clave de servicio" value={order.serviceKey} />
+        {orderServiceKeyDisplay(order) ? (
+          <DetailRow
+            label="Clave de servicio"
+            value={orderServiceKeyDisplay(order)}
+          />
+        ) : null}
+        {order.type === 'credit' && order.isReimbursement ? (
+          <DetailRow label="Reembolso" value="Sí" />
         ) : null}
       </DetailSection>
 

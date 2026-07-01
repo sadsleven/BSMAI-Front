@@ -471,7 +471,7 @@ export function OrderPaymentForm({
                         disabled={disabled}
                       >
                         <SelectTrigger className="h-9">
-                          <SelectValue placeholder="Seleccioná una cuenta" />
+                          <SelectValue placeholder="Selecciona una cuenta" />
                         </SelectTrigger>
                         <SelectContent>
                           {rowMethods.map((m) => (
@@ -496,7 +496,7 @@ export function OrderPaymentForm({
                         disabled={disabled || bankLocked}
                       >
                         <SelectTrigger className={cn('h-9', err.bankCode && 'border-destructive')}>
-                          <SelectValue placeholder="Seleccioná banco" />
+                          <SelectValue placeholder="Selecciona banco" />
                         </SelectTrigger>
                         <SelectContent>
                           {banks.map((b) => (

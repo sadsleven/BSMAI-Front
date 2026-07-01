@@ -52,7 +52,7 @@ export function DateTimePicker({
   onChange,
   onBlur,
   id,
-  placeholder = 'Seleccioná fecha y hora',
+  placeholder = 'Selecciona fecha y hora',
   invalid,
   disabled,
   className,

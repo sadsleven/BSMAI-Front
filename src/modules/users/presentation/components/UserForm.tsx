@@ -161,16 +161,28 @@ export function UserForm({ mode, canEditSuperAdmin, existingRoles, existingBranc
             <FieldError message={e.lastName?.message} />
           </div>
           <div className="space-y-1.5 sm:col-span-2">
-            <RequiredLabel htmlFor="email" required>
+            <RequiredLabel htmlFor="email" required={mode === 'create'}>
               Email
             </RequiredLabel>
             <Input
               id="email"
               type="email"
               {...register('email')}
-              className={cn('h-9', inputInvalid('email'))}
+              readOnly={mode === 'edit'}
+              disabled={mode === 'edit'}
+              className={cn(
+                'h-9',
+                inputInvalid('email'),
+                mode === 'edit' && 'bg-muted/50 text-muted-foreground',
+              )}
             />
-            <FieldError message={e.email?.message} />
+            {mode === 'edit' ? (
+              <p className="text-xs text-muted-foreground">
+                El correo no se puede modificar.
+              </p>
+            ) : (
+              <FieldError message={e.email?.message} />
+            )}
           </div>
           <div className="space-y-1.5 sm:col-span-2">
             <RequiredLabel htmlFor="phoneNumber">Teléfono</RequiredLabel>
@@ -203,7 +215,7 @@ export function UserForm({ mode, canEditSuperAdmin, existingRoles, existingBranc
                     id="academicDegree"
                     className={cn('h-9', inputInvalid('academicDegree'))}
                   >
-                    <SelectValue placeholder="Seleccioná un título" />
+                    <SelectValue placeholder="Selecciona un título" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">
@@ -242,7 +254,7 @@ export function UserForm({ mode, canEditSuperAdmin, existingRoles, existingBranc
       {mode === 'create' ? (
         <FormSection
           title="Acceso"
-          description="Definí la contraseña inicial. El usuario podrá cambiarla luego desde su perfil."
+          description="Define la contraseña inicial. El usuario podrá cambiarla luego desde su perfil."
         >
           <FormGrid>
             <div className="space-y-1.5">
@@ -276,7 +288,7 @@ export function UserForm({ mode, canEditSuperAdmin, existingRoles, existingBranc
 
       <FormSection
         title="Roles y permisos"
-        description="Asigná uno o más roles. Los permisos efectivos resultan de la unión."
+        description="Asigna uno o más roles. Los permisos efectivos resultan de la unión."
       >
         <div className="space-y-3">
           <Label className="text-sm font-medium">Roles</Label>
@@ -328,7 +340,7 @@ export function UserForm({ mode, canEditSuperAdmin, existingRoles, existingBranc
           </div>
           {staleAssigned.length > 0 ? (
             <p className="text-xs text-muted-foreground">
-              Algunos roles asignados no están disponibles para nuevos usuarios; podés quitarlos
+              Algunos roles asignados no están disponibles para nuevos usuarios; puedes quitarlos
               pero no volver a agregarlos desde el selector.
             </p>
           ) : null}

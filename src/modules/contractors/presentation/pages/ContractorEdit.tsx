@@ -143,7 +143,7 @@ export function ContractorEdit() {
 
         <FormSection
           title="Seguros"
-          description="Asigná los seguros que ofrece este contratista. Los pacientes con este contratista heredarán estos seguros."
+          description="Asigna los seguros que ofrece este contratista. Los pacientes con este contratista heredarán estos seguros."
           allowOverflow
         >
           <Controller

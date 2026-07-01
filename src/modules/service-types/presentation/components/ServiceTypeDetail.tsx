@@ -17,6 +17,27 @@ export type ServiceTypeDetailProps = {
   onOpenChange: (open: boolean) => void;
 };
 
+/** Sección de asignaciones de precio (Seguros / Doctores / Centros). */
+function PriceAssignmentSection({
+  title,
+  items,
+}: {
+  title: string;
+  items: { id: string; name: string; priceUsd: string | number }[];
+}) {
+  return (
+    <DetailSection title={items.length ? `${title} (${items.length})` : title}>
+      {items.length === 0 ? (
+        <p className="text-xs text-muted-foreground">Sin asignaciones</p>
+      ) : (
+        items.map((it) => (
+          <DetailRow key={it.id} label={it.name} value={`$ ${formatMoney(it.priceUsd)}`} />
+        ))
+      )}
+    </DetailSection>
+  );
+}
+
 export function ServiceTypeDetail({ serviceTypeId, open, onOpenChange }: ServiceTypeDetailProps) {
   const [serviceType, setServiceType] = useState<ServiceType | null>(null);
   const [loading, setLoading] = useState(false);
@@ -80,6 +101,30 @@ export function ServiceTypeDetail({ serviceTypeId, open, onOpenChange }: Service
               }
             />
           </DetailSection>
+          <PriceAssignmentSection
+            title="Seguros"
+            items={(serviceType.insurancePrices ?? []).map((p) => ({
+              id: p.insuranceId,
+              name: p.insuranceName,
+              priceUsd: p.priceUsd,
+            }))}
+          />
+          <PriceAssignmentSection
+            title="Doctores"
+            items={(serviceType.doctorPrices ?? []).map((p) => ({
+              id: p.doctorId,
+              name: p.doctorName,
+              priceUsd: p.priceUsd,
+            }))}
+          />
+          <PriceAssignmentSection
+            title="Centros de atención"
+            items={(serviceType.careCenterPrices ?? []).map((p) => ({
+              id: p.careCenterId,
+              name: p.careCenterName,
+              priceUsd: p.priceUsd,
+            }))}
+          />
           {(serviceType.createdAt || serviceType.updatedAt) && (
             <DetailSection title="Auditoría">
               {serviceType.createdAt && (

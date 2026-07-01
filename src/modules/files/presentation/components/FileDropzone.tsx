@@ -152,7 +152,7 @@ export function FileDropzone({
           }}
         >
           <Upload className="w-6 h-6 text-muted-foreground" />
-          <span className="text-sm">Arrastrá o haz click para subir</span>
+          <span className="text-sm">Arrastra o haz click para subir</span>
           <span className="text-xs text-muted-foreground">
             Máximo {formatBytes(maxSizeBytes)} por archivo
           </span>
