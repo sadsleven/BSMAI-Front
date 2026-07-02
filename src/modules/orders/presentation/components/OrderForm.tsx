@@ -389,6 +389,7 @@ export function OrderForm({
     }
     if (next !== 'cashea') {
       setValue('casheaFirstInstallmentAmount', 0, { shouldDirty: true });
+      setValue('casheaInitialPercent', 0, { shouldDirty: true });
     }
     if (next !== 'insurance') {
       setValue('serviceKey', '', { shouldDirty: true });
@@ -616,12 +617,41 @@ export function OrderForm({
   );
 
   // Cashea: tasas snapshot si la orden ya tiene snapshot, sino la config global
-  // cargada on-demand. El monto de la inicial es un campo del form (editable en
-  // borrador) y la cobra el comercio del titular en el Paso 1.
+  // cargada on-demand. La inicial se ingresa como % del total (0 ≤ pct < 100);
+  // el monto (readonly) se deriva y la cobra el comercio del titular en Paso 1.
   const casheaFirstInstallmentAmount = useWatch({
     control,
     name: 'casheaFirstInstallmentAmount',
   }) as number | undefined;
+  const casheaInitialPercent = useWatch({
+    control,
+    name: 'casheaInitialPercent',
+  }) as number | undefined;
+  // Deriva el monto de la inicial = round2(total × pct/100) SÓLO cuando cambia
+  // el % o el total. El primer render como cashea (reset de un borrador) respeta
+  // el monto guardado: rederivar desde un % redondeado a 2 decimales puede
+  // moverlo por centavos y descuadrar los pagos ya registrados.
+  const casheaDeriveRef = useRef<{
+    pct: number | undefined;
+    total: number | undefined;
+  } | null>(null);
+  useEffect(() => {
+    if (!isCashea) {
+      casheaDeriveRef.current = null;
+      return;
+    }
+    const prev = casheaDeriveRef.current;
+    casheaDeriveRef.current = { pct: casheaInitialPercent, total: priceAmount };
+    if (!prev) return;
+    if (prev.pct === casheaInitialPercent && prev.total === priceAmount) return;
+    const pct = casheaInitialPercent ?? 0;
+    const total = priceAmount ?? 0;
+    const amount = pct > 0 && total > 0 ? Math.round(total * pct) / 100 : 0;
+    setValue('casheaFirstInstallmentAmount', amount, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+  }, [isCashea, casheaInitialPercent, priceAmount, setValue]);
   const [globalCasheaConfig, setGlobalCasheaConfig] = useState<{
     commissionRate: number;
     financingRate: number;
@@ -664,8 +694,9 @@ export function OrderForm({
   const diff = paymentTarget - totalPaid;
 
   // Reporta al padre si el Paso 1 cumple la regla de pago. Sólo `cash` bloquea
-  // aquí (debe cuadrar); `cashea` (inicial > 0) ya lo valida zod; crédito/seguro
-  // no piden pago. Permite frenar el submit sin pegar al backend.
+  // aquí (debe cuadrar); `cashea` (% de inicial 0 ≤ pct < 100) ya lo valida zod
+  // y el cuadre pagos=inicial lo exige el BE; crédito/seguro no piden pago.
+  // Permite frenar el submit sin pegar al backend.
   const step1PaymentOk = type !== 'cash' || Math.abs(diff) < 0.01;
   useEffect(() => {
     onStep1PaymentOkChange?.(step1PaymentOk);
@@ -1515,28 +1546,52 @@ export function OrderForm({
         ) : null}
         {isCashea ? (
           <div className="mt-4 space-y-3">
-            <div className="space-y-1.5 max-w-xs">
-              <RequiredLabel required>Inicial</RequiredLabel>
-              <Controller
-                control={control}
-                name="casheaFirstInstallmentAmount"
-                render={({ field }) => (
-                  <CurrencyAmountInput
-                    value={typeof field.value === 'number' ? field.value : undefined}
-                    onChange={(v) => field.onChange(v ?? 0)}
-                    currencyPrefix="USD"
-                    disabled={!!savedOrder && savedOrder.status !== 'draft'}
-                    className={cn(
-                      errors.casheaFirstInstallmentAmount?.message &&
-                        'border-destructive',
-                    )}
-                  />
-                )}
-              />
-              <FieldError message={errors.casheaFirstInstallmentAmount?.message} />
-              <p className="text-[11px] text-muted-foreground leading-tight">
-                La cobra el comercio del titular en el Paso 1. No genera comisión.
-              </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-[18px] max-w-xl">
+              <div className="space-y-1.5">
+                <RequiredLabel required>Inicial (%)</RequiredLabel>
+                <Controller
+                  control={control}
+                  name="casheaInitialPercent"
+                  render={({ field }) => (
+                    <CurrencyAmountInput
+                      value={typeof field.value === 'number' ? field.value : undefined}
+                      onChange={(v) => field.onChange(v ?? 0)}
+                      currencyPrefix="%"
+                      disabled={!!savedOrder && savedOrder.status !== 'draft'}
+                      className={cn(
+                        errors.casheaInitialPercent?.message && 'border-destructive',
+                      )}
+                    />
+                  )}
+                />
+                <FieldError message={errors.casheaInitialPercent?.message} />
+                <p className="text-[11px] text-muted-foreground leading-tight">
+                  Puede ser 0%. Debe ser menor al 100%.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <RequiredLabel>Monto de la inicial</RequiredLabel>
+                <Controller
+                  control={control}
+                  name="casheaFirstInstallmentAmount"
+                  render={({ field }) => (
+                    <CurrencyAmountInput
+                      value={typeof field.value === 'number' ? field.value : undefined}
+                      onChange={(v) => field.onChange(v ?? 0)}
+                      currencyPrefix="USD"
+                      readOnly
+                      className={cn(
+                        errors.casheaFirstInstallmentAmount?.message &&
+                          'border-destructive',
+                      )}
+                    />
+                  )}
+                />
+                <FieldError message={errors.casheaFirstInstallmentAmount?.message} />
+                <p className="text-[11px] text-muted-foreground leading-tight">
+                  La cobra el comercio del titular en el Paso 1. No genera comisión.
+                </p>
+              </div>
             </div>
             <div className="rounded-lg border border-dashed bg-warning-soft/40 px-4 py-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1">
@@ -1568,7 +1623,7 @@ export function OrderForm({
               </div>
               <div className="space-y-1">
                 <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
-                  Comisión Cashea
+                  Comisión del Total
                 </div>
                 <div className="text-sm font-semibold text-destructive">
                   -{formatMoney(casheaCommissionAmount)} USD
@@ -1579,7 +1634,7 @@ export function OrderForm({
               </div>
               <div className="space-y-1">
                 <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
-                  Financiamiento
+                  Comisión del Financiamiento
                 </div>
                 <div className="text-sm font-semibold text-destructive">
                   -{formatMoney(casheaFinancingAmount)} USD

@@ -33,6 +33,7 @@ import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { getHttpErrorMessage } from '@/lib/api';
 import { formatBs, formatMoney } from '@/lib/format/money';
+import { casheaBreakdownCents } from '@/lib/money/cashea';
 import { orderPaymentSchema, type OrderPaymentValues } from '@/lib/validations/schemas';
 import {
   OrderPaymentForm,
@@ -597,6 +598,45 @@ function BatchDetail({ id }: { id: string }) {
   );
 
   const unit = fixed ? 'Bs.' : 'USD';
+
+  // Desglose Cashea agregado del lote (sólo lotes cashea): suma el breakdown
+  // exacto en centavos de cada orden con sus tasas snapshot (pueden diferir
+  // entre órdenes). El neto agregado = "Total a cobrar" del lote.
+  const casheaSummary = useMemo(() => {
+    if (debtorType !== 'cashea' || !batch) return null;
+    let totalCents = 0;
+    let initialCents = 0;
+    let remainingCents = 0;
+    let commissionCents = 0;
+    let financingCents = 0;
+    let netCents = 0;
+    for (const row of batch.orders ?? []) {
+      const o = row.order;
+      if (!o) continue;
+      const total = Number(o.priceAmount ?? 0);
+      const initial = Number(o.casheaFirstInstallmentAmount ?? 0);
+      const b = casheaBreakdownCents(
+        total,
+        initial,
+        Number(o.casheaCommissionRate ?? 0),
+        Number(o.casheaFinancingRate ?? 0),
+      );
+      totalCents += Math.round(total * 100);
+      initialCents += Math.round(initial * 100);
+      remainingCents += b.remainingCents;
+      commissionCents += b.commissionCents;
+      financingCents += b.financingCents;
+      netCents += b.netCents;
+    }
+    return {
+      total: totalCents / 100,
+      initial: initialCents / 100,
+      remaining: remainingCents / 100,
+      commission: commissionCents / 100,
+      financing: financingCents / 100,
+      net: netCents / 100,
+    };
+  }, [debtorType, batch]);
   const target = fixed ? batch?.targetBs ?? 0 : batch?.targetUsd ?? 0;
   const collected = fixed ? batch?.collectedBs ?? 0 : batch?.collectedUsd ?? 0;
   const pendingVal = fixed ? batch?.pendingBs ?? 0 : batch?.pendingUsd ?? 0;
@@ -810,6 +850,84 @@ function BatchDetail({ id }: { id: string }) {
             }
           />
         </div>
+        {casheaSummary ? (
+          <>
+            <div className="mt-3 rounded-lg border border-dashed bg-warning-soft/40 px-4 py-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+                  Precio total órdenes
+                </div>
+                <div className="text-sm font-semibold">
+                  {formatMoney(casheaSummary.total)} USD
+                </div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+                  Inicial (Paso 1)
+                </div>
+                <div className="text-sm font-semibold">
+                  {formatMoney(casheaSummary.initial)} USD
+                </div>
+                <div className="text-[10px] text-muted-foreground leading-tight">
+                  ya cobrada por el comercio, no entra al lote
+                </div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+                  Restante
+                </div>
+                <div className="text-sm font-semibold">
+                  {formatMoney(casheaSummary.remaining)} USD
+                </div>
+                <div className="text-[10px] text-muted-foreground leading-tight">
+                  total − inicial
+                </div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+                  Comisión del Total
+                </div>
+                <div className="text-sm font-semibold text-destructive">
+                  -{formatMoney(casheaSummary.commission)} USD
+                </div>
+                <div className="text-[10px] text-muted-foreground leading-tight">
+                  sobre el total de cada orden
+                </div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+                  Comisión del Financiamiento
+                </div>
+                <div className="text-sm font-semibold text-destructive">
+                  -{formatMoney(casheaSummary.financing)} USD
+                </div>
+                <div className="text-[10px] text-muted-foreground leading-tight">
+                  sobre el restante de cada orden
+                </div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+                  Monto a recibir por Cashea
+                </div>
+                <div className="text-base font-bold text-success">
+                  {formatMoney(casheaSummary.net)} USD
+                </div>
+                <div className="text-[10px] text-muted-foreground leading-tight">
+                  restante − comisión − financiamiento
+                  {Math.abs(casheaSummary.net - target) < 0.01
+                    ? ' = total a cobrar'
+                    : ''}
+                </div>
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-2">
+              Calculado con las tasas snapshot de cada orden al momento de crearla.
+              {Math.abs(casheaSummary.net - target) >= 0.01
+                ? ' Difiere del Total a cobrar: los targets del lote son snapshot al crear el lote (fórmula vigente en ese momento).'
+                : ''}
+            </p>
+          </>
+        ) : null}
         {rateInSummary ? (
           <div className="mt-3 sm:max-w-xs">
             <UsdRateSelect

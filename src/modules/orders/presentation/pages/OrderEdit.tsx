@@ -139,6 +139,7 @@ export function OrderEdit() {
       appointmentDate: '',
       priceAmount: 0,
       casheaFirstInstallmentAmount: 0,
+      casheaInitialPercent: 0,
       useFixedRate: false,
       fixedExchangeRateId: '',
       payments: [],
@@ -198,6 +199,17 @@ export function OrderEdit() {
           casheaFirstInstallmentAmount:
             order.casheaFirstInstallmentAmount != null
               ? Number(order.casheaFirstInstallmentAmount)
+              : 0,
+          // % derivado del monto guardado (redondeo display a 2 decimales); el
+          // monto persistido no se rederiva hasta que el usuario cambie el %.
+          casheaInitialPercent:
+            order.casheaFirstInstallmentAmount != null &&
+            Number(order.priceAmount) > 0
+              ? Math.round(
+                  (Number(order.casheaFirstInstallmentAmount) /
+                    Number(order.priceAmount)) *
+                    10000,
+                ) / 100
               : 0,
           useFixedRate: !!order.useFixedRate,
           fixedExchangeRateId: order.fixedExchangeRateId ?? '',

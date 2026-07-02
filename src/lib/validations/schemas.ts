@@ -977,6 +977,13 @@ export const orderSchema = z
       .min(0, 'No puede ser negativo')
       .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' })
       .optional(),
+    // % de inicial Cashea (FE-only, no viaja al BE): el monto de la inicial se
+    // deriva readonly como round2(priceAmount × pct / 100).
+    casheaInitialPercent: z
+      .number()
+      .min(0, 'No puede ser negativo')
+      .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' })
+      .optional(),
     useFixedRate: z.boolean().optional(),
     fixedExchangeRateId: z.string().uuid().optional().or(z.literal('')),
     payments: z.array(orderPaymentSchema).max(50).optional(),
@@ -1070,27 +1077,31 @@ export const orderSchema = z
         });
     }
     if (val.type === 'cashea') {
-      if (val.casheaFirstInstallmentAmount == null) {
+      // La inicial se ingresa como % del total (el monto se deriva readonly).
+      // Puede ser 0% (sin pago en el Paso 1) pero nunca 100% o más: Cashea debe
+      // financiar un restante > 0.
+      if (val.casheaInitialPercent == null) {
         ctx.addIssue({
           code: 'custom',
-          path: ['casheaFirstInstallmentAmount'],
-          message: 'Ingresa el monto de la inicial',
+          path: ['casheaInitialPercent'],
+          message: 'Ingresa el % de inicial',
         });
-      } else if (val.casheaFirstInstallmentAmount <= 0) {
-        // Cashea exige una inicial obligatoria para continuar al Paso 2.
+      } else if (val.casheaInitialPercent >= 100) {
         ctx.addIssue({
           code: 'custom',
-          path: ['casheaFirstInstallmentAmount'],
-          message: 'La inicial debe ser mayor a 0',
+          path: ['casheaInitialPercent'],
+          message: 'La inicial debe ser menor al 100%',
         });
       } else if (
         typeof val.priceAmount === 'number' &&
-        val.casheaFirstInstallmentAmount > val.priceAmount
+        val.priceAmount > 0 &&
+        val.casheaFirstInstallmentAmount != null &&
+        val.casheaFirstInstallmentAmount >= val.priceAmount
       ) {
         ctx.addIssue({
           code: 'custom',
-          path: ['casheaFirstInstallmentAmount'],
-          message: 'La inicial no puede superar el precio total',
+          path: ['casheaInitialPercent'],
+          message: 'La inicial no puede igualar o superar el precio total',
         });
       }
     }

@@ -41,6 +41,7 @@ const DEFAULT_VALUES: OrderValues = {
   appointmentDate: '',
   priceAmount: 0,
   casheaFirstInstallmentAmount: 0,
+  casheaInitialPercent: 0,
   useFixedRate: false,
   fixedExchangeRateId: '',
   payments: [],
@@ -136,6 +137,22 @@ export function OrderCreate() {
         const draft = await orderDraftGateway.getById(resumeDraftId);
         if (cancelled) return;
         const payload = (draft.payload ?? {}) as Partial<OrderValues>;
+        // Borradores guardados antes del % de inicial Cashea: derivar el % del
+        // monto guardado; sin esto hidratan 0% con un monto > 0 y el primer
+        // cambio del % pisaría la inicial con un valor inconsistente.
+        if (
+          payload.type === 'cashea' &&
+          payload.casheaInitialPercent == null &&
+          typeof payload.casheaFirstInstallmentAmount === 'number' &&
+          typeof payload.priceAmount === 'number' &&
+          payload.priceAmount > 0
+        ) {
+          payload.casheaInitialPercent =
+            Math.round(
+              (payload.casheaFirstInstallmentAmount / payload.priceAmount) *
+                10000,
+            ) / 100;
+        }
         methods.reset({ ...DEFAULT_VALUES, ...payload });
         const holderId = payload.holderId;
         const patientId = payload.patientId;

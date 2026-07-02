@@ -54,6 +54,10 @@ export interface AccountsReceivableOrder {
     priceAmount?: string | number;
     useFixedRate?: boolean;
     fixedExchangeRate?: { id: string; amountBs: string | number } | null;
+    /** Snapshot Cashea de la orden (sólo type='cashea'; alimenta el desglose del lote). */
+    casheaFirstInstallmentAmount?: string | number | null;
+    casheaCommissionRate?: string | number | null;
+    casheaFinancingRate?: string | number | null;
     holder?: OrderRefSummary | null;
     patient?: OrderRefSummary | null;
   } | null;
