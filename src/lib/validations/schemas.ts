@@ -95,20 +95,12 @@ export type LoginValues = z.infer<typeof loginSchema>;
  * libre ≤40 chars; este whitelist sólo controla el selector.
  */
 export const ACADEMIC_DEGREES = [
-  'Bachiller',
-  'TSU',
-  'Licenciado',
-  'Ingeniero',
-  'Médico',
-  'Abogado',
-  'Arquitecto',
-  'Contador Público',
-  'Economista',
-  'Administrador',
-  'Profesor',
-  'Especialista',
-  'Magíster',
-  'Doctor (PhD)',
+  'Br.',    // Bachiller
+  'TSU',    // Técnico Superior Universitario
+  'Lic.',   // Licenciado
+  'Esp.',   // Especialista
+  'Mg.',    // Magíster
+  'PhD',    // Doctor (PhD)
 ] as const;
 export type AcademicDegree = (typeof ACADEMIC_DEGREES)[number];
 
@@ -141,7 +133,7 @@ export const createUserSchema = z
     academicDegree: academicDegreeSchema,
     jobTitle: jobTitleSchema,
     password: passwordSchema,
-    confirmPassword: z.string({ error: 'Confirmá la contraseña' }),
+    confirmPassword: z.string({ error: 'Confirma la contraseña' }),
     isActive: z.boolean().optional(),
     isSuperAdmin: z.boolean().optional(),
     roleIds: z.array(z.string().uuid()).optional(),
@@ -173,7 +165,7 @@ export const changeOwnPasswordSchema = z
       .string({ error: 'La contraseña actual es obligatoria' })
       .min(1, 'La contraseña actual es obligatoria'),
     newPassword: passwordSchema,
-    confirmNewPassword: z.string({ error: 'Confirmá la nueva contraseña' }),
+    confirmNewPassword: z.string({ error: 'Confirma la nueva contraseña' }),
   })
   .refine((d) => d.newPassword === d.confirmNewPassword, {
     path: ['confirmNewPassword'],
@@ -194,7 +186,7 @@ export const adminChangePasswordSchema = (requireCurrent: boolean) =>
             .min(1, 'La contraseña actual es obligatoria')
         : z.string().optional(),
       newPassword: passwordSchema,
-      confirmNewPassword: z.string({ error: 'Confirmá la nueva contraseña' }),
+      confirmNewPassword: z.string({ error: 'Confirma la nueva contraseña' }),
     })
     .refine((d) => d.newPassword === d.confirmNewPassword, {
       path: ['confirmNewPassword'],
@@ -214,7 +206,7 @@ export const adminChangePasswordSchema = (requireCurrent: boolean) =>
 export const patientSchema = z
   .object({
     personType: z.enum(['natural', 'legal_entity'], {
-      error: 'Seleccioná un tipo de persona',
+      error: 'Selecciona un tipo de persona',
     }),
     cedula: z.string().optional().or(z.literal('')),
     firstName: z.string().optional().or(z.literal('')),
@@ -292,11 +284,11 @@ export const patientSchema = z
       }
       if (!val.rif) {
         ctx.addIssue({ code: 'custom', path: ['rif'], message: 'El RIF es obligatorio' });
-      } else if (!/^[JGVE]-\d{1,2}\.\d{3}\.\d{3}-\d$/.test(val.rif)) {
+      } else if (!/^[JGVE]-\d{7,8}-\d$/.test(val.rif)) {
         ctx.addIssue({
           code: 'custom',
           path: ['rif'],
-          message: 'Formato inválido. Ej: J-12.345.678-9',
+          message: 'Formato inválido. Ej: J-12345678-9',
         });
       }
     }
@@ -365,7 +357,7 @@ export type ServiceTypeValues = z.infer<typeof serviceTypeSchema>;
  * y > 0. Sin duplicados por serviceTypeId.
  */
 const servicePriceRowSchema = z.object({
-  serviceTypeId: z.string().uuid({ message: 'Seleccioná un servicio' }),
+  serviceTypeId: z.string().uuid({ message: 'Selecciona un servicio' }),
   priceUsd: z
     .number({ error: 'Precio USD requerido' })
     .positive('Debe ser > 0')
@@ -418,7 +410,7 @@ export type ContractorValues = z.infer<typeof contractorSchema>;
  * el FE convierte 485,22 → 485.22 antes de enviarlo. 2 decimales máx.
  */
 export const exchangeRateSchema = z.object({
-  currency: z.enum(['USD', 'EUR'], { error: 'Seleccioná una moneda' }),
+  currency: z.enum(['USD', 'EUR'], { error: 'Selecciona una moneda' }),
   amountBs: z
     .number({ error: 'El monto es obligatorio' })
     .positive('El monto debe ser mayor a 0')
@@ -475,6 +467,7 @@ export const insuranceSchema = z.object({
   phones: phonesArraySchema,
   servicePrices: servicePricesArraySchema,
   isActive: z.boolean().optional(),
+  isIndexed: z.boolean().optional(),
 });
 export type InsuranceValues = z.infer<typeof insuranceSchema>;
 
@@ -500,7 +493,7 @@ const optString = (max: number) => z.string().max(max).optional();
 export const paymentMethodSchema = z
   .object({
     id: z.string().uuid().optional(),
-    type: z.enum(PAYMENT_METHOD_TYPES, { error: 'Seleccioná un tipo' }),
+    type: z.enum(PAYMENT_METHOD_TYPES, { error: 'Selecciona un tipo' }),
     isActive: z.boolean().optional(),
     bankCode: optString(8),
     phoneNumber: optString(11),
@@ -578,7 +571,7 @@ export const paymentAccountSchema = z
       .string({ error: 'El nombre es obligatorio' })
       .min(1, 'El nombre es obligatorio')
       .max(200, 'El nombre no puede superar 200 caracteres'),
-    type: z.enum(PAYMENT_ACCOUNT_TYPES, { error: 'Seleccioná un tipo' }),
+    type: z.enum(PAYMENT_ACCOUNT_TYPES, { error: 'Selecciona un tipo' }),
     isActive: z.boolean().optional(),
     bankCode: optString(8),
     phoneNumber: optString(11),
@@ -693,7 +686,7 @@ export const doctorSchema = z
     phones: phonesArraySchema,
     specialtyIds: z
       .array(z.string().uuid())
-      .min(1, 'Asigná al menos una especialidad')
+      .min(1, 'Asigna al menos una especialidad')
       .max(20, 'Máximo 20 especialidades'),
     paymentMethods: paymentMethodsArraySchema,
     servicePrices: servicePricesArraySchema,
@@ -710,11 +703,11 @@ export const doctorSchema = z
           path: ['rif'],
           message: 'El RIF es requerido cuando es persona jurídica',
         });
-      } else if (!/^[JGVE]-\d{1,2}\.\d{3}\.\d{3}-\d$/.test(val.rif)) {
+      } else if (!/^[JGVE]-\d{7,8}-\d$/.test(val.rif)) {
         ctx.addIssue({
           code: 'custom',
           path: ['rif'],
-          message: 'Formato inválido. Ej: J-12.345.678-9',
+          message: 'Formato inválido. Ej: J-12345678-9',
         });
       }
     } else if (val.rif) {
@@ -743,7 +736,7 @@ export const careCenterSchema = z
     phones: phonesArraySchema,
     specialtyIds: z
       .array(z.string().uuid())
-      .min(1, 'Asigná al menos una especialidad')
+      .min(1, 'Asigna al menos una especialidad')
       .max(50, 'Máximo 50 especialidades'),
     paymentMethods: paymentMethodsArraySchema,
     servicePrices: servicePricesArraySchema,
@@ -940,6 +933,7 @@ export const orderSchema = z
       .max(30, 'La clave de servicio no puede superar 30 caracteres')
       .optional()
       .or(z.literal('')),
+    isReimbursement: z.boolean().optional(),
     specialtyId: z.string().uuid({ message: 'Especialidad requerida' }),
     serviceTypes: z
       .array(
@@ -961,7 +955,7 @@ export const orderSchema = z
             .max(300, 'Máximo 300 caracteres'),
         }),
       )
-      .min(1, 'Asigná al menos un tipo de servicio')
+      .min(1, 'Asigna al menos un tipo de servicio')
       .max(50, 'Máximo 50 tipos de servicio'),
     pathologyIds: z
       .array(z.string().uuid())
@@ -979,6 +973,13 @@ export const orderSchema = z
       .positive('Debe ser > 0')
       .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' }),
     casheaFirstInstallmentAmount: z
+      .number()
+      .min(0, 'No puede ser negativo')
+      .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' })
+      .optional(),
+    // % de inicial Cashea (FE-only, no viaja al BE): el monto de la inicial se
+    // deriva readonly como round2(priceAmount × pct / 100).
+    casheaInitialPercent: z
       .number()
       .min(0, 'No puede ser negativo')
       .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' })
@@ -1046,7 +1047,7 @@ export const orderSchema = z
         ctx.addIssue({
           code: 'custom',
           path: ['insuranceSource'],
-          message: 'Elegí un seguro del titular (directo o vía contratista)',
+          message: 'Elige un seguro del titular (directo o vía contratista)',
         });
       if (val.insuranceSource === 'via_contractor' && !val.contractorId)
         ctx.addIssue({
@@ -1076,27 +1077,31 @@ export const orderSchema = z
         });
     }
     if (val.type === 'cashea') {
-      if (val.casheaFirstInstallmentAmount == null) {
+      // La inicial se ingresa como % del total (el monto se deriva readonly).
+      // Puede ser 0% (sin pago en el Paso 1) pero nunca 100% o más: Cashea debe
+      // financiar un restante > 0.
+      if (val.casheaInitialPercent == null) {
         ctx.addIssue({
           code: 'custom',
-          path: ['casheaFirstInstallmentAmount'],
-          message: 'Ingresá el monto de la primera cuota',
+          path: ['casheaInitialPercent'],
+          message: 'Ingresa el % de inicial',
         });
-      } else if (val.casheaFirstInstallmentAmount <= 0) {
-        // Cashea exige una cuota inicial obligatoria para continuar al Paso 2.
+      } else if (val.casheaInitialPercent >= 100) {
         ctx.addIssue({
           code: 'custom',
-          path: ['casheaFirstInstallmentAmount'],
-          message: 'La primera cuota (inicial) debe ser mayor a 0',
+          path: ['casheaInitialPercent'],
+          message: 'La inicial debe ser menor al 100%',
         });
       } else if (
         typeof val.priceAmount === 'number' &&
-        val.casheaFirstInstallmentAmount > val.priceAmount
+        val.priceAmount > 0 &&
+        val.casheaFirstInstallmentAmount != null &&
+        val.casheaFirstInstallmentAmount >= val.priceAmount
       ) {
         ctx.addIssue({
           code: 'custom',
-          path: ['casheaFirstInstallmentAmount'],
-          message: 'La primera cuota no puede superar el precio total',
+          path: ['casheaInitialPercent'],
+          message: 'La inicial no puede igualar o superar el precio total',
         });
       }
     }
@@ -1112,7 +1117,7 @@ export const orderSchema = z
         ctx.addIssue({
           code: 'custom',
           path: ['fixedExchangeRateId'],
-          message: 'Seleccioná la tasa fija',
+          message: 'Selecciona la tasa de la orden',
         });
       }
     }

@@ -201,7 +201,7 @@ export function ReportFinancialSummary() {
     >
       {overCap ? (
         <div className="px-4 py-2 text-xs text-warning border border-warning-soft bg-warning-soft rounded-lg">
-          Mostrando hasta {REPORT_PAGE_SIZE} registros por tabla. Aplicá filtros para acotar el reporte.
+          Mostrando hasta {REPORT_PAGE_SIZE} registros por tabla. Aplica filtros para acotar el reporte.
         </div>
       ) : null}
 

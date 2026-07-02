@@ -212,7 +212,7 @@ export function ReportPaymentAccountInflows() {
     >
       {report.truncated ? (
         <div className="px-4 py-2 text-xs text-warning border border-warning-soft bg-warning-soft rounded-lg">
-          El detalle fue truncado al límite. Acotá con filtros de fecha para ver todo.
+          El detalle fue truncado al límite. Acota con filtros de fecha para ver todo.
         </div>
       ) : null}
 
@@ -250,7 +250,7 @@ export function ReportPaymentAccountInflows() {
                     title={hasActiveFilters ? 'Sin resultados' : 'Sin pagos recibidos'}
                     description={
                       hasActiveFilters
-                        ? 'Ajustá los filtros para ver más resultados.'
+                        ? 'Ajusta los filtros para ver más resultados.'
                         : 'Aún no se han recibido pagos en cuentas propias.'
                     }
                   />
@@ -377,7 +377,7 @@ export function ReportPaymentAccountInflows() {
                     title={hasActiveFilters ? 'Sin resultados' : 'Sin pagos recibidos'}
                     description={
                       hasActiveFilters
-                        ? 'Ajustá los filtros para ver más resultados.'
+                        ? 'Ajusta los filtros para ver más resultados.'
                         : 'Aún no se han recibido pagos en cuentas propias.'
                     }
                   />

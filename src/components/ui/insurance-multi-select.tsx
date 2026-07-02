@@ -89,7 +89,7 @@ export function InsuranceMultiSelect({
       searchPlaceholder="Buscar seguro…"
       emptyLabel="No hay seguros disponibles."
       counterSuffix={{ singular: 'seleccionado', plural: 'seleccionados' }}
-      staleHint="Algunos seguros asignados no están disponibles para nuevas asignaciones; podés quitarlos pero no re-agregarlos."
+      staleHint="Algunos seguros asignados no están disponibles para nuevas asignaciones; puedes quitarlos pero no re-agregarlos."
     />
   );
 }

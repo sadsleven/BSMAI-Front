@@ -362,8 +362,8 @@ export function DoctorList() {
                     title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay doctores'}
                     description={
                       hasActiveFilters
-                        ? 'Ajustá los filtros para ver más resultados.'
-                        : 'Creá el primer doctor para empezar a registrar atenciones.'
+                        ? 'Ajusta los filtros para ver más resultados.'
+                        : 'Crea el primer doctor para empezar a registrar atenciones.'
                     }
                     action={
                       hasActiveFilters ? (
@@ -590,7 +590,7 @@ export function DoctorList() {
             description={
               deleteTarget ? (
                 <>
-                  Vas a eliminar a <strong>{fullName(deleteTarget)}</strong>. Elegí entre
+                  Vas a eliminar a <strong>{fullName(deleteTarget)}</strong>. Elige entre
                   mover a la papelera (reversible) o eliminar permanentemente.
                 </>
               ) : null
@@ -603,7 +603,7 @@ export function DoctorList() {
           {hardConfirm === 1 ? (
             <div className="px-6">
               <DialogBanner tone="destructive">
-                Esta acción es irreversible. Confirmá de nuevo para eliminar permanentemente.
+                Esta acción es irreversible. Confirma de nuevo para eliminar permanentemente.
               </DialogBanner>
             </div>
           ) : null}

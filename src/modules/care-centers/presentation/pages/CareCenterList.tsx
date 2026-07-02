@@ -344,8 +344,8 @@ export function CareCenterList() {
                     title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay centros'}
                     description={
                       hasActiveFilters
-                        ? 'Ajustá los filtros para ver más resultados.'
-                        : 'Creá el primer centro para empezar a registrar atenciones.'
+                        ? 'Ajusta los filtros para ver más resultados.'
+                        : 'Crea el primer centro para empezar a registrar atenciones.'
                     }
                     action={
                       hasActiveFilters ? (
@@ -566,7 +566,7 @@ export function CareCenterList() {
             description={
               deleteTarget ? (
                 <>
-                  Vas a eliminar <strong>{deleteTarget.businessName}</strong>. Elegí entre
+                  Vas a eliminar <strong>{deleteTarget.businessName}</strong>. Elige entre
                   mover a la papelera (reversible) o eliminar permanentemente.
                 </>
               ) : null
@@ -579,7 +579,7 @@ export function CareCenterList() {
           {hardConfirm === 1 ? (
             <div className="px-6">
               <DialogBanner tone="destructive">
-                Esta acción es irreversible. Confirmá de nuevo para eliminar permanentemente.
+                Esta acción es irreversible. Confirma de nuevo para eliminar permanentemente.
               </DialogBanner>
             </div>
           ) : null}

@@ -283,7 +283,7 @@ export function ReportTaxesRetained() {
                     title={hasActiveFilters ? 'Sin resultados' : 'Sin impuestos retenidos'}
                     description={
                       hasActiveFilters
-                        ? 'Ajustá los filtros para ver más resultados.'
+                        ? 'Ajusta los filtros para ver más resultados.'
                         : 'Aún no se han generado retenciones a médicos.'
                     }
                   />

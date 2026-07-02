@@ -23,6 +23,7 @@ import {
 } from '../../domain/models/order';
 import { cn } from '@/lib/utils';
 import { formatMoney } from '@/lib/format/money';
+import { localTodayIso } from '@/lib/dates';
 import { PaymentAccountSelect } from '@/modules/payment-accounts/presentation/components/PaymentAccountSelect';
 import {
   paymentAccountSummary,
@@ -269,7 +270,7 @@ export function OrderPaymentForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usdRate?.id, eurRate?.id]);
 
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = localTodayIso();
 
   const update = (idx: number, patch: Partial<OrderPaymentValues>) => {
     const next = payments.map((p, i) => (i === idx ? { ...p, ...patch } : p));
@@ -471,7 +472,7 @@ export function OrderPaymentForm({
                         disabled={disabled}
                       >
                         <SelectTrigger className="h-9">
-                          <SelectValue placeholder="Seleccioná una cuenta" />
+                          <SelectValue placeholder="Selecciona una cuenta" />
                         </SelectTrigger>
                         <SelectContent>
                           {rowMethods.map((m) => (
@@ -496,7 +497,7 @@ export function OrderPaymentForm({
                         disabled={disabled || bankLocked}
                       >
                         <SelectTrigger className={cn('h-9', err.bankCode && 'border-destructive')}>
-                          <SelectValue placeholder="Seleccioná banco" />
+                          <SelectValue placeholder="Selecciona banco" />
                         </SelectTrigger>
                         <SelectContent>
                           {banks.map((b) => (

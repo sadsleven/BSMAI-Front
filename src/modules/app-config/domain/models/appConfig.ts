@@ -1,11 +1,11 @@
 export interface CasheaCommissionConfig {
-  /** Fracción 0..0.5 sobre la primera cuota (inicial). Ej. 0.04 = 4%. */
-  firstInstallmentRate: number;
-  /** Fracción 0..0.5 sobre el total de la orden. Ej. 0.06 = 6%. */
-  totalRate: number;
+  /** Fracción 0..0.5 sobre el TOTAL de la venta (comisión). Ej. 0.0464 = 4.64%. */
+  commissionRate: number;
+  /** Fracción 0..0.5 sobre el RESTANTE (total − inicial) — financiamiento. Ej. 0.062 = 6.2%. */
+  financingRate: number;
 }
 
 export interface UpdateCasheaCommissionInput {
-  firstInstallmentRate: number;
-  totalRate: number;
+  commissionRate: number;
+  financingRate: number;
 }

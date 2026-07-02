@@ -55,6 +55,7 @@ import { PaymentAccountCreate } from './modules/payment-accounts/presentation/pa
 import { PaymentAccountEdit } from './modules/payment-accounts/presentation/pages/PaymentAccountEdit';
 import { OrderList } from './modules/orders/presentation/pages/OrderList';
 import { OrderCreate } from './modules/orders/presentation/pages/OrderCreate';
+import { OrderDraftsPage } from './modules/orders/presentation/pages/OrderDraftsPage';
 import { OrderEdit } from './modules/orders/presentation/pages/OrderEdit';
 import { OrderDetailPage } from './modules/orders/presentation/pages/OrderDetailPage';
 import { AccountsPayableList } from './modules/accounts-payable/presentation/pages/AccountsPayableList';
@@ -187,6 +188,7 @@ function App() {
           <Route path="orders">
             <Route index element={<OrderList />} />
             <Route path="create" element={<OrderCreate />} />
+            <Route path="drafts" element={<OrderDraftsPage />} />
             <Route path="edit/:id" element={<OrderEdit />} />
             <Route path=":id" element={<OrderDetailPage />} />
           </Route>

@@ -379,7 +379,7 @@ export function ReportExecutivePanel() {
       ) : null}
       {overCap ? (
         <div className="px-4 py-2 text-xs text-warning border border-warning-soft bg-warning-soft rounded-lg">
-          Mostrando hasta {REPORT_PAGE_SIZE} registros por fuente. Aplicá filtros para acotar el panel.
+          Mostrando hasta {REPORT_PAGE_SIZE} registros por fuente. Aplica filtros para acotar el panel.
         </div>
       ) : null}
 

@@ -6,6 +6,7 @@ import {
   Check,
   Loader2,
   ChevronDown,
+  Plus,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -36,6 +37,10 @@ export type ChipMultiSelectProps = {
   emptyLabel?: string;
   staleHint?: string;
   counterSuffix?: { singular: string; plural: string };
+  /** Si se pasa, muestra un botón "+ crear" al pie del dropdown. */
+  onCreateNew?: () => void;
+  /** Etiqueta del botón crear (def "Crear nuevo"). */
+  createLabel?: string;
 };
 
 /**
@@ -58,10 +63,13 @@ export function ChipMultiSelect({
   emptyLabel = 'Sin resultados.',
   staleHint,
   counterSuffix = { singular: 'seleccionado', plural: 'seleccionados' },
+  onCreateNew,
+  createLabel = 'Crear nuevo',
 }: ChipMultiSelectProps) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
@@ -121,7 +129,28 @@ export function ChipMultiSelect({
     totalSelected === 1 ? counterSuffix.singular : counterSuffix.plural;
 
   return (
-    <div className="space-y-2" ref={wrapRef}>
+    <div
+      className="space-y-2"
+      ref={wrapRef}
+      onKeyDown={(e) => {
+        // El input de búsqueda vive dentro de un <form> (modales de creación
+        // embebidos). Sin esto, Enter dispara el submit implícito del form
+        // contenedor y Escape cierra el modal en vez del dropdown.
+        if (!open) return;
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const first = filtered.find(
+            (o) => !value.includes(o.id) && !o.disabledReason,
+          );
+          if (first) add(first.id);
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          setOpen(false);
+          setQuery('');
+        }
+      }}
+    >
       <Label className="text-sm font-medium flex items-center gap-2">
         {Icon ? <Icon className="w-4 h-4 text-muted-foreground" /> : null}
         {label}
@@ -134,6 +163,7 @@ export function ChipMultiSelect({
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
         <Input
+          ref={searchRef}
           type="search"
           placeholder={searchPlaceholder}
           value={query}
@@ -207,6 +237,26 @@ export function ChipMultiSelect({
                 })}
               </ul>
             )}
+            {onCreateNew && !disabled ? (
+              <div className="sticky bottom-0 border-t bg-card p-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Devuelve el foco al input (que permanece montado) antes de
+                    // cerrar el dropdown, para que al cerrarse el modal de
+                    // creación Radix restaure el foco a un elemento vivo y no a
+                    // <body>.
+                    searchRef.current?.focus();
+                    onCreateNew();
+                    setOpen(false);
+                    setQuery('');
+                  }}
+                  className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 rounded-md text-brand-blue-strong font-medium hover:bg-accent"
+                >
+                  <Plus className="w-4 h-4 shrink-0" /> {createLabel}
+                </button>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>

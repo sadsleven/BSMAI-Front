@@ -10,8 +10,12 @@ export type AccountsReceivableStatus =
   | 'partially_collected'
   | 'overcollected';
 
-/** Tipo de deudor de la cuenta por cobrar. */
-export type AccountsReceivableDebtorType = 'insurance' | 'holder';
+/**
+ * Tipo de deudor de la cuenta por cobrar. `cashea` = paga la fintech: el lote
+ * puede agrupar órdenes cashea de titulares distintos (lote sin insuranceId ni
+ * holderId).
+ */
+export type AccountsReceivableDebtorType = 'insurance' | 'holder' | 'cashea';
 
 export interface AccountsReceivablePayment {
   id: string;
@@ -37,10 +41,25 @@ export interface AccountsReceivableOrder {
   useFixedRate: boolean;
   targetUsd?: string | number | null;
   targetBs?: string | number | null;
+  /** Datos de la orden (el detalle del lote los carga completos para el estado de cuenta). */
   order?: {
     id?: string;
     orderNumber: string;
     type?: string;
+    orderDate?: string;
+    createdAt?: string;
+    serviceKey?: string | null;
+    invoiceNumber?: string | null;
+    controlNumber?: string | null;
+    priceAmount?: string | number;
+    useFixedRate?: boolean;
+    fixedExchangeRate?: { id: string; amountBs: string | number } | null;
+    /** Snapshot Cashea de la orden (sólo type='cashea'; alimenta el desglose del lote). */
+    casheaFirstInstallmentAmount?: string | number | null;
+    casheaCommissionRate?: string | number | null;
+    casheaFinancingRate?: string | number | null;
+    holder?: OrderRefSummary | null;
+    patient?: OrderRefSummary | null;
   } | null;
 }
 
@@ -122,6 +141,7 @@ export interface AccountsReceivablePaymentInput {
 
 export interface CreateAccountsReceivableBatchDto {
   debtorType: AccountsReceivableDebtorType;
+  /** Omitidos cuando debtorType === 'cashea'. */
   insuranceId?: string;
   holderId?: string;
   orderIds: string[];
@@ -142,10 +162,13 @@ export const STATUS_LABEL: Record<AccountsReceivableStatus, string> = {
 export const DEBTOR_TYPE_LABEL: Record<AccountsReceivableDebtorType, string> = {
   insurance: 'Seguro',
   holder: 'Titular (crédito)',
+  cashea: 'Cashea',
 };
 
 export function debtorTypeOf(b: AccountsReceivableBatch): AccountsReceivableDebtorType {
-  return b.holderId ? 'holder' : 'insurance';
+  if (b.holderId) return 'holder';
+  if (b.insuranceId) return 'insurance';
+  return 'cashea';
 }
 
 export function debtorDisplayName(b: AccountsReceivableBatch): string {
@@ -154,7 +177,8 @@ export function debtorDisplayName(b: AccountsReceivableBatch): string {
     const full = `${b.holder.firstName ?? ''} ${b.holder.lastName ?? ''}`.trim();
     return full || b.holder.name || b.holder.cedula || b.holder.rif || '—';
   }
-  return b.insurance?.name ?? '—';
+  if (b.insurance) return b.insurance.name ?? '—';
+  return 'Cashea';
 }
 
 /** ID del deudor del lote (seguro o titular). */
@@ -172,9 +196,29 @@ export function pendingDebtorName(p: PendingReceivable): string {
   return p.debtorName?.trim() || '—';
 }
 
-/** ID del deudor de una orden pendiente (seguro o titular). */
+/** ID del deudor de una orden pendiente (seguro o titular; cashea no tiene). */
 export function pendingDebtorId(p: PendingReceivable): string | null {
-  return p.debtorType === 'holder' ? p.holderId : p.insuranceId;
+  if (p.debtorType === 'holder') return p.holderId;
+  if (p.debtorType === 'insurance') return p.insuranceId;
+  return null;
+}
+
+/**
+ * Clave de agrupación para armar un lote: mismo deudor y mismo modo (tasa fija
+ * vs USD). Las órdenes cashea agrupan juntas aunque sean de titulares distintos.
+ */
+export function pendingBatchKey(p: PendingReceivable): string {
+  const debtorId = p.debtorType === 'cashea' ? '' : pendingDebtorId(p) ?? '';
+  return `${p.debtorType}:${debtorId}:${p.useFixedRate}`;
+}
+
+/** Etiqueta corta del tipo de deudor de una orden pendiente. */
+export function pendingDebtorTypeLabel(p: PendingReceivable): string {
+  return p.debtorType === 'holder'
+    ? 'Titular'
+    : p.debtorType === 'cashea'
+      ? 'Cashea'
+      : 'Seguro';
 }
 
 // ----------------------------------------------------------------------------

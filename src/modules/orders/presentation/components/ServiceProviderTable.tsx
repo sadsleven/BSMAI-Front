@@ -213,7 +213,7 @@ export function ServiceProviderTable({
 
       {value.length === 0 ? (
         <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-          Aún no hay Tipos de Servicio. Agregá al menos uno.
+          Aún no hay Tipos de Servicio. Agrega al menos uno.
         </div>
       ) : (
         <div className="space-y-3">
@@ -266,8 +266,8 @@ export function ServiceProviderTable({
                         invalid={!!rowError?.customName}
                         placeholder={
                           row.serviceTypeId
-                            ? 'Elegí uno previo o escribí uno nuevo'
-                            : 'Elegí primero el Tipo de Servicio'
+                            ? 'Elige uno previo o escribe uno nuevo'
+                            : 'Elige primero el Tipo de Servicio'
                         }
                       />
                       {rowError?.customName ? (
@@ -277,7 +277,7 @@ export function ServiceProviderTable({
                         </p>
                       ) : (
                         <p className="text-[11px] text-muted-foreground">
-                          Reutilizá un nombre ya usado para este servicio o agregá
+                          Reutiliza un nombre ya usado para este servicio o agrega
                           uno nuevo. Aparece en las órdenes internas y en la factura.
                         </p>
                       )}
@@ -491,7 +491,7 @@ function ServiceTypeSelect({
               !selectedLabel && 'text-muted-foreground',
             )}
           >
-            {selectedLabel || 'Seleccioná un servicio'}
+            {selectedLabel || 'Selecciona un servicio'}
           </span>
           <ChevronDown
             className={cn(
@@ -563,7 +563,7 @@ function ServiceTypeSelect({
                         aria-hidden
                         className="px-3 py-2 text-center text-[11px] text-muted-foreground"
                       >
-                        Mostrando {visibleCount} de {filtered.length} · seguí bajando…
+                        Mostrando {visibleCount} de {filtered.length} · sigue bajando…
                       </li>
                     )}
                   </ul>
@@ -681,7 +681,7 @@ function CustomNameSelect({
               !value && 'text-muted-foreground',
             )}
           >
-            {value || placeholder || 'Elegí o escribí un nombre'}
+            {value || placeholder || 'Elige o escribe un nombre'}
           </span>
           <ChevronDown
             className={cn(
@@ -730,7 +730,7 @@ function CustomNameSelect({
                 {filtered.length === 0 && !canAddNew ? (
                   <div className="px-3 py-2 text-sm text-muted-foreground">
                     {suggestions.length === 0
-                      ? 'Sin nombres previos. Escribí uno nuevo.'
+                      ? 'Sin nombres previos. Escribe uno nuevo.'
                       : 'Sin resultados.'}
                   </div>
                 ) : (

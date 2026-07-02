@@ -124,7 +124,7 @@ export function RoleCreate() {
 
         <FormSection
           title="Permisos"
-          description="Seleccioná los permisos que otorga este rol."
+          description="Selecciona los permisos que otorga este rol."
         >
           <PermissionsPicker
             value={permissionIds}

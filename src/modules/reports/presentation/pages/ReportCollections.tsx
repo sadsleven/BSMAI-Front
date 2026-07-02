@@ -235,7 +235,7 @@ export function ReportCollections() {
                     title={hasActiveFilters ? 'Sin resultados' : 'Sin cobros registrados'}
                     description={
                       hasActiveFilters
-                        ? 'Ajustá los filtros para ver más resultados.'
+                        ? 'Ajusta los filtros para ver más resultados.'
                         : 'Aún no se han registrado cobros.'
                     }
                   />

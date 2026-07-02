@@ -197,7 +197,7 @@ export function ReportInsuranceProduction() {
                     title={hasActiveFilters ? 'Sin resultados' : 'Sin actividad de aseguradoras'}
                     description={
                       hasActiveFilters
-                        ? 'Ajustá los filtros para ver más resultados.'
+                        ? 'Ajusta los filtros para ver más resultados.'
                         : 'Aún no hay órdenes de aseguradoras por cobrar.'
                     }
                   />

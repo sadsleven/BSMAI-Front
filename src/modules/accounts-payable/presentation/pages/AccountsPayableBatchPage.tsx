@@ -16,14 +16,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   AlertDialog,
@@ -53,6 +45,8 @@ import { UsdRateSelect } from '@/modules/exchange-rates/presentation/components/
 import { doctorGateway } from '@/modules/doctors/infrastructure/doctorGateway';
 import { careCenterGateway } from '@/modules/care-centers/infrastructure/careCenterGateway';
 import { useTaxUnit } from '@/lib/taxes/useTaxUnit';
+import { TaxUnitSelect } from '@/modules/tax-units/presentation/components/TaxUnitSelect';
+import type { TaxUnit } from '@/modules/tax-units/domain/models/taxUnit';
 import {
   calcRetention,
   type RetentionResult,
@@ -76,7 +70,7 @@ import { Can } from '@/modules/auth/presentation/components/Can';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 
 const paymentSchema = z.object({
-  payments: z.array(egressPaymentSchema).min(1, 'Registrá al menos un pago'),
+  payments: z.array(egressPaymentSchema).min(1, 'Registra al menos un pago'),
 });
 type PaymentFormValues = z.infer<typeof paymentSchema>;
 
@@ -138,6 +132,10 @@ export function AccountsPayableBatchPage() {
     () => new Set(createState?.internalOrderIds ?? []),
   );
   const [search, setSearch] = useState('');
+  // UT del lote: por defecto la vigente, pero el usuario puede elegir otra.
+  const { taxUnit: currentTaxUnit } = useTaxUnit();
+  const [selectedTaxUnit, setSelectedTaxUnit] = useState<TaxUnit | null>(null);
+  const batchTaxUnit = selectedTaxUnit ?? currentTaxUnit;
   // Si vino selección de la lista, fijamos el proveedor de entrada.
   const lockedProvider = useMemo<CreateProvider | null>(
     () =>
@@ -158,7 +156,16 @@ export function AccountsPayableBatchPage() {
       setCreateLoading(true);
       setCreateError(null);
       try {
-        const res = await accountsPayableGateway.listPending({ limit: 200 });
+        // Con proveedor fijado (vino de la lista), traemos sólo sus pendientes:
+        // así el buscador muestra únicamente órdenes de ese doctor/centro.
+        const res = await accountsPayableGateway.listPending({
+          limit: 200,
+          ...(lockedProvider
+            ? lockedProvider.recipientType === 'doctor'
+              ? { doctorId: lockedProvider.providerId }
+              : { careCenterId: lockedProvider.providerId }
+            : {}),
+        });
         if (cancelled) return;
         setPending(res.data);
       } catch (e) {
@@ -173,7 +180,7 @@ export function AccountsPayableBatchPage() {
     return () => {
       cancelled = true;
     };
-  }, [isCreate]);
+  }, [isCreate, lockedProvider]);
 
   const selectedRows = useMemo(
     () => pending.filter((p) => selected.has(p.internalOrderId)),
@@ -206,16 +213,25 @@ export function AccountsPayableBatchPage() {
 
   const canCreate = selectedRows.length >= 1 && !!activeProvider && sameProvider;
 
-  const filteredPending = useMemo(() => {
+  // Resultados del buscador: sólo al escribir, excluye las ya agregadas y
+  // (con proveedor activo) restringe a ese mismo doctor/centro.
+  const candidates = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return pending;
-    return pending.filter(
-      (p) =>
+    if (!q) return [];
+    return pending.filter((p) => {
+      if (selected.has(p.internalOrderId)) return false;
+      if (
+        providerKey &&
+        `${p.providerType}:${pendingProviderId(p)}` !== providerKey
+      )
+        return false;
+      return (
         p.internalNumber.toLowerCase().includes(q) ||
         p.orderNumber.toLowerCase().includes(q) ||
-        pendingProviderName(p).toLowerCase().includes(q),
-    );
-  }, [pending, search]);
+        pendingProviderName(p).toLowerCase().includes(q)
+      );
+    });
+  }, [pending, search, selected, providerKey]);
 
   const toggleSelect = (id: string) =>
     setSelected((prev) => {
@@ -224,11 +240,6 @@ export function AccountsPayableBatchPage() {
       else next.add(id);
       return next;
     });
-
-  const rowOtherProvider = (p: PendingPayable): boolean =>
-    !!providerKey &&
-    `${p.providerType}:${pendingProviderId(p)}` !== providerKey &&
-    !selected.has(p.internalOrderId);
 
   const selectedTotalUsd = useMemo(
     () => selectedRows.reduce((s, p) => s + Number(p.grossUsd || 0), 0),
@@ -249,6 +260,7 @@ export function AccountsPayableBatchPage() {
           activeProvider.recipientType === 'care_center'
             ? activeProvider.providerId
             : undefined,
+        taxUnitId: batchTaxUnit?.id,
         internalOrderIds: selectedRows.map((r) => r.internalOrderId),
       });
       notify.success('Lote creado');
@@ -274,7 +286,7 @@ export function AccountsPayableBatchPage() {
                 ? `Proveedor: ${activeProvider.providerName} · ${
                     activeProvider.recipientType === 'doctor' ? 'Doctor' : 'Centro'
                   }`
-                : 'Seleccioná las órdenes internas pendientes de un mismo proveedor.'}
+                : 'Selecciona las órdenes internas pendientes de un mismo proveedor.'}
             </p>
           </div>
           <button
@@ -287,8 +299,8 @@ export function AccountsPayableBatchPage() {
         </div>
 
         <FormSection
-          title="Órdenes pendientes"
-          description="Marcá las órdenes internas a incluir en el lote. Todas deben ser del mismo proveedor."
+          title="Órdenes del lote"
+          description="Estas órdenes internas forman el lote. Busca para agregar más órdenes del mismo proveedor."
         >
           <div className="relative mb-3">
             <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
@@ -306,85 +318,85 @@ export function AccountsPayableBatchPage() {
             </div>
           ) : createLoading ? (
             <p className="text-sm text-muted-foreground">Cargando órdenes…</p>
-          ) : pending.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No hay órdenes pendientes de pago.
-            </p>
           ) : (
-            <div className="rounded-lg border overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-10"></TableHead>
-                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                      N° orden interna
-                    </TableHead>
-                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                      Proveedor
-                    </TableHead>
-                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                      Tipo
-                    </TableHead>
-                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                      TotalUSD
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredPending.length === 0 ? (
-                    <TableRow>
-                      <TableCell
-                        colSpan={5}
-                        className="py-6 text-center text-sm text-muted-foreground"
-                      >
-                        Sin resultados para “{search}”.
-                      </TableCell>
-                    </TableRow>
+            <>
+              {/* Resultados del buscador: agregar al lote */}
+              {search.trim() ? (
+                <div className="mb-4 rounded-lg border divide-y overflow-hidden">
+                  {candidates.length === 0 ? (
+                    <p className="px-3 py-4 text-center text-sm text-muted-foreground">
+                      {activeProvider
+                        ? `Sin órdenes pendientes de este proveedor para “${search}”.`
+                        : `Sin resultados para “${search}”.`}
+                    </p>
                   ) : (
-                    filteredPending.map((p) => {
-                      const disabled = rowOtherProvider(p);
-                      return (
-                        <TableRow
-                          key={p.internalOrderId}
-                          className={
-                            disabled
-                              ? 'opacity-50'
-                              : 'hover:bg-muted/30 cursor-pointer'
-                          }
-                          title={disabled ? 'Otro proveedor' : undefined}
-                          onClick={() =>
-                            !disabled && toggleSelect(p.internalOrderId)
-                          }
-                        >
-                          <TableCell className="py-3 px-4">
-                            <Checkbox
-                              checked={selected.has(p.internalOrderId)}
-                              disabled={disabled}
-                              onCheckedChange={() => toggleSelect(p.internalOrderId)}
-                              aria-label="Seleccionar orden"
-                            />
-                          </TableCell>
-                          <TableCell className="py-3 px-4 font-mono text-sm font-semibold">
-                            {p.internalNumber}
-                          </TableCell>
-                          <TableCell className="py-3 px-4 text-sm">
-                            {pendingProviderName(p)}
-                          </TableCell>
-                          <TableCell className="py-3 px-4 text-sm">
-                            <Badge variant="outline" className="font-normal">
-                              {p.providerType === 'doctor' ? 'Doctor' : 'Centro'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="py-3 px-4 text-sm font-mono">
+                    candidates.map((p) => (
+                      <button
+                        type="button"
+                        key={p.internalOrderId}
+                        onClick={() => toggleSelect(p.internalOrderId)}
+                        className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-muted/40"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-mono text-sm font-semibold">
+                            N° {p.internalNumber}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground truncate">
+                            {pendingProviderName(p)} ·{' '}
+                            {p.providerType === 'doctor' ? 'Doctor' : 'Centro'}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="font-mono text-sm">
                             {formatMoney(p.grossUsd)} USD
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })
+                          </span>
+                          <Plus className="w-4 h-4 text-brand-blue" />
+                        </div>
+                      </button>
+                    ))
                   )}
-                </TableBody>
-              </Table>
-            </div>
+                </div>
+              ) : null}
+
+              {/* Lista del lote (preseleccionadas + agregadas) */}
+              {selectedRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground italic">
+                  No hay órdenes en el lote. Busca y agrega al menos una.
+                </p>
+              ) : (
+                <ul className="text-sm divide-y rounded-lg border">
+                  {selectedRows.map((p) => (
+                    <li
+                      key={p.internalOrderId}
+                      className="flex items-center justify-between gap-3 px-3 py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <div className="font-mono font-semibold">
+                          N° {p.internalNumber}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground truncate">
+                          {pendingProviderName(p)} ·{' '}
+                          {p.providerType === 'doctor' ? 'Doctor' : 'Centro'}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="font-mono">{formatMoney(p.grossUsd)} USD</span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                          onClick={() => toggleSelect(p.internalOrderId)}
+                          title="Quitar del lote"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
           )}
 
           <div className="mt-3 rounded-md border p-3 flex items-center justify-between gap-3 text-sm">
@@ -397,6 +409,18 @@ export function AccountsPayableBatchPage() {
               </Badge>
             ) : null}
           </div>
+        </FormSection>
+
+        <FormSection
+          title="Unidad Tributaria"
+          description="UT usada para calcular la retención SENIAT del lote. Por defecto la vigente; puedes seleccionar otra."
+        >
+          <TaxUnitSelect
+            className="max-w-md"
+            selectedId={batchTaxUnit?.id ?? null}
+            selectedFallback={batchTaxUnit}
+            onSelect={setSelectedTaxUnit}
+          />
         </FormSection>
 
         <div className="flex items-center justify-end gap-2">
@@ -708,6 +732,18 @@ function BatchDetail({ id }: { id: string }) {
     }
   };
 
+  const onSetTaxUnit = async (taxUnitId: string) => {
+    setBusy(true);
+    try {
+      setBatch(await accountsPayableGateway.setTaxUnit(id, taxUnitId));
+      notify.success('Unidad Tributaria actualizada');
+    } catch (e) {
+      notify.fromError(e, 'No se pudo cambiar la Unidad Tributaria');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const existingInternalIds = useMemo(
     () => new Set((batch?.orders ?? []).map((o) => o.internalOrderId)),
     [batch],
@@ -725,8 +761,10 @@ function BatchDetail({ id }: { id: string }) {
   }
 
   // Desglose SENIAT (espejo del cálculo del BE) para la sección Resumen.
+  // Usa la UT del lote; los lotes previos (sin UT propia) caen a la vigente.
   const seniatPersonType: SeniatPersonType = personTypeOf(batch);
-  const taxUnitBs = taxUnit ? Number(taxUnit.amountBs) : null;
+  const effectiveTaxUnit = batch.taxUnit ?? taxUnit;
+  const taxUnitBs = effectiveTaxUnit ? Number(effectiveTaxUnit.amountBs) : null;
   const seniatBreakdown: RetentionResult | null =
     taxUnitBs && taxUnitBs > 0
       ? calcRetention({
@@ -789,6 +827,30 @@ function BatchDetail({ id }: { id: string }) {
           taxUnitBs={taxUnitBs}
           result={seniatBreakdown}
         />
+
+        <Can permission={PERMISSIONS.ACCOUNTS_PAYABLE.UPDATE}>
+          <div className="mt-4">
+            <TaxUnitSelect
+              className="max-w-md"
+              label="Unidad Tributaria del lote"
+              placeholder="UT vigente al calcular"
+              selectedId={batch.taxUnitId ?? null}
+              selectedFallback={batch.taxUnit ?? null}
+              onSelect={(ut) => onSetTaxUnit(ut.id)}
+              disabled={isPaid || busy}
+              lockNote={
+                isPaid
+                  ? 'El lote está pagado: edita o quita un pago para cambiar la UT.'
+                  : undefined
+              }
+            />
+            {!isPaid ? (
+              <p className="text-xs text-muted-foreground mt-1.5">
+                Cambiar la UT recalcula la retención y el neto a pagar del lote.
+              </p>
+            ) : null}
+          </div>
+        </Can>
       </FormSection>
 
       {/* Órdenes */}
@@ -872,7 +934,7 @@ function BatchDetail({ id }: { id: string }) {
           </div>
         ) : (
           <p className="text-xs italic text-muted-foreground mb-2">
-            El lote está pagado: editá o quitá un pago para modificar sus órdenes.
+            El lote está pagado: edita o quita un pago para modificar sus órdenes.
           </p>
         )}
 
@@ -974,7 +1036,7 @@ function BatchDetail({ id }: { id: string }) {
             >
               <FormSection
                 title={editingPaymentId ? 'Editar pago' : 'Registrar pago'}
-                description="El proveedor recibe el neto (bruto − retención SENIAT). Podés pagar parcial."
+                description="El proveedor recibe el neto (bruto − retención SENIAT). Puedes pagar parcial."
               >
                 {!usdRate ? (
                   <p className="text-sm text-destructive flex items-center gap-1.5">

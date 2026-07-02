@@ -1,7 +1,10 @@
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import type { Order, OrderServiceTypeRow } from '../../domain/models/order';
-import { holderDisplayName } from '../../domain/models/order';
+import {
+  holderDisplayName,
+  orderServiceKeyDisplay,
+} from '../../domain/models/order';
 import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
 
 const COMPANY = {
@@ -29,7 +32,7 @@ function thinBorder(): Partial<ExcelJS.Borders> {
 }
 
 /** Sanitiza string para nombre de archivo (sin chars problemáticos en Windows/macOS). */
-function safeFilenameSegment(s: string): string {
+export function safeFilenameSegment(s: string): string {
   return s.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').trim().slice(0, 80) || 'sin_nombre';
 }
 
@@ -103,7 +106,7 @@ export interface OrderProviderGroup {
 /**
  * Etiqueta de "Referencia" para la orden interna — SÓLO para estos archivos
  * (Excel/PDF). Seguro → nombre corto (o nombre si no tiene); Cashea → "Cashea";
- * Crédito → "Reembolso"; Contado → "Particular".
+ * Contado y Crédito → "AFMI".
  */
 export function orderReferenceLabel(order: Order): string {
   switch (order.type) {
@@ -112,9 +115,8 @@ export function orderReferenceLabel(order: Order): string {
     case 'cashea':
       return 'Cashea';
     case 'credit':
-      return 'Reembolso';
     case 'cash':
-      return 'Particular';
+      return 'AFMI';
     default:
       return '';
   }
@@ -196,6 +198,22 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
   const holderCi = holderId(order.holder);
   const patientCi = holderId(order.patient);
 
+  // Contratante de la factura: seguro → datos del seguro;
+  // contado/crédito/cashea → datos del titular.
+  const contratanteName = isInsurance ? order.insurance?.name ?? '' : holder;
+  const contratanteAddress = isInsurance
+    ? order.insurance?.fiscalAddress ?? ''
+    : order.holder?.address ?? '';
+  const contratanteRif = isInsurance ? order.insurance?.rif ?? '' : holderCi;
+  const contratantePhone = isInsurance
+    ? insurancePhone
+    : order.holder?.phones?.[0]?.number ?? '';
+  const contratante = isInsurance
+    ? order.insuranceSource === 'direct'
+      ? holder
+      : order.contractor?.name ?? ''
+    : holder;
+
   // Condiciones de pago: insurance/credit/cashea → CREDITO ; cash → CONTADO
   const condicionesPago =
     order.type === 'cash' ? 'CONTADO' : 'CREDITO';
@@ -230,21 +248,21 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
     wrapText: true,
   };
 
-  // R4 — Razón social (solo seguro)
-  if (isInsurance) {
+  // R4 — Razón social. Seguro → nombre del seguro; resto → titular.
+  {
     const c4a = ws.getCell('A4');
     c4a.value = 'Nombre  o Razón Social :';
     c4a.font = DEFAULT_FONT;
     c4a.alignment = { horizontal: 'left', vertical: 'middle' };
     const c4c = ws.getCell('C4');
-    c4c.value = order.insurance?.name ?? '';
+    c4c.value = contratanteName;
     c4c.font = DEFAULT_FONT;
     c4c.alignment = wrapLeft;
   }
 
-  // R5 — Dirección fiscal (solo seguro) — valor mergeado C:E
-  if (isInsurance) {
-    const fiscalAddress = order.insurance?.fiscalAddress ?? '';
+  // R5 — Dirección fiscal — valor mergeado C:E. Seguro → seguro; resto → titular.
+  {
+    const fiscalAddress = contratanteAddress;
     const c5a = ws.getCell('A5');
     c5a.value = 'Dirección Fiscal :';
     c5a.font = DEFAULT_FONT;
@@ -260,32 +278,31 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
     ws.getRow(5).height = 2.25 + addressLines * 13.5;
   }
 
-  // R6 — RIF + Teléfono (solo seguro) — teléfono mergeado D:E
-  if (isInsurance) {
+  // R6 — RIF + Teléfono — teléfono mergeado D:E. Seguro → seguro; resto → titular.
+  {
     const c6a = ws.getCell('A6');
     c6a.value = 'Rif ó CI:';
     c6a.font = DEFAULT_FONT;
     c6a.alignment = { horizontal: 'left', vertical: 'middle' };
     const c6c = ws.getCell('C6');
-    c6c.value = order.insurance?.rif ?? '';
+    c6c.value = contratanteRif;
     c6c.font = DEFAULT_FONT;
     c6c.alignment = wrapLeft;
     ws.mergeCells('D6:E6');
     const c6d = ws.getCell('D6');
-    c6d.value = insurancePhone ? `Teléfono:(${insurancePhone})` : 'Teléfono:';
+    c6d.value = contratantePhone ? `Teléfono:(${contratantePhone})` : 'Teléfono:';
     c6d.font = SMALL_FONT;
     c6d.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
   }
 
-  // R7 — Contratante (solo seguro). Seguro directo al paciente → el titular.
-  if (isInsurance) {
+  // R7 — Contratante. Seguro directo al paciente / no seguro → el titular.
+  {
     const c7a = ws.getCell('A7');
     c7a.value = 'Contratante:';
     c7a.font = DEFAULT_FONT;
     c7a.alignment = { horizontal: 'left', vertical: 'top' };
     const c7c = ws.getCell('C7');
-    c7c.value =
-      order.insuranceSource === 'direct' ? holder : order.contractor?.name ?? '';
+    c7c.value = contratante;
     c7c.font = SMALL_FONT;
     c7c.alignment = wrapLeftTop;
   }
@@ -320,14 +337,15 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
   c9d.font = DEFAULT_FONT;
   c9d.alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
 
-  // R10 — Clave de Servicio (solo seguro)
-  if (isInsurance) {
+  // R10 — Clave de Servicio. orderServiceKeyDisplay ya resuelve la 'R' de
+  // reembolso (crédito + isReimbursement).
+  {
     const c10a = ws.getCell('A10');
     c10a.value = 'Clave de Servicio Nº:';
     c10a.font = DEFAULT_FONT;
     c10a.alignment = { horizontal: 'left', vertical: 'middle' };
     const c10c = ws.getCell('C10');
-    c10c.value = order.serviceKey ?? '';
+    c10c.value = orderServiceKeyDisplay(order);
     c10c.font = DEFAULT_FONT;
     c10c.alignment = wrapLeft;
   }
@@ -525,7 +543,7 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
 /**
  * Genera 1 XLSX de "Orden interna" para UN proveedor de la orden. Layout,
  * dimensiones, bordes y estilos calcan el template `Orden interna.xlsx` de AFMI:
- * rejilla negra completa (recuadros FECHA/N° + bloque de datos A5:G13 con sus
+ * rejilla negra completa (recuadros FECHA/N° + bloque de datos A5:G14 con sus
  * acentos en línea media), RIF en azul corporativo y anchos uniformes del
  * original (sin <cols> propios). Fuentes/estilos = índices del styles.xml.
  */
@@ -623,22 +641,25 @@ export async function downloadOrdenInternaForProvider(
   ws.getRow(2).height = 15.75;
   ws.getRow(3).height = 15.75;
   ws.getRow(5).height = 30;
-  ws.getRow(8).height = 30;
-  ws.getRow(11).height = 15.75;
+  ws.getRow(9).height = 30;
+  ws.getRow(12).height = 15.75;
 
   // ---- Merges del template (cabecera + bloque de datos) ----
   ws.mergeCells('C2:E2');
   ws.mergeCells('A3:B3');
   ws.mergeCells('C3:E3');
-  ws.mergeCells('C5:E5');
+  ws.mergeCells('A5:B5'); // Médico Tratante/Centro (etiqueta)
+  ws.mergeCells('C5:E5'); // Médico Tratante/Centro (valor)
   ws.mergeCells('A6:B6');
   ws.mergeCells('C6:G6');
-  ws.mergeCells('A7:B7');
-  ws.mergeCells('C7:E7');
-  ws.mergeCells('B8:C8');
-  ws.mergeCells('B9:G9');
-  ws.mergeCells('B10:E10');
-  ws.mergeCells('A11:G11');
+  ws.mergeCells('A7:B7'); // Titular (etiqueta)
+  ws.mergeCells('C7:E7'); // Titular (valor)
+  ws.mergeCells('A8:B8'); // Paciente (etiqueta)
+  ws.mergeCells('C8:E8'); // Paciente (valor)
+  ws.mergeCells('B9:C9'); // Edad (valor)
+  ws.mergeCells('B10:G10'); // Dirección (valor)
+  ws.mergeCells('B11:E11'); // Patología (valor)
+  ws.mergeCells('A12:G12'); // Header tabla
 
   // ====== Cabecera ======
   // R2 — Título central + recuadro FECHA (F2:G2)
@@ -655,10 +676,10 @@ export async function downloadOrdenInternaForProvider(
   put('G3', group.providerOrderNumber, F12, center, '@');
   boxRow(3, 6, 7);
 
-  // ====== Bloque de datos (rejilla negra A5:G13) ======
+  // ====== Bloque de datos (rejilla negra A5:G14) ======
   // R5 — Médico Tratante/Centro + Especialidad
   put('A5', group.providerType === 'doctor' ? 'Médico Tratante:' : 'Centro:', C11, leftMid);
-  put('C5', group.providerName.toUpperCase(), C10, centerWrap);
+  put('C5', group.providerName.toUpperCase(), C10, { horizontal: 'left', vertical: 'middle', wrapText: true });
   put('F5', 'Especialidad:', C11, leftMid);
   put('G5', (order.specialty?.name ?? '').toUpperCase(), C8, centerWrap);
   boxRow(5);
@@ -668,48 +689,55 @@ export async function downloadOrdenInternaForProvider(
   put('C6', group.providerCenterAddress, C11, { ...leftMid, wrapText: true });
   boxRow(6);
 
-  // R7 — Paciente + Cédula
-  put('A7', 'Paciente', C11, leftMid);
-  put('C7', holderDisplayName(order.patient), C11, { horizontal: 'left', vertical: 'middle' });
-  put('F7', 'Cédula:', C11, leftMid);
-  put('G7', holderId(order.patient), C11, center);
+  // R7 — Titular + Rif ó CI (el titular puede ser jurídico → RIF)
+  put('A7', 'Titular', C11, leftMid);
+  put('C7', holderDisplayName(order.holder), C11, { horizontal: 'left', vertical: 'middle' });
+  put('F7', 'Rif ó CI:', C11, leftMid);
+  put('G7', holderId(order.holder), C11, center);
   boxRow(7);
 
-  // R8 — Edad + Teléfono + Referencia
-  const age = ageFromBirthDate(order.patient?.birthDate);
-  const phone = order.patient?.phones?.[0]?.number ?? '';
-  put('A8', 'Edad: ', C11B, leftMid);
-  put('B8', age ? Number(age) : '', C11, center);
-  put('D8', 'Teléfono:', C11B, leftMid);
-  put('E8', phone, C11, { horizontal: 'left', vertical: 'middle' }, '@');
-  put('F8', 'Referencia:', C11B, leftMid);
-  put('G8', orderReferenceLabel(order), C11, center);
+  // R8 — Paciente + Cédula
+  put('A8', 'Paciente', C11, leftMid);
+  put('C8', holderDisplayName(order.patient), C11, { horizontal: 'left', vertical: 'middle' });
+  put('F8', 'Cédula:', C11, leftMid);
+  put('G8', holderId(order.patient), C11, center);
   boxRow(8);
 
-  // R9 — Dirección (B9:G9 mergeado)
-  put('A9', 'Dirección: ', C11, leftMid);
-  put('B9', order.patient?.address ?? '', C11, { horizontal: 'left', vertical: 'middle' });
+  // R9 — Edad + Teléfono + Referencia
+  const age = ageFromBirthDate(order.patient?.birthDate);
+  const phone = order.patient?.phones?.[0]?.number ?? '';
+  put('A9', 'Edad: ', C11B, leftMid);
+  put('B9', age ? Number(age) : '', C11, center);
+  put('D9', 'Teléfono:', C11B, leftMid);
+  put('E9', phone, C11, { horizontal: 'left', vertical: 'middle' }, '@');
+  put('F9', 'Referencia:', C11B, leftMid);
+  put('G9', orderReferenceLabel(order), C11, center);
   boxRow(9);
 
-  // R10 — Patología + Clave de Servicio. Valor mergeado B10:E10.
+  // R10 — Dirección (B10:G10 mergeado)
+  put('A10', 'Dirección: ', C11, leftMid);
+  put('B10', order.patient?.address ?? '', C11, { horizontal: 'left', vertical: 'middle' });
+  boxRow(10);
+
+  // R11 — Patología + Clave de Servicio. Valor mergeado B11:E11.
   const pathologyText = (order.pathologies ?? [])
     .map((p) => p.name)
     .filter(Boolean)
     .join(', ');
-  put('A10', 'Patología:', C11, { vertical: 'middle', wrapText: true });
-  put('B10', pathologyText, C11, { horizontal: 'left', vertical: 'middle', wrapText: true });
-  put('F10', 'Clave de Servicio:', C11, leftMid);
-  // Clave de servicio = la capturada en el Paso 1 (sólo seguro la persiste).
-  put('G10', order.serviceKey ?? '', C11, center);
-  boxRow(10);
+  put('A11', 'Patología:', C11, { vertical: 'middle', wrapText: true });
+  put('B11', pathologyText, C11, { horizontal: 'left', vertical: 'middle', wrapText: true });
+  put('F11', 'Clave de Servicio:', C11, leftMid);
+  // Clave de servicio: seguro la captura en el Paso 1; crédito-reembolso → "R".
+  put('G11', orderServiceKeyDisplay(order), C11, center);
+  boxRow(11);
   // Excel no auto-ajusta filas con celdas mergeadas: altura explícita.
   // Merge B:E ≈ 4 cols × 10.71 ≈ 40 chars en Calibri 11.
   const pathologyLines = Math.max(1, Math.ceil(pathologyText.length / 40));
-  ws.getRow(10).height = Math.max(15, pathologyLines * 15);
+  ws.getRow(11).height = Math.max(15, pathologyLines * 15);
 
-  // R11 — Header tabla "Tipos de Servicios" (A11:G11 mergeado)
-  put('A11', 'Tipos de Servicios', F12, center);
-  boxRow(11);
+  // R12 — Header tabla "Tipos de Servicios" (A12:G12 mergeado)
+  put('A12', 'Tipos de Servicios', F12, center);
+  boxRow(12);
 
   // ====== Tabla de servicios — mín. 2 filas, 2 STs por fila (A:D y E:G) ======
   const sts = group.rows.map((row) => {
@@ -722,7 +750,7 @@ export async function downloadOrdenInternaForProvider(
     vertical: 'top',
     wrapText: true,
   };
-  const tableStart = 12;
+  const tableStart = 13;
   const tableRows = Math.max(2, Math.ceil(sts.length / 2));
   for (let i = 0; i < tableRows; i++) {
     const r = tableStart + i;

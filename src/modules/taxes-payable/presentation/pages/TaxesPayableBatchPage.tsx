@@ -6,26 +6,18 @@ import { z } from 'zod';
 import {
   ChevronDown,
   ChevronLeft,
-  Download,
   FileSpreadsheet,
-  FileText,
   Pencil,
   Plus,
+  Save,
   Search,
   Trash2,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   AlertDialog,
@@ -51,19 +43,14 @@ import {
 import { taxesPayableGateway } from '../../infrastructure/taxesPayableGateway';
 import {
   batchProvidersSummary,
+  effectiveTaxAmountBs,
   recipientName,
   taxAmountBs,
   type TaxBatch,
   type TaxObligation,
 } from '../../domain/models/taxesPayable';
-import {
-  downloadBatchInvoiceXlsx,
-  downloadWithholdingXlsx,
-} from '../components/taxesPayableExcel';
-import {
-  downloadBatchInvoicePdf,
-  downloadWithholdingPdf,
-} from '../components/taxesPayablePdf';
+import { downloadIslrComprobanteXlsx } from '../components/taxesPayableExcel';
+import { TaxUnitSelect } from '@/modules/tax-units/presentation/components/TaxUnitSelect';
 import {
   PAYMENT_TYPE_LABEL,
   type OrderPaymentType,
@@ -72,7 +59,7 @@ import { Can } from '@/modules/auth/presentation/components/Can';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 
 const paymentSchema = z.object({
-  payments: z.array(taxPaymentSchema).min(1, 'Registrá al menos un pago'),
+  payments: z.array(taxPaymentSchema).min(1, 'Registra al menos un pago'),
 });
 type PaymentFormValues = z.infer<typeof paymentSchema>;
 
@@ -149,16 +136,20 @@ export function TaxesPayableBatchPage() {
   // Un lote SENIAT puede mezclar proveedores: el pago va al fisco, no al proveedor.
   const canCreate = selectedRows.length >= 1;
 
-  const filteredPending = useMemo(() => {
+  // Resultados del buscador: sólo al escribir, excluye las ya agregadas.
+  // Un lote SENIAT puede mezclar proveedores → sin restricción de proveedor.
+  const candidates = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return pending;
-    return pending.filter(
-      (t) =>
+    if (!q) return [];
+    return pending.filter((t) => {
+      if (selected.has(t.id)) return false;
+      return (
         t.taxPayableNumber.toLowerCase().includes(q) ||
         recipientName(t).toLowerCase().includes(q) ||
-        (t.internalNumbers ?? []).some((n) => n.toLowerCase().includes(q)),
-    );
-  }, [pending, search]);
+        (t.internalNumbers ?? []).some((n) => n.toLowerCase().includes(q))
+      );
+    });
+  }, [pending, search, selected]);
 
   const toggleSelect = (taxId: string) =>
     setSelected((prev) => {
@@ -206,7 +197,7 @@ export function TaxesPayableBatchPage() {
               Pagar retenciones
             </h1>
             <p className="text-sm text-muted-foreground">
-              Seleccioná las retenciones pendientes a incluir en el lote. Pueden
+              Selecciona las retenciones pendientes a incluir en el lote. Pueden
               ser de varios proveedores.
             </p>
           </div>
@@ -220,8 +211,8 @@ export function TaxesPayableBatchPage() {
         </div>
 
         <FormSection
-          title="Retenciones pendientes"
-          description="Marcá las retenciones a incluir en el lote. Pueden ser de proveedores distintos."
+          title="Retenciones del lote"
+          description="Estas retenciones forman el lote. Busca para agregar más; pueden ser de proveedores distintos."
         >
           <div className="relative mb-3">
             <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
@@ -239,77 +230,87 @@ export function TaxesPayableBatchPage() {
             </div>
           ) : createLoading ? (
             <p className="text-sm text-muted-foreground">Cargando retenciones…</p>
-          ) : pending.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No hay retenciones pendientes.
-            </p>
           ) : (
-            <div className="rounded-lg border overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-10"></TableHead>
-                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                      N° comprobante
-                    </TableHead>
-                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                      Proveedor
-                    </TableHead>
-                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                      Órdenes
-                    </TableHead>
-                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                      Retención Bs.
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredPending.length === 0 ? (
-                    <TableRow>
-                      <TableCell
-                        colSpan={5}
-                        className="py-6 text-center text-sm text-muted-foreground"
-                      >
-                        Sin resultados para “{search}”.
-                      </TableCell>
-                    </TableRow>
+            <>
+              {/* Resultados del buscador: agregar al lote */}
+              {search.trim() ? (
+                <div className="mb-4 rounded-lg border divide-y overflow-hidden">
+                  {candidates.length === 0 ? (
+                    <p className="px-3 py-4 text-center text-sm text-muted-foreground">
+                      Sin resultados para “{search}”.
+                    </p>
                   ) : (
-                    filteredPending.map((t) => {
-                      return (
-                        <TableRow
-                          key={t.id}
-                          className="hover:bg-muted/30 cursor-pointer"
-                          onClick={() => toggleSelect(t.id)}
-                        >
-                          <TableCell className="py-3 px-4">
-                            <Checkbox
-                              checked={selected.has(t.id)}
-                              onCheckedChange={() => toggleSelect(t.id)}
-                              aria-label="Seleccionar retención"
-                            />
-                          </TableCell>
-                          <TableCell className="py-3 px-4 font-mono text-sm font-semibold">
+                    candidates.map((t) => (
+                      <button
+                        type="button"
+                        key={t.id}
+                        onClick={() => toggleSelect(t.id)}
+                        className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-muted/40"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-mono text-sm font-semibold">
                             {t.taxPayableNumber}
-                          </TableCell>
-                          <TableCell className="py-3 px-4 text-sm">
-                            <div>{recipientName(t)}</div>
-                            <div className="text-[11px] text-muted-foreground">
-                              {t.recipientType === 'doctor' ? 'Doctor' : 'Centro'}
-                            </div>
-                          </TableCell>
-                          <TableCell className="py-3 px-4 text-xs font-mono truncate max-w-[160px]">
+                          </div>
+                          <div className="text-[11px] text-muted-foreground truncate">
+                            {recipientName(t)} ·{' '}
+                            {t.recipientType === 'doctor' ? 'Doctor' : 'Centro'} ·{' '}
                             {ordersLabel(t)}
-                          </TableCell>
-                          <TableCell className="py-3 px-4 text-sm font-mono">
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="font-mono text-sm">
                             {formatMoney(taxAmountBs(t))} Bs.
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })
+                          </span>
+                          <Plus className="w-4 h-4 text-brand-blue" />
+                        </div>
+                      </button>
+                    ))
                   )}
-                </TableBody>
-              </Table>
-            </div>
+                </div>
+              ) : null}
+
+              {/* Lista del lote (preseleccionadas + agregadas) */}
+              {selectedRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground italic">
+                  No hay retenciones en el lote. Busca y agrega al menos una.
+                </p>
+              ) : (
+                <ul className="text-sm divide-y rounded-lg border">
+                  {selectedRows.map((t) => (
+                    <li
+                      key={t.id}
+                      className="flex items-center justify-between gap-3 px-3 py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <div className="font-mono font-semibold">
+                          {t.taxPayableNumber}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground truncate">
+                          {recipientName(t)} ·{' '}
+                          {t.recipientType === 'doctor' ? 'Doctor' : 'Centro'} ·{' '}
+                          {ordersLabel(t)}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="font-mono">
+                          {formatMoney(taxAmountBs(t))} Bs.
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                          onClick={() => toggleSelect(t.id)}
+                          title="Quitar del lote"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
           )}
 
           <div className="mt-3 rounded-md border p-3 flex items-center justify-between gap-3 text-sm">
@@ -355,12 +356,24 @@ function BatchDetail({ id }: { id: string }) {
   const [confirmPaymentDelete, setConfirmPaymentDelete] = useState<string | null>(null);
   const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [downloading, setDownloading] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
+
+  // Datos del comprobante ISLR (los pide el usuario al descargar).
+  const [comprobanteNumber, setComprobanteNumber] = useState('');
+  const [comprobanteDate, setComprobanteDate] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setBatch(await taxesPayableGateway.getBatch(id));
+      const b = await taxesPayableGateway.getBatch(id);
+      setBatch(b);
+      // Prefill con los datos del comprobante guardados en el lote.
+      setComprobanteNumber(b.comprobanteNumber ?? '');
+      if (b.comprobanteIssueDate) {
+        setComprobanteDate(b.comprobanteIssueDate.slice(0, 10));
+      }
     } catch (e) {
       notify.error(getHttpErrorMessage(e, 'No se pudo cargar el lote'));
       navigate('/taxes-payable?tab=batches');
@@ -552,32 +565,48 @@ function BatchDetail({ id }: { id: string }) {
     }
   };
 
-  const handleDownload = async (kind: 'inv-xlsx' | 'inv-pdf') => {
-    if (!batch) return;
-    setDownloading(kind);
+  const onSaveComprobante = async () => {
+    if (!comprobanteNumber.trim() || !comprobanteDate) return;
+    setBusy(true);
     try {
-      if (kind === 'inv-xlsx') await downloadBatchInvoiceXlsx(batch);
-      else await downloadBatchInvoicePdf(batch);
+      setBatch(
+        await taxesPayableGateway.setComprobante(id, {
+          comprobanteNumber: comprobanteNumber.trim(),
+          issueDate: comprobanteDate,
+        }),
+      );
+      notify.success('Datos del comprobante guardados');
     } catch (e) {
-      notify.error(getHttpErrorMessage(e, 'No se pudo generar el archivo'));
+      notify.fromError(e, 'No se pudieron guardar los datos');
     } finally {
-      setDownloading(null);
+      setBusy(false);
     }
   };
 
-  const handleDownloadWithholding = async (
-    obligation: TaxObligation,
-    kind: 'xlsx' | 'pdf',
-  ) => {
-    const dlKey = `${obligation.id}:${kind}`;
-    setDownloading(dlKey);
+  const handleDownloadComprobante = async () => {
+    if (!batch || !comprobanteNumber.trim() || !comprobanteDate) return;
+    setDownloading(true);
     try {
-      if (kind === 'xlsx') await downloadWithholdingXlsx(obligation);
-      else await downloadWithholdingPdf(obligation);
+      await downloadIslrComprobanteXlsx(batch, {
+        comprobanteNumber: comprobanteNumber.trim(),
+        issueDate: comprobanteDate,
+      });
     } catch (e) {
       notify.error(getHttpErrorMessage(e, 'No se pudo generar el comprobante'));
     } finally {
-      setDownloading(null);
+      setDownloading(false);
+    }
+  };
+
+  const onSetAdjustment = async (taxUnitId: string | null) => {
+    setBusy(true);
+    try {
+      setBatch(await taxesPayableGateway.setAdjustment(id, taxUnitId));
+      notify.success(taxUnitId ? 'Ajuste aplicado' : 'Ajuste quitado');
+    } catch (e) {
+      notify.fromError(e, 'No se pudo aplicar el ajuste');
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -626,28 +655,12 @@ function BatchDetail({ id }: { id: string }) {
           />
           <SummaryTile label="Falta por pagar" value={`${formatMoney(pendingBs)} Bs.`} />
         </div>
-        <div className="flex flex-wrap gap-2 mt-3">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => handleDownload('inv-xlsx')}
-            disabled={downloading !== null}
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 mr-1" />
-            {downloading === 'inv-xlsx' ? 'Generando…' : 'Factura agrupada (Excel)'}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => handleDownload('inv-pdf')}
-            disabled={downloading !== null}
-          >
-            <FileText className="w-3.5 h-3.5 mr-1" />
-            {downloading === 'inv-pdf' ? 'Generando…' : 'Factura agrupada (PDF)'}
-          </Button>
-        </div>
+        {batch.adjustmentTaxUnit ? (
+          <p className="text-xs text-muted-foreground mt-2">
+            Total con ajuste de UT (1 UT = {formatMoney(batch.adjustmentTaxUnit.amountBs)}{' '}
+            Bs.). Sin ajuste: {formatMoney(batch.originalTargetBs ?? 0)} Bs.
+          </p>
+        ) : null}
       </FormSection>
 
       {/* Retenciones */}
@@ -730,7 +743,7 @@ function BatchDetail({ id }: { id: string }) {
           </div>
         ) : (
           <p className="text-xs italic text-muted-foreground mb-2">
-            El lote está pagado: editá o quitá un pago para modificar sus retenciones.
+            El lote está pagado: edita o quita un pago para modificar sus retenciones.
           </p>
         )}
 
@@ -750,29 +763,15 @@ function BatchDetail({ id }: { id: string }) {
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <span className="font-mono">{formatMoney(taxAmountBs(o))} Bs.</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={() => handleDownloadWithholding(o, 'pdf')}
-                  disabled={downloading !== null}
-                  title="Comprobante de retención (PDF)"
-                >
-                  <FileText className="w-3.5 h-3.5" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={() => handleDownloadWithholding(o, 'xlsx')}
-                  disabled={downloading !== null}
-                  title="Comprobante de retención (Excel)"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                </Button>
+                <span className="font-mono">
+                  {formatMoney(effectiveTaxAmountBs(o))} Bs.
+                  {o.adjustedTaxAmountBs !== undefined &&
+                  Math.abs(effectiveTaxAmountBs(o) - taxAmountBs(o)) > 0.009 ? (
+                    <span className="ml-1.5 text-[11px] text-muted-foreground line-through">
+                      {formatMoney(taxAmountBs(o))}
+                    </span>
+                  ) : null}
+                </span>
                 {!isPaid ? (
                   <Button
                     type="button"
@@ -791,6 +790,123 @@ function BatchDetail({ id }: { id: string }) {
           ))}
         </ul>
       </FormSection>
+
+      {/* Comprobante de retención ISLR */}
+      <FormSection
+        title="Comprobante de retención ISLR"
+        description="Documento general del lote (Decreto 1.808): una hoja por sujeto retenido, con una fila por factura. Completa los datos para descargarlo."
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-[18px]">
+          <div className="space-y-1.5">
+            <label
+              htmlFor="comprobante-number"
+              className="text-sm font-medium leading-none"
+            >
+              N° de comprobante <span className="text-destructive">*</span>
+            </label>
+            <Input
+              id="comprobante-number"
+              placeholder="Ej. 20260600000079"
+              value={comprobanteNumber}
+              onChange={(e) => setComprobanteNumber(e.target.value)}
+              className="h-9 font-mono"
+              maxLength={30}
+            />
+            <p className="text-xs text-muted-foreground">
+              Correlativo SENIAT del comprobante (año + mes + secuencia).
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <label
+              htmlFor="comprobante-date"
+              className="text-sm font-medium leading-none"
+            >
+              Fecha de emisión <span className="text-destructive">*</span>
+            </label>
+            <Input
+              id="comprobante-date"
+              type="date"
+              value={comprobanteDate}
+              onChange={(e) => setComprobanteDate(e.target.value)}
+              className="h-9"
+            />
+            <p className="text-xs text-muted-foreground">
+              Define también el período fiscal (año/mes) del comprobante.
+            </p>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-3">
+          <Can permission={PERMISSIONS.TAXES_PAYABLE.UPDATE}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onSaveComprobante}
+              disabled={busy || !comprobanteNumber.trim() || !comprobanteDate}
+            >
+              <Save className="w-3.5 h-3.5 mr-1.5" />
+              {busy ? 'Guardando…' : 'Guardar datos'}
+            </Button>
+          </Can>
+          <Button
+            type="button"
+            onClick={handleDownloadComprobante}
+            disabled={downloading || !comprobanteNumber.trim() || !comprobanteDate}
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5" />
+            {downloading ? 'Generando…' : 'Descargar comprobante (Excel)'}
+          </Button>
+        </div>
+      </FormSection>
+
+      {/* Ajuste de UT */}
+      <Can permission={PERMISSIONS.TAXES_PAYABLE.UPDATE}>
+        <FormSection
+          title="Ajuste"
+          description="Si la Unidad Tributaria subió entre pagar la cuenta por pagar y enterar la retención, selecciona la UT nueva: el monto a pagar al SENIAT se recalcula (lo retenido al proveedor no cambia)."
+        >
+          <div className="flex items-end gap-2 flex-wrap">
+            <TaxUnitSelect
+              className="flex-1 min-w-64"
+              label="Unidad Tributaria del ajuste"
+              placeholder="Sin ajuste — se paga el monto original de cada retención"
+              selectedId={batch.adjustmentTaxUnitId ?? null}
+              selectedFallback={batch.adjustmentTaxUnit ?? null}
+              onSelect={(ut) => onSetAdjustment(ut.id)}
+              disabled={isPaid || busy}
+              lockNote={
+                isPaid
+                  ? 'El lote está pagado: edita o quita un pago para ajustar la UT.'
+                  : undefined
+              }
+            />
+            {batch.adjustmentTaxUnitId && !isPaid ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9"
+                onClick={() => onSetAdjustment(null)}
+                disabled={busy}
+              >
+                <X className="w-3.5 h-3.5 mr-1" /> Quitar ajuste
+              </Button>
+            ) : null}
+          </div>
+          {batch.adjustmentTaxUnit ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm mt-3">
+              <SummaryTile
+                label="Total sin ajuste"
+                value={`${formatMoney(batch.originalTargetBs ?? 0)} Bs.`}
+              />
+              <SummaryTile
+                label="Total ajustado al SENIAT"
+                value={`${formatMoney(targetBs)} Bs.`}
+                tone="success"
+              />
+            </div>
+          ) : null}
+        </FormSection>
+      </Can>
 
       {/* Pagos registrados */}
       <FormSection
@@ -859,7 +975,7 @@ function BatchDetail({ id }: { id: string }) {
             >
               <FormSection
                 title={editingPaymentId ? 'Editar pago al SENIAT' : 'Registrar pago al SENIAT'}
-                description="El impuesto se paga en bolívares fijos. Podés pagar parcial."
+                description="El impuesto se paga en bolívares fijos. Puedes pagar parcial."
               >
                 <Controller
                   control={control}

@@ -311,8 +311,8 @@ export function AccountsPayableList() {
           Cuentas por pagar
         </h1>
         <p className="text-sm text-muted-foreground">
-          Armá lotes de pago por proveedor desde las órdenes pendientes y
-          registrá los pagos.
+          Arma lotes de pago por proveedor desde las órdenes pendientes y
+          registra los pagos.
         </p>
       </div>
 
@@ -337,6 +337,7 @@ export function AccountsPayableList() {
                   <Button
                     size="lg"
                     onClick={goCreate}
+                    disabled={selectedRows.length > 0 && !canCreate}
                     className="bg-brand-blue text-white shadow-sm hover:bg-brand-blue-strong font-semibold"
                   >
                     <Plus className="w-4 h-4 mr-1.5" />
@@ -353,7 +354,7 @@ export function AccountsPayableList() {
             {selectedRows.length > 0 && !sharedProvider ? (
               <div className="mx-4 mt-3 rounded-lg border border-warning/30 bg-warning-soft p-2.5 text-xs text-warning">
                 Las órdenes seleccionadas son de proveedores distintos. Un lote
-                agrupa órdenes de un solo proveedor.
+                agrupa órdenes de un solo doctor o de un solo centro.
               </div>
             ) : null}
             {pendingError ? (
@@ -402,8 +403,8 @@ export function AccountsPayableList() {
                           }
                           description={
                             hasActiveFilters
-                              ? 'Limpiá los filtros para ver todas las órdenes.'
-                              : 'Las órdenes finalizadas con monto al proveedor aparecen acá hasta que se incluyen en un lote.'
+                              ? 'Limpia los filtros para ver todas las órdenes.'
+                              : 'Las órdenes finalizadas con monto al proveedor aparecen aquí hasta que se incluyen en un lote.'
                           }
                         />
                       </TableCell>
@@ -555,8 +556,8 @@ export function AccountsPayableList() {
                           }
                           description={
                             hasActiveFilters
-                              ? 'Limpiá los filtros para ver todos los lotes.'
-                              : 'Realizá un pago desde la pestaña Pendientes.'
+                              ? 'Limpia los filtros para ver todos los lotes.'
+                              : 'Realiza un pago desde la pestaña Pendientes.'
                           }
                         />
                       </TableCell>

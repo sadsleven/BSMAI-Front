@@ -14,6 +14,7 @@ export type CurrencyAmountInputProps = {
   invalid?: boolean;
   className?: string;
   disabled?: boolean;
+  readOnly?: boolean;
   id?: string;
   name?: string;
   placeholder?: string;
@@ -39,6 +40,7 @@ export const CurrencyAmountInput = React.forwardRef<
     invalid,
     onBlur,
     disabled,
+    readOnly,
     id,
     name,
     placeholder = '0,00',
@@ -80,6 +82,7 @@ export const CurrencyAmountInput = React.forwardRef<
         disableAbbreviations
         intlConfig={undefined}
         disabled={disabled}
+        readOnly={readOnly}
         onValueChange={(raw, _, values) => {
           setDisplay(raw ?? '');
           const next =
@@ -95,6 +98,7 @@ export const CurrencyAmountInput = React.forwardRef<
           'placeholder:text-muted-foreground',
           'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]',
           'disabled:cursor-not-allowed disabled:opacity-50',
+          'read-only:bg-muted/30 read-only:cursor-default',
           invalid && 'border-destructive focus-visible:ring-destructive/30',
           className,
         )}

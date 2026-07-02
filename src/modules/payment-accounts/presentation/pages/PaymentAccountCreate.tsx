@@ -80,7 +80,7 @@ export function PaymentAccountCreate() {
                 Nueva cuenta bancaria
               </h1>
               <p className="text-sm text-muted-foreground">
-                Definí una cuenta propia para recibir pagos y cobros.
+                Define una cuenta propia para recibir pagos y cobros.
               </p>
             </div>
             <button

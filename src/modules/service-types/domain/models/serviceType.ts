@@ -2,6 +2,22 @@
  * Tipo de Servicio. Guarda el precio "Particular" en USD (opcional) — los precios
  * por Seguro, Doctor o Centro viven en sus propias sub-tablas.
  */
+export interface InsurancePriceAssignment {
+  insuranceId: string;
+  insuranceName: string;
+  priceUsd: string | number;
+}
+export interface DoctorPriceAssignment {
+  doctorId: string;
+  doctorName: string;
+  priceUsd: string | number;
+}
+export interface CareCenterPriceAssignment {
+  careCenterId: string;
+  careCenterName: string;
+  priceUsd: string | number;
+}
+
 export interface ServiceType {
   id: string;
   name: string;
@@ -11,6 +27,10 @@ export interface ServiceType {
   createdAt?: string;
   updatedAt?: string;
   deletedAt?: string | null;
+  /** Asignaciones de precio (sólo en el detalle `getById`). */
+  insurancePrices?: InsurancePriceAssignment[];
+  doctorPrices?: DoctorPriceAssignment[];
+  careCenterPrices?: CareCenterPriceAssignment[];
 }
 
 export interface CreateServiceTypeDto {

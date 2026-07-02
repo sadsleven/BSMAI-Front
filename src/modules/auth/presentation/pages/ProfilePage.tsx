@@ -63,7 +63,6 @@ export function ProfilePage() {
       const updated = await authApi.updateMyProfile({
         firstName: values.firstName,
         lastName: values.lastName,
-        email: values.email,
         ...(isProvider
           ? {}
           : {
@@ -135,12 +134,17 @@ export function ProfilePage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" {...profileForm.register('email')} />
-              {profileForm.formState.errors.email ? (
-                <p className="text-xs text-destructive">
-                  {profileForm.formState.errors.email.message}
-                </p>
-              ) : null}
+              <Input
+                id="email"
+                type="email"
+                value={user?.email ?? ''}
+                readOnly
+                disabled
+                className="bg-muted/50 text-muted-foreground"
+              />
+              <p className="text-xs text-muted-foreground">
+                El correo no se puede modificar.
+              </p>
             </div>
             {!isProvider && (
             <>
@@ -167,7 +171,7 @@ export function ProfilePage() {
                       }
                     >
                       <SelectTrigger id="academicDegree">
-                        <SelectValue placeholder="Seleccioná un título" />
+                        <SelectValue placeholder="Selecciona un título" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__none__">

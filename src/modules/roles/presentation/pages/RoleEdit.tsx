@@ -193,7 +193,7 @@ export function RoleEdit() {
 
       <FormSection
         title="Permisos del rol"
-        description="Seleccioná los permisos que otorga este rol."
+        description="Selecciona los permisos que otorga este rol."
         footer={
           isSystem ? (
             <span className="text-xs text-muted-foreground">

@@ -93,7 +93,7 @@ export function OrderAttendStep({
     <div className="space-y-5">
       <FormSection
         title="Órdenes internas"
-        description="Un archivo por cada proveedor distinto de la orden, agrupando sus Tipos de Servicio. Descargá Excel o PDF (basta uno) e imprimilo. La factura completa se descarga en el Paso 4."
+        description="Un archivo por cada proveedor distinto de la orden, agrupando sus Tipos de Servicio. Descarga Excel o PDF (basta uno) e imprímelo. La factura completa se descarga en el Paso 4."
       >
         {providerGroups.length === 0 ? (
           <p className="text-sm text-muted-foreground">
@@ -174,18 +174,18 @@ export function OrderAttendStep({
 
       <FormSection
         title="Confirmar órdenes internas"
-        description="Confirmá que descargaste e imprimiste las órdenes internas de todos los proveedores para avanzar al informe."
+        description="Confirma que descargaste e imprimiste las órdenes internas de todos los proveedores para avanzar al informe."
       >
         <FormSwitch
           label="Órdenes internas descargadas e impresas"
-          description="Marcá cuando hayas descargado (Excel o PDF) e impreso la orden interna de cada proveedor."
+          description="Marca cuando hayas descargado (Excel o PDF) e impreso la orden interna de cada proveedor."
           checked={attended}
           onCheckedChange={setAttended}
           disabled={!allDownloaded || isFinalized}
         />
         {!allDownloaded ? (
           <p className="text-xs text-warning mt-2">
-            Descargá al menos un archivo (Excel o PDF) de cada proveedor para
+            Descarga al menos un archivo (Excel o PDF) de cada proveedor para
             habilitar la confirmación.
           </p>
         ) : null}

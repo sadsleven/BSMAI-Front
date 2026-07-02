@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, Download, FileSpreadsheet, HandCoins, ListTree, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CurrencyAmountInput } from '@/components/ui/currency-amount-input';
+import { Input } from '@/components/ui/input';
 import {
   Accordion,
   AccordionContent,
@@ -76,6 +77,8 @@ export function OrderBillingStep({
 
   const [providers, setProviders] = useState<ProviderRow[]>([]);
   const [loadingSuggested, setLoadingSuggested] = useState(false);
+  const [invoiceNumber, setInvoiceNumber] = useState(order.invoiceNumber ?? '');
+  const [controlNumber, setControlNumber] = useState(order.controlNumber ?? '');
 
   useEffect(() => {
     let cancelled = false;
@@ -234,7 +237,7 @@ export function OrderBillingStep({
       return;
     }
     if (providers.some((p) => p.amount === undefined || p.amount <= 0)) {
-      notify.error('Cargá un monto > 0 para cada proveedor');
+      notify.error('Carga un monto > 0 para cada proveedor');
       return;
     }
     if (!usdRate?.id) {
@@ -243,6 +246,14 @@ export function OrderBillingStep({
     }
     if (exceedsCap) {
       notify.error('La suma de pagos supera el monto declarado de la orden');
+      return;
+    }
+    if (!invoiceNumber.trim()) {
+      notify.error('Ingresa el número de factura');
+      return;
+    }
+    if (!controlNumber.trim()) {
+      notify.error('Ingresa el número de control');
       return;
     }
     setSaving(true);
@@ -255,6 +266,8 @@ export function OrderBillingStep({
           amount: p.amount!,
         })),
         billingExchangeRateId: usdRate.id,
+        invoiceNumber: invoiceNumber.trim(),
+        controlNumber: controlNumber.trim(),
       });
       notify.success('Orden finalizada');
       onSaved();
@@ -281,7 +294,7 @@ export function OrderBillingStep({
     <div className="space-y-5">
       <FormSection
         title="Factura"
-        description="Descargá la factura única con todos los tipos de servicio de la orden, en Excel o PDF."
+        description="Descarga la factura única con todos los tipos de servicio de la orden, en Excel o PDF."
       >
         <div className="rounded-lg border bg-card p-4 flex items-center gap-3 flex-wrap">
           <div className="w-10 h-10 rounded-md bg-success-soft text-success flex items-center justify-center shrink-0">
@@ -316,12 +329,41 @@ export function OrderBillingStep({
             </Button>
           </div>
         </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-[18px] mt-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="invoiceNumber">
+              Número de factura <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="invoiceNumber"
+              value={invoiceNumber}
+              maxLength={50}
+              disabled={isFinalized}
+              placeholder="Ej. 00012345"
+              onChange={(e) => setInvoiceNumber(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="controlNumber">
+              Número de control <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="controlNumber"
+              value={controlNumber}
+              maxLength={50}
+              disabled={isFinalized}
+              placeholder="Ej. 00012345"
+              onChange={(e) => setControlNumber(e.target.value)}
+            />
+          </div>
+        </div>
       </FormSection>
 
       {canSetProviderAmount ? (
       <FormSection
         title="Liquidación por proveedor"
-        description="Asigná el monto USD a pagar a cada proveedor. Cada uno se factura por separado."
+        description="Asigna el monto USD a pagar a cada proveedor. Cada uno se factura por separado."
       >
         {loadingSuggested && providers.length === 0 ? (
           <p className="text-sm text-muted-foreground">Calculando montos sugeridos…</p>
@@ -440,7 +482,7 @@ export function OrderBillingStep({
                         {missing.length > 0 && (
                           <p className="mt-2 text-[11px] text-warning">
                             El proveedor no tiene precio definido para{' '}
-                            <strong>{missing.join(', ')}</strong>. Ingresá el monto
+                            <strong>{missing.join(', ')}</strong>. Ingresa el monto
                             manualmente.
                           </p>
                         )}
@@ -568,7 +610,14 @@ export function OrderBillingStep({
               <Button
                 type="button"
                 onClick={onSubmit}
-                disabled={saving || isFinalized || !usdRate?.id || exceedsCap}
+                disabled={
+                  saving ||
+                  isFinalized ||
+                  !usdRate?.id ||
+                  exceedsCap ||
+                  !invoiceNumber.trim() ||
+                  !controlNumber.trim()
+                }
               >
                 {saving
                   ? 'Guardando...'
@@ -586,7 +635,7 @@ export function OrderBillingStep({
           description="Asignación de montos a proveedores."
         >
           <p className="text-sm text-muted-foreground">
-            No tenés permiso para asignar la liquidación a los proveedores
+            No tienes permiso para asignar la liquidación a los proveedores
             {isFinalized ? '' : ' ni finalizar la orden'}.
           </p>
         </FormSection>
@@ -595,7 +644,7 @@ export function OrderBillingStep({
       {isFinalized ? (
         <FormSection
           title="Próximos pasos"
-          description="Registrá pagos y cobros desde sus respectivas secciones."
+          description="Registra pagos y cobros desde sus respectivas secciones."
         >
           <div className="flex flex-wrap gap-2">
             {providers.map((p) => {
@@ -634,7 +683,7 @@ export function OrderBillingStep({
         </FormSection>
       ) : (
         <p className="text-xs italic text-muted-foreground">
-          Finalizá la orden para registrar los pagos a los proveedores
+          Finaliza la orden para registrar los pagos a los proveedores
           {order.type === 'insurance' ? ' y el cobro al seguro' : ''}
           {order.type === 'credit' ? ' y el cobro del crédito al titular' : ''}
           {order.type === 'cashea' ? ' y el cobro vía Cashea' : ''}.

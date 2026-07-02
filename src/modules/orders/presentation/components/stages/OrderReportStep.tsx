@@ -170,7 +170,7 @@ export function OrderReportStep({
       {providers.length === 0 ? (
         <p className="text-sm text-muted-foreground italic">
           {isProvider
-            ? 'No tenés servicios asignados en esta orden.'
+            ? 'No tienes servicios asignados en esta orden.'
             : 'La orden no tiene proveedores asignados.'}
         </p>
       ) : (
@@ -242,7 +242,7 @@ export function OrderReportStep({
       <div className="flex flex-col items-end gap-1.5">
         {isProvider && !canSubmit ? (
           <p className="text-xs text-muted-foreground">
-            Ingresá una observación o subí un archivo para guardar.
+            Ingresa una observación o sube un archivo para guardar.
           </p>
         ) : null}
         <div className="flex justify-end gap-2 flex-wrap">

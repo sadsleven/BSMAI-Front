@@ -82,8 +82,8 @@ export function UserChangePassword() {
           title="Contraseña"
           description={
             isSelf
-              ? 'Ingresá tu contraseña actual y elegí una nueva.'
-              : 'Definí una nueva contraseña para este usuario.'
+              ? 'Ingresa tu contraseña actual y elige una nueva.'
+              : 'Define una nueva contraseña para este usuario.'
           }
         >
           <div className="space-y-4">

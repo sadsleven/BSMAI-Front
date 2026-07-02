@@ -117,6 +117,8 @@ export interface Order {
   insuranceSource?: InsuranceSource | null;
   /** Clave/referencia externa del seguro. Sólo type='insurance'. ≤30 chars. */
   serviceKey?: string | null;
+  /** Orden de reembolso. Sólo type='credit'. Si true, la orden interna muestra "R". */
+  isReimbursement?: boolean;
   specialtyId: string;
   specialty?: { id: string; name: string };
   /** Filas ST + proveedor. Reemplaza `serviceTypes` y los top-level provider fields. */
@@ -128,12 +130,13 @@ export interface Order {
   appointmentDate: string;
   priceAmount: string | number;
   /**
-   * Comisión Cashea snapshot (dos tramos) al crear la orden. Sólo presentes
-   * cuando `type='cashea'`. Comisión = primeraCuota × firstRate + total × totalRate.
+   * Snapshot Cashea al crear la orden. Sólo presentes cuando `type='cashea'`.
+   * La inicial no genera comisión: comisión = total × commissionRate;
+   * financiamiento = (total − inicial) × financingRate.
    */
   casheaFirstInstallmentAmount?: string | number | null;
-  casheaFirstInstallmentRate?: string | number | null;
-  casheaTotalRate?: string | number | null;
+  casheaCommissionRate?: string | number | null;
+  casheaFinancingRate?: string | number | null;
   /**
    * Modo tasa fija para órdenes seguro. Cuando true, la cuenta por cobrar del
    * seguro se compara en Bs usando `fixedExchangeRate` (snapshot).
@@ -190,6 +193,8 @@ export interface Order {
     amountBs: string | number;
     effectiveDate: string;
   } | null;
+  invoiceNumber?: string | null;
+  controlNumber?: string | null;
   createdAt?: string;
   updatedAt?: string;
   deletedAt?: string | null;
@@ -229,6 +234,8 @@ export interface BillingProviderInput {
 export interface BillingOrderDto {
   providers: BillingProviderInput[];
   billingExchangeRateId: string;
+  invoiceNumber: string;
+  controlNumber: string;
 }
 
 export interface OrderServiceTypeRowInput {
@@ -250,6 +257,7 @@ export interface CreateOrderDto {
   insuranceId?: string;
   insuranceSource?: InsuranceSource;
   serviceKey?: string;
+  isReimbursement?: boolean;
   specialtyId: string;
   serviceTypes: OrderServiceTypeRowInput[];
   pathologyIds?: string[];
@@ -317,6 +325,20 @@ export const ORDER_TYPE_LABEL: Record<OrderType, string> = {
   insurance: 'Seguro',
   cashea: 'Cashea',
 };
+
+/**
+ * Valor de "Clave de Servicio" para la orden interna (Paso 2). Las órdenes de
+ * crédito marcadas como reembolso muestran "R"; el resto usa `serviceKey`
+ * (que sólo persisten las órdenes de seguro). Vacío si no aplica.
+ */
+export function orderServiceKeyDisplay(order: {
+  type?: OrderType;
+  serviceKey?: string | null;
+  isReimbursement?: boolean | null;
+}): string {
+  if (order.type === 'credit' && order.isReimbursement) return 'R';
+  return order.serviceKey ?? '';
+}
 
 export const PAYMENT_TYPE_LABEL: Record<OrderPaymentType, string> = {
   mobile_payment: 'Pago móvil',

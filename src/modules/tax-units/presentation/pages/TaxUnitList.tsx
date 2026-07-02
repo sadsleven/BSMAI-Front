@@ -311,8 +311,8 @@ export function TaxUnitList() {
                     title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay unidades tributarias'}
                     description={
                       hasActiveFilters
-                        ? 'Ajustá los filtros para ver más resultados.'
-                        : 'Creá la primera unidad tributaria.'
+                        ? 'Ajusta los filtros para ver más resultados.'
+                        : 'Crea la primera unidad tributaria.'
                     }
                     action={
                       hasActiveFilters ? (
@@ -503,7 +503,7 @@ export function TaxUnitList() {
           {hardConfirm === 1 ? (
             <div className="px-6">
               <DialogBanner tone="destructive">
-                Esta acción es irreversible. Confirmá de nuevo para eliminar permanentemente.
+                Esta acción es irreversible. Confirma de nuevo para eliminar permanentemente.
               </DialogBanner>
             </div>
           ) : null}

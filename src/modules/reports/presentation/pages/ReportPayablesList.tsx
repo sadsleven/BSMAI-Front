@@ -317,7 +317,7 @@ export function ReportPayablesList() {
                     title={hasActiveFilters ? 'Sin resultados' : 'Sin cuentas por pagar'}
                     description={
                       hasActiveFilters
-                        ? 'Ajustá los filtros para ver más resultados.'
+                        ? 'Ajusta los filtros para ver más resultados.'
                         : 'Aún no hay obligaciones de pago a proveedores.'
                     }
                   />

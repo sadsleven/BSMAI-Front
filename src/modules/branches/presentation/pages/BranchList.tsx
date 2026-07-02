@@ -331,8 +331,8 @@ export function BranchList() {
                     title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay sucursales'}
                     description={
                       hasActiveFilters
-                        ? 'Ajustá los filtros para ver más resultados.'
-                        : 'Creá la primera sucursal.'
+                        ? 'Ajusta los filtros para ver más resultados.'
+                        : 'Crea la primera sucursal.'
                     }
                     action={
                       hasActiveFilters ? (
@@ -530,7 +530,7 @@ export function BranchList() {
           {hardConfirm === 1 ? (
             <div className="px-6">
               <DialogBanner tone="destructive">
-                Esta acción es irreversible. Confirmá de nuevo para eliminar permanentemente.
+                Esta acción es irreversible. Confirma de nuevo para eliminar permanentemente.
               </DialogBanner>
             </div>
           ) : null}

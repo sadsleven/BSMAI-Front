@@ -102,7 +102,7 @@ export function PatientCreateModal({ open, onOpenChange, onCreated }: PatientCre
                 Nuevo paciente
               </AlertDialogTitle>
               <AlertDialogDescription className="text-sm text-muted-foreground">
-                Completá los datos para crear un paciente. Quedará autoseleccionado en la orden.
+                Completa los datos para crear un paciente. Quedará autoseleccionado en la orden.
               </AlertDialogDescription>
             </div>
           </div>
@@ -112,7 +112,7 @@ export function PatientCreateModal({ open, onOpenChange, onCreated }: PatientCre
             onSubmit={(e) => {
               // Modal embebido dentro del <form> de la orden (portal Radix; los
               // eventos de React igual burbujean por el árbol de componentes).
-              // Frená la propagación para no disparar el submit/guardado de la orden.
+              // Frena la propagación para no disparar el submit/guardado de la orden.
               e.stopPropagation();
               void handleSubmit(onSubmit, (errs) => notifyFormErrors(errs))(e);
             }}

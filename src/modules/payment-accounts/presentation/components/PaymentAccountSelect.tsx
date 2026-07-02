@@ -4,7 +4,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { paymentAccountGateway } from '../../infrastructure/paymentAccountGateway';
@@ -65,6 +64,16 @@ export function PaymentAccountSelect({
     };
   }, [type]);
 
+  // Autoselección: ninguna cuenta elegida → seleccionar la primera asignable
+  // una vez cargadas.
+  useEffect(() => {
+    if (loading || value) return;
+    if (accounts.length > 0) {
+      onChange(accounts[0].id, accounts[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, value, accounts]);
+
   const items = useMemo(() => {
     const map = new Map<string, PaymentAccount>();
     for (const a of accounts) map.set(a.id, a);
@@ -82,6 +91,8 @@ export function PaymentAccountSelect({
     onChange(id, acc);
   };
 
+  const selected = value ? items.find((a) => a.id === value) ?? null : null;
+
   return (
     <Select value={value || ''} onValueChange={handleChange} disabled={disabled}>
       <SelectTrigger
@@ -90,13 +101,22 @@ export function PaymentAccountSelect({
           error && 'border-destructive',
         )}
       >
-        <SelectValue
-          placeholder={
-            loading
+        {selected ? (
+          <span className="truncate text-left">
+            {selected.name}
+            {paymentAccountSummary(selected) ? (
+              <span className="ml-2 text-[11px] text-muted-foreground">
+                {paymentAccountSummary(selected)}
+              </span>
+            ) : null}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">
+            {loading
               ? 'Cargando…'
-              : placeholder ?? `Cuenta de ${PAYMENT_ACCOUNT_TYPE_LABEL[type]}`
-          }
-        />
+              : placeholder ?? `Cuenta de ${PAYMENT_ACCOUNT_TYPE_LABEL[type]}`}
+          </span>
+        )}
       </SelectTrigger>
       <SelectContent>
         {items.length === 0 ? (

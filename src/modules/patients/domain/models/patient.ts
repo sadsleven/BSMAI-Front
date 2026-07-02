@@ -15,7 +15,7 @@ export function patientInsurancesFromContractors(p: { contractors?: Contractor[]
 export type InsuranceSource = 'direct' | 'via_contractor';
 
 export interface PatientAvailableInsurance {
-  insurance: Pick<Insurance, 'id' | 'name'>;
+  insurance: Pick<Insurance, 'id' | 'name' | 'isIndexed'>;
   source: InsuranceSource;
   /** Sólo presente cuando `source === 'via_contractor'`. */
   contractor: { id: string; name: string } | null;

@@ -239,7 +239,7 @@ export function ReportDisbursements() {
                     title={hasActiveFilters ? 'Sin resultados' : 'Sin pagos emitidos'}
                     description={
                       hasActiveFilters
-                        ? 'Ajustá los filtros para ver más resultados.'
+                        ? 'Ajusta los filtros para ver más resultados.'
                         : 'Aún no se han registrado pagos a proveedores.'
                     }
                   />

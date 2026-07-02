@@ -336,8 +336,8 @@ export function ServiceTypeList() {
                     title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay tipos de servicio'}
                     description={
                       hasActiveFilters
-                        ? 'Ajustá los filtros para ver más resultados.'
-                        : 'Creá la primera tipo de servicio.'
+                        ? 'Ajusta los filtros para ver más resultados.'
+                        : 'Crea la primera tipo de servicio.'
                     }
                     action={
                       hasActiveFilters ? (
@@ -540,7 +540,7 @@ export function ServiceTypeList() {
           {hardConfirm === 1 ? (
             <div className="px-6">
               <DialogBanner tone="destructive">
-                Esta acción es irreversible. Confirmá de nuevo para eliminar permanentemente.
+                Esta acción es irreversible. Confirma de nuevo para eliminar permanentemente.
               </DialogBanner>
             </div>
           ) : null}

@@ -10,7 +10,7 @@ export interface RowActionsState {
   reason: string | null;
 }
 
-const SELF_REASON = 'Usá Mi perfil para modificar tus propios datos';
+const SELF_REASON = 'Usa Mi perfil para modificar tus propios datos';
 const SUPER_ADMIN_REASON = 'No se puede modificar a un Super Administrador desde esta tabla';
 
 /**

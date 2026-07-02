@@ -69,7 +69,7 @@ export function SpecialtyMultiSelect({
       searchPlaceholder="Buscar especialidad…"
       emptyLabel="No hay especialidades disponibles."
       counterSuffix={{ singular: 'seleccionada', plural: 'seleccionadas' }}
-      staleHint="Algunas especialidades asignadas no están disponibles para nuevas asignaciones; podés quitarlas pero no re-agregarlas."
+      staleHint="Algunas especialidades asignadas no están disponibles para nuevas asignaciones; puedes quitarlas pero no re-agregarlas."
     />
   );
 }

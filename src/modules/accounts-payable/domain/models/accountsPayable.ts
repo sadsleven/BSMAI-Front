@@ -75,6 +75,9 @@ export interface AccountsPayableBatch {
   } | null;
   careCenterId?: string | null;
   careCenter?: { id: string; businessName?: string | null } | null;
+  /** UT del cálculo de retención SENIAT del lote (null = UT vigente al calcular). */
+  taxUnitId?: string | null;
+  taxUnit?: { id: string; amountBs: string; effectiveDate: string } | null;
   status: AccountsPayableStatus;
   paidAt?: string | null;
   orders: AccountsPayableOrder[];
@@ -126,6 +129,8 @@ export interface CreateAccountsPayableBatchDto {
   recipientType: RecipientType;
   doctorId?: string;
   careCenterId?: string;
+  /** UT para la retención SENIAT del lote. Sin enviar = UT vigente. */
+  taxUnitId?: string;
   internalOrderIds: string[];
 }
 

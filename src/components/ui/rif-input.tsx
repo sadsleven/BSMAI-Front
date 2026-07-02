@@ -13,7 +13,7 @@ export type RifInputProps = Omit<
 };
 
 /**
- * Input de RIF venezolano con auto-formato `J-XX.XXX.XXX-D`.
+ * Input de RIF venezolano con auto-formato `J-XXXXXXXX-D` (sin puntos).
  * Acepta `J/G/V/E` como prefijo. Limita a 9 dígitos (8 base + 1 verificador).
  */
 export const RifInput = React.forwardRef<HTMLInputElement, RifInputProps>(
@@ -30,7 +30,7 @@ export const RifInput = React.forwardRef<HTMLInputElement, RifInputProps>(
         spellCheck={false}
         value={value}
         onChange={handleChange}
-        placeholder={placeholder ?? 'J-12.345.678-9'}
+        placeholder={placeholder ?? 'J-12345678-9'}
         className={cn(
           'h-9 uppercase tracking-wide font-mono',
           invalid && 'border-destructive focus-visible:ring-destructive/30',

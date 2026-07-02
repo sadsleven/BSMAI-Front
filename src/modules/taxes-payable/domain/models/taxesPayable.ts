@@ -28,6 +28,19 @@ export interface TaxPayableTaxUnit {
   effectiveDate: string;
 }
 
+/** Factura de origen de una obligación (transient BE, filas del comprobante ISLR). */
+export interface TaxInvoiceRow {
+  orderId: string;
+  orderNumber: string;
+  internalNumber: string;
+  invoiceNumber: string | null;
+  controlNumber: string | null;
+  /** Fecha de facturación de la orden (ISO). */
+  invoiceDate: string;
+  /** Bruto del proveedor para esa orden en Bs. */
+  grossBs: number;
+}
+
 /**
  * Obligación de retención (`taxes_payable`). Es la unidad "Pendiente" (sin lote)
  * o un elemento de las `obligations` de un lote SENIAT.
@@ -42,9 +55,16 @@ export interface TaxObligation {
     firstName?: string | null;
     lastName?: string | null;
     isLegalEntity?: boolean;
+    cedula?: string | null;
+    rif?: string | null;
+    centerAddress?: string | null;
   } | null;
   careCenterId?: string | null;
-  careCenter?: { id: string; businessName?: string | null } | null;
+  careCenter?: {
+    id: string;
+    businessName?: string | null;
+    rif?: string | null;
+  } | null;
   personType: TaxPayablePersonType;
   taxUnitId?: string;
   taxUnit?: TaxPayableTaxUnit;
@@ -64,6 +84,12 @@ export interface TaxObligation {
   taxPaymentBatchId?: string | null;
   /** Números de orden interna del lote AP de origen (transient, lo provee el BE). */
   internalNumbers?: string[];
+  /** Retención recalculada con la UT de ajuste del lote (transient, sólo con ajuste). */
+  adjustedTaxAmountBs?: number;
+  /** Sustraendo recalculado con la UT de ajuste del lote (transient). */
+  adjustedSubtrahendBs?: number;
+  /** Facturas de origen para el comprobante ISLR (transient, sólo en el detalle). */
+  invoices?: TaxInvoiceRow[];
   createdAt?: string;
   updatedAt?: string;
 }
@@ -76,10 +102,19 @@ export interface TaxBatch {
   paidAt?: string | null;
   obligations: TaxObligation[];
   payments: TaxPayablePayment[];
+  /** Ajuste de UT: recalcula el monto a pagar al SENIAT (las obligaciones no cambian). */
+  adjustmentTaxUnitId?: string | null;
+  adjustmentTaxUnit?: TaxPayableTaxUnit | null;
+  /** Datos del comprobante ISLR guardados en el lote. */
+  comprobanteNumber?: string | null;
+  comprobanteIssueDate?: string | null;
   createdAt?: string;
   updatedAt?: string;
   // Transient (provistos por el BE).
+  /** Target Bs efectivo (con ajuste de UT aplicado si existe). */
   targetBs?: number;
+  /** Target Bs original (Σ snapshot de las obligaciones, sin ajuste). */
+  originalTargetBs?: number;
   paidBs?: number;
   pendingBs?: number;
 }
@@ -179,4 +214,12 @@ export function obligationProviderId(t: TaxObligation): string | null {
 export function taxAmountBs(t: TaxObligation): number {
   const n = Number(t.taxAmountBs);
   return Number.isFinite(n) ? n : 0;
+}
+
+/** Retención efectiva en Bs (con ajuste de UT del lote si existe). */
+export function effectiveTaxAmountBs(t: TaxObligation): number {
+  const adj = Number(t.adjustedTaxAmountBs);
+  return Number.isFinite(adj) && t.adjustedTaxAmountBs !== undefined
+    ? adj
+    : taxAmountBs(t);
 }

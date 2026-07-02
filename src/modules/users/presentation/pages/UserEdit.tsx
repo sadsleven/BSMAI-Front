@@ -75,7 +75,6 @@ export function UserEdit() {
       await userGateway.update(id, {
         firstName: values.firstName,
         lastName: values.lastName,
-        email: values.email,
         phoneNumber: values.phoneNumber || null,
         academicDegree: values.academicDegree?.trim() || null,
         jobTitle: values.jobTitle?.trim() || null,

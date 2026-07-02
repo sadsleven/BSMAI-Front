@@ -1,21 +1,51 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { FormProvider, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
-import { ChevronLeft, AlertTriangle } from 'lucide-react';
-import { useCallback, useRef, useState } from 'react';
+import { PageLoader } from '@/components/ui/spinner';
+import { ChevronLeft, AlertTriangle, Save } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { OrderForm } from '../components/OrderForm';
 import { orderGateway } from '../../infrastructure/orderGateway';
-import type { CreateOrderDto } from '../../domain/models/order';
+import { orderDraftGateway } from '../../infrastructure/orderDraftGateway';
+import {
+  ORDER_TYPE_LABEL,
+  type CreateOrderDto,
+} from '../../domain/models/order';
 import { orderSchema, type OrderValues } from '@/lib/validations/schemas';
 import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
+import { patientGateway } from '@/modules/patients/infrastructure/patientGateway';
+import { displayName } from '@/modules/patients/domain/models/patient';
+import type { Patient } from '@/modules/patients/domain/models/patient';
+import { localTodayIso } from '@/lib/dates';
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
+const DEFAULT_VALUES: OrderValues = {
+  branchId: '',
+  type: 'cash',
+  holderId: '',
+  patientId: '',
+  contractorId: '',
+  insuranceId: '',
+  insuranceSource: '',
+  serviceKey: '',
+  isReimbursement: false,
+  specialtyId: '',
+  serviceTypes: [],
+  pathologyIds: [],
+  orderDate: localTodayIso(),
+  appointmentDate: '',
+  priceAmount: 0,
+  casheaFirstInstallmentAmount: 0,
+  casheaInitialPercent: 0,
+  useFixedRate: false,
+  fixedExchangeRateId: '',
+  payments: [],
+};
 
 function buildDto(values: OrderValues): CreateOrderDto {
   return {
@@ -33,6 +63,7 @@ function buildDto(values: OrderValues): CreateOrderDto {
       values.type === 'insurance' && values.serviceKey?.trim()
         ? values.serviceKey.trim()
         : undefined,
+    isReimbursement: values.type === 'credit' ? !!values.isReimbursement : undefined,
     specialtyId: values.specialtyId,
     serviceTypes: (values.serviceTypes ?? []).map((r) => ({
       serviceTypeId: r.serviceTypeId,
@@ -51,12 +82,16 @@ function buildDto(values: OrderValues): CreateOrderDto {
       values.type === 'cashea'
         ? values.casheaFirstInstallmentAmount ?? 0
         : undefined,
-    useFixedRate: values.type === 'insurance' && !!values.useFixedRate,
     fixedExchangeRateId:
       values.type === 'insurance' && values.useFixedRate && values.fixedExchangeRateId
         ? values.fixedExchangeRateId
         : undefined,
-    payments: (values.payments ?? []).map((p) => ({
+    // Pagos sólo aplican a contado/cashea; un cambio de tipo tardío no debe
+    // arrastrar filas fantasma al backend.
+    payments: (values.type === 'cash' || values.type === 'cashea'
+      ? values.payments ?? []
+      : []
+    ).map((p) => ({
       type: p.type,
       paymentDate: p.paymentDate,
       referenceNumber: p.referenceNumber || undefined,
@@ -72,42 +107,155 @@ function buildDto(values: OrderValues): CreateOrderDto {
 
 export function OrderCreate() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { has } = usePermissions();
   const canAttention = has(PERMISSIONS.ORDERS.STAGE_ATTENTION);
   const [confirmCancel, setConfirmCancel] = useState(false);
 
+  // Reanudar un borrador parcial: ?draft=<id>. Hidrata el form (y los selects de
+  // titular/paciente) antes de montar OrderForm.
+  const resumeDraftId = searchParams.get('draft');
+  const [draftId, setDraftId] = useState<string | null>(resumeDraftId);
+  const [hydrating, setHydrating] = useState<boolean>(!!resumeDraftId);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [initialHolder, setInitialHolder] = useState<Patient | null>(null);
+  const [initialPatient, setInitialPatient] = useState<Patient | null>(null);
+
   const methods = useForm<OrderValues>({
     resolver: zodResolver(orderSchema),
     mode: 'onBlur',
-    defaultValues: {
-      branchId: '',
-      type: 'cash',
-      holderId: '',
-      patientId: '',
-      contractorId: '',
-      insuranceId: '',
-      insuranceSource: '',
-      serviceKey: '',
-      specialtyId: '',
-      serviceTypes: [],
-      pathologyIds: [],
-      orderDate: todayIso(),
-      appointmentDate: '',
-      priceAmount: 0,
-      casheaFirstInstallmentAmount: 0,
-      useFixedRate: false,
-      fixedExchangeRateId: '',
-      payments: [],
-    },
+    defaultValues: DEFAULT_VALUES,
   });
 
   const { handleSubmit, formState } = methods;
 
-  // Regla de pago Paso 1 reportada por OrderForm (sólo `cash` bloquea acá).
+  useEffect(() => {
+    if (!resumeDraftId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const draft = await orderDraftGateway.getById(resumeDraftId);
+        if (cancelled) return;
+        const payload = (draft.payload ?? {}) as Partial<OrderValues>;
+        // Borradores guardados antes del % de inicial Cashea: derivar el % del
+        // monto guardado; sin esto hidratan 0% con un monto > 0 y el primer
+        // cambio del % pisaría la inicial con un valor inconsistente.
+        if (
+          payload.type === 'cashea' &&
+          payload.casheaInitialPercent == null &&
+          typeof payload.casheaFirstInstallmentAmount === 'number' &&
+          typeof payload.priceAmount === 'number' &&
+          payload.priceAmount > 0
+        ) {
+          payload.casheaInitialPercent =
+            Math.round(
+              (payload.casheaFirstInstallmentAmount / payload.priceAmount) *
+                10000,
+            ) / 100;
+        }
+        methods.reset({ ...DEFAULT_VALUES, ...payload });
+        const holderId = payload.holderId;
+        const patientId = payload.patientId;
+        if (holderId) {
+          const [h, p] = await Promise.all([
+            patientGateway.getById(holderId).catch(() => null),
+            patientId && patientId !== holderId
+              ? patientGateway.getById(patientId).catch(() => null)
+              : Promise.resolve(null),
+          ]);
+          if (cancelled) return;
+          setInitialHolder(h);
+          if (patientId && patientId === holderId) {
+            setInitialPatient(h);
+          } else if (patientId) {
+            // Paciente distinto del titular. Si su carga falla (borrado, etc.)
+            // NO caer al titular: el form conservaría un patientId invisible.
+            // Se limpia para que el select vacío refleje lo que se enviaría.
+            setInitialPatient(p);
+            if (!p) methods.setValue('patientId', '');
+          } else {
+            // Borrador guardado sin paciente elegido: select de paciente vacío
+            // (no se simula "mismo titular").
+            setInitialPatient(null);
+          }
+        }
+      } catch (e) {
+        notify.fromError(e, 'No se pudo cargar el borrador.');
+        if (!cancelled) {
+          // Borrador irrecuperable (borrado en otra pestaña, 404): soltar el id
+          // para que "Guardar borrador" cree uno nuevo en vez de PATCHear un id
+          // muerto por siempre.
+          setDraftId(null);
+          const next = new URLSearchParams(searchParams);
+          next.delete('draft');
+          setSearchParams(next, { replace: true });
+        }
+      } finally {
+        if (!cancelled) setHydrating(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Regla de pago Paso 1 reportada por OrderForm (sólo `cash` bloquea aquí).
   const step1OkRef = useRef(true);
   const handleStep1Ok = useCallback((ok: boolean) => {
     step1OkRef.current = ok;
   }, []);
+
+  // Guardar como borrador: persiste los valores crudos (sin validar) para poder
+  // salir y retomar. No bloquea por campos incompletos.
+  const saveDraft = async () => {
+    setSavingDraft(true);
+    try {
+      const values = methods.getValues();
+      let label = ORDER_TYPE_LABEL[values.type] ?? 'Orden';
+      if (values.holderId) {
+        try {
+          const h = await patientGateway.getById(values.holderId);
+          label = `${ORDER_TYPE_LABEL[values.type]} · ${displayName(h)}`;
+        } catch {
+          /* best-effort: la etiqueta queda sólo con el tipo */
+        }
+      }
+      const dto = {
+        branchId: values.branchId || undefined,
+        // Columna y DTO capan a 200: un businessName largo no debe tumbar el guardado.
+        label: label.slice(0, 200),
+        payload: values as Partial<OrderValues>,
+      };
+      let saved;
+      if (draftId) {
+        try {
+          saved = await orderDraftGateway.update(draftId, dto);
+        } catch (err) {
+          // Borrador borrado en otra pestaña: crear uno nuevo en vez de fallar.
+          const status = (err as { response?: { status?: number } })?.response
+            ?.status;
+          if (status !== 404) throw err;
+          saved = await orderDraftGateway.create(dto);
+        }
+      } else {
+        saved = await orderDraftGateway.create(dto);
+      }
+      if (saved.id !== draftId) {
+        setDraftId(saved.id);
+        const next = new URLSearchParams(searchParams);
+        next.set('draft', saved.id);
+        setSearchParams(next, { replace: true });
+      }
+      // Lo guardado ya no son "cambios sin guardar": limpia isDirty.
+      methods.reset(values);
+      notify.success('Borrador guardado.');
+    } catch (e) {
+      notify.fromError(e, 'No se pudo guardar el borrador.');
+    } finally {
+      setSavingDraft(false);
+    }
+  };
 
   const onSubmit = async (values: OrderValues) => {
     if (values.type === 'cash' && !step1OkRef.current) {
@@ -119,6 +267,14 @@ export function OrderCreate() {
     try {
       const dto = buildDto(values);
       const created = await orderGateway.create(dto);
+      // La orden ya es real: el borrador parcial ya no hace falta.
+      if (draftId) {
+        try {
+          await orderDraftGateway.remove(draftId);
+        } catch {
+          /* el borrador huérfano no es crítico */
+        }
+      }
       notify.success('Orden creada.');
       // Tras crear, avanzar directo al Paso 2 (Atención). Si el usuario no tiene
       // permiso de atención, queda en el Paso 1 de la orden ya guardada.
@@ -136,6 +292,10 @@ export function OrderCreate() {
     else navigate('/orders');
   };
 
+  if (hydrating) {
+    return <PageLoader label="Cargando borrador…" />;
+  }
+
   return (
     <div className="max-w-4xl mx-auto">
       <PageBreadcrumbs />
@@ -147,7 +307,7 @@ export function OrderCreate() {
                 Nueva orden
               </h1>
               <p className="text-sm text-muted-foreground">
-                Paso 1: Creación de la orden. Al crearla, pasás a la atención del
+                Paso 1: Creación de la orden. Al crearla, pasas a la atención del
                 paciente.
               </p>
             </div>
@@ -160,7 +320,11 @@ export function OrderCreate() {
             </button>
           </div>
 
-          <OrderForm onStep1PaymentOkChange={handleStep1Ok} />
+          <OrderForm
+            initialHolder={initialHolder}
+            initialPatient={initialPatient}
+            onStep1PaymentOkChange={handleStep1Ok}
+          />
 
           <div className="flex items-center justify-between gap-3 pt-2 flex-wrap">
             <p className="text-xs text-muted-foreground">
@@ -170,7 +334,17 @@ export function OrderCreate() {
               <Button type="button" variant="outline" onClick={tryCancel}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={formState.isSubmitting}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={saveDraft}
+                disabled={savingDraft || formState.isSubmitting}
+                className="gap-1.5"
+              >
+                <Save className="w-4 h-4" />
+                {savingDraft ? 'Guardando…' : 'Guardar borrador'}
+              </Button>
+              <Button type="submit" disabled={formState.isSubmitting || savingDraft}>
                 {formState.isSubmitting ? 'Guardando…' : 'Crear orden'}
               </Button>
             </div>
@@ -184,7 +358,11 @@ export function OrderCreate() {
         tone="warning"
         icon={AlertTriangle}
         title="Descartar cambios"
-        description="Hay cambios sin guardar. ¿Salir y descartarlos?"
+        description={
+          draftId
+            ? 'Hay cambios sin guardar desde el último borrador. ¿Salir y descartarlos? El borrador guardado se mantiene.'
+            : 'Hay cambios sin guardar. ¿Salir y descartarlos?'
+        }
         confirmLabel="Descartar"
         confirmVariant="destructive"
         onConfirm={() => navigate('/orders')}

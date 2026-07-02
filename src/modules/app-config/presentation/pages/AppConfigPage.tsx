@@ -60,7 +60,7 @@ function PercentField(props: {
       {!valid && !loading ? (
         <p className="text-xs text-destructive flex items-center gap-1 mt-1">
           <AlertTriangle className="w-3 h-3" />
-          Ingresá un valor entre {MIN_PERCENT} y {MAX_PERCENT}
+          Ingresa un valor entre {MIN_PERCENT} y {MAX_PERCENT}
         </p>
       ) : (
         <p className="text-xs text-muted-foreground">{hint}</p>
@@ -75,11 +75,12 @@ export function AppConfigPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [firstInput, setFirstInput] = useState('');
-  const [totalInput, setTotalInput] = useState('');
-  const [initial, setInitial] = useState<{ first: number; total: number } | null>(
-    null,
-  );
+  const [commissionInput, setCommissionInput] = useState('');
+  const [financingInput, setFinancingInput] = useState('');
+  const [initial, setInitial] = useState<{
+    commission: number;
+    financing: number;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -88,11 +89,11 @@ export function AppConfigPage() {
       try {
         const cfg = await appConfigGateway.getCasheaCommission();
         if (cancelled) return;
-        const first = +(cfg.firstInstallmentRate * 100).toFixed(2);
-        const total = +(cfg.totalRate * 100).toFixed(2);
-        setInitial({ first, total });
-        setFirstInput(first.toString());
-        setTotalInput(total.toString());
+        const commission = +(cfg.commissionRate * 100).toFixed(2);
+        const financing = +(cfg.financingRate * 100).toFixed(2);
+        setInitial({ commission, financing });
+        setCommissionInput(commission.toString());
+        setFinancingInput(financing.toString());
       } catch (e) {
         if (!cancelled) {
           setError('No se pudo cargar la configuración');
@@ -107,31 +108,35 @@ export function AppConfigPage() {
     };
   }, []);
 
-  const firstValid = isValidPercent(firstInput.trim());
-  const totalValid = isValidPercent(totalInput.trim());
-  const valid = firstValid && totalValid;
-  const parsedFirst = firstValid ? Number(firstInput.trim().replace(',', '.')) : NaN;
-  const parsedTotal = totalValid ? Number(totalInput.trim().replace(',', '.')) : NaN;
+  const commissionValid = isValidPercent(commissionInput.trim());
+  const financingValid = isValidPercent(financingInput.trim());
+  const valid = commissionValid && financingValid;
+  const parsedCommission = commissionValid
+    ? Number(commissionInput.trim().replace(',', '.'))
+    : NaN;
+  const parsedFinancing = financingValid
+    ? Number(financingInput.trim().replace(',', '.'))
+    : NaN;
   const dirty =
     initial !== null &&
     valid &&
-    (Math.abs(parsedFirst - initial.first) > 0.0001 ||
-      Math.abs(parsedTotal - initial.total) > 0.0001);
+    (Math.abs(parsedCommission - initial.commission) > 0.0001 ||
+      Math.abs(parsedFinancing - initial.financing) > 0.0001);
 
   const onSave = async () => {
     if (!valid) return;
     try {
       setSaving(true);
       const updated = await appConfigGateway.updateCasheaCommission({
-        firstInstallmentRate: +(parsedFirst / 100).toFixed(4),
-        totalRate: +(parsedTotal / 100).toFixed(4),
+        commissionRate: +(parsedCommission / 100).toFixed(4),
+        financingRate: +(parsedFinancing / 100).toFixed(4),
       });
-      const first = +(updated.firstInstallmentRate * 100).toFixed(2);
-      const total = +(updated.totalRate * 100).toFixed(2);
-      setInitial({ first, total });
-      setFirstInput(first.toString());
-      setTotalInput(total.toString());
-      notify.success('Comisión Cashea actualizada');
+      const commission = +(updated.commissionRate * 100).toFixed(2);
+      const financing = +(updated.financingRate * 100).toFixed(2);
+      setInitial({ commission, financing });
+      setCommissionInput(commission.toString());
+      setFinancingInput(financing.toString());
+      notify.success('Configuración Cashea actualizada');
     } catch (e) {
       notify.fromError(e, 'No se pudo guardar la configuración.');
     } finally {
@@ -160,24 +165,24 @@ export function AppConfigPage() {
 
         <FormSection
           title="Cashea"
-          description="Comisión que retiene Cashea por orden, en dos tramos. La cuenta por cobrar se genera por el neto: precio − (primera cuota × % primera cuota) − (precio × % total)."
+          description="Tasas que retiene Cashea por orden. La inicial la cobra el comercio del titular en el Paso 1 y no genera comisión. La cuenta por cobrar es el neto: restante − comisión − financiamiento, donde restante = total − inicial."
         >
           <FormGrid>
             <PercentField
-              id="firstInstallmentRate"
-              label="% sobre la primera cuota"
-              hint="Aplica al monto de la primera cuota (inicial). Ej: 4 para 4%."
-              value={firstInput}
-              onChange={setFirstInput}
+              id="commissionRate"
+              label="% de comisión (sobre el total)"
+              hint="Aplica al total de la venta. Ej: 4.64 para 4.64%."
+              value={commissionInput}
+              onChange={setCommissionInput}
               disabled={!canUpdate || saving}
               loading={loading}
             />
             <PercentField
-              id="totalRate"
-              label="% sobre el total"
-              hint="Aplica al total de la orden. Ej: 6 para 6%."
-              value={totalInput}
-              onChange={setTotalInput}
+              id="financingRate"
+              label="% de financiamiento (sobre el restante)"
+              hint="Aplica al restante (total − inicial). Ej: 6.2 para 6.2%."
+              value={financingInput}
+              onChange={setFinancingInput}
               disabled={!canUpdate || saving}
               loading={loading}
             />
@@ -202,7 +207,7 @@ export function AppConfigPage() {
 
         {!canUpdate ? (
           <p className="text-xs text-muted-foreground italic">
-            Solo lectura. No tenés permiso para editar la configuración.
+            Solo lectura. No tienes permiso para editar la configuración.
           </p>
         ) : null}
       </div>

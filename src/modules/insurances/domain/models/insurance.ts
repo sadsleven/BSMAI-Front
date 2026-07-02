@@ -16,6 +16,8 @@ export interface Insurance {
   fiscalAddress?: string | null;
   rif?: string | null;
   isActive: boolean;
+  /** Seguro indexado: cobra a la tasa del día de la orden (fija en Bs). */
+  isIndexed?: boolean;
   phones: InsurancePhone[];
   /** Precios de cobro por Tipo de Servicio que el seguro cubre. */
   servicePrices?: ServicePriceRow[];
@@ -34,6 +36,7 @@ export interface CreateInsuranceDto {
   phones: { number: string; label?: string }[];
   servicePrices?: ServicePricePayload[];
   isActive?: boolean;
+  isIndexed?: boolean;
 }
 
 export type UpdateInsuranceDto = Partial<CreateInsuranceDto>;
