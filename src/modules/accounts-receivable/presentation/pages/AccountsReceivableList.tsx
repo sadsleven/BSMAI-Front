@@ -35,8 +35,10 @@ import { accountsReceivableGateway } from '../../infrastructure/accountsReceivab
 import {
   debtorDisplayName,
   debtorTypeOf,
+  pendingBatchKey,
   pendingDebtorId,
   pendingDebtorName,
+  pendingDebtorTypeLabel,
   STATUS_LABEL,
   type AccountsReceivableBatch,
   type AccountsReceivableDebtorType,
@@ -225,18 +227,19 @@ export function AccountsReceivableList() {
   );
 
   // Mismo deudor y mismo modo (tasa fija vs USD) para todos los seleccionados.
+  // Excepción: las órdenes cashea agrupan juntas aunque los titulares difieran
+  // (el deudor del lote es Cashea).
   const sharedDebtor = useMemo(() => {
     if (selectedRows.length === 0) return null;
     const first = selectedRows[0];
-    const key = `${first.debtorType}:${pendingDebtorId(first)}:${first.useFixedRate}`;
-    const allSame = selectedRows.every(
-      (r) => `${r.debtorType}:${pendingDebtorId(r)}:${r.useFixedRate}` === key,
-    );
+    const key = pendingBatchKey(first);
+    const allSame = selectedRows.every((r) => pendingBatchKey(r) === key);
     if (!allSame) return null;
     return {
       debtorType: first.debtorType,
-      debtorId: pendingDebtorId(first) as string,
-      debtorName: pendingDebtorName(first),
+      debtorId: pendingDebtorId(first),
+      debtorName:
+        first.debtorType === 'cashea' ? 'Cashea' : pendingDebtorName(first),
       useFixedRate: first.useFixedRate,
     };
   }, [selectedRows]);
@@ -274,6 +277,7 @@ export function AccountsReceivableList() {
           <SelectItem value="all">Deudor: todos</SelectItem>
           <SelectItem value="insurance">Seguro</SelectItem>
           <SelectItem value="holder">Titular (crédito)</SelectItem>
+          <SelectItem value="cashea">Cashea</SelectItem>
         </SelectContent>
       </Select>
       <Select
@@ -338,6 +342,7 @@ export function AccountsReceivableList() {
                   <Button
                     size="lg"
                     onClick={goCreate}
+                    disabled={selectedRows.length > 0 && !canCreate}
                     className="bg-brand-blue text-white shadow-sm hover:bg-brand-blue-strong font-semibold"
                   >
                     <Plus className="w-4 h-4 mr-1.5" />
@@ -354,8 +359,9 @@ export function AccountsReceivableList() {
             {selectedRows.length > 0 && !sharedDebtor ? (
               <div className="mx-4 mt-3 rounded-lg border border-warning/30 bg-warning-soft p-2.5 text-xs text-warning">
                 Las órdenes seleccionadas tienen deudores o modos de cobro
-                distintos. Un lote agrupa órdenes de un solo deudor y modo (tasa
-                fija o USD).
+                distintos. Un lote agrupa órdenes de un solo seguro o de un solo
+                titular (crédito), y de un mismo modo (tasa fija o USD). Sólo
+                las órdenes Cashea pueden mezclar titulares.
               </div>
             ) : null}
             {pendingError ? (
@@ -427,10 +433,12 @@ export function AccountsReceivableList() {
                               className={
                                 p.debtorType === 'holder'
                                   ? 'bg-brand-cyan-soft text-brand-blue-strong border-brand-cyan/40'
-                                  : 'bg-brand-blue-soft text-brand-blue-strong border-brand-blue/30'
+                                  : p.debtorType === 'cashea'
+                                    ? 'bg-warning-soft text-warning border-warning/40'
+                                    : 'bg-brand-blue-soft text-brand-blue-strong border-brand-blue/30'
                               }
                             >
-                              {p.debtorType === 'holder' ? 'Titular' : 'Seguro'}
+                              {pendingDebtorTypeLabel(p)}
                             </Badge>
                             {p.useFixedRate ? (
                               <Badge
@@ -600,10 +608,16 @@ export function AccountsReceivableList() {
                                 className={
                                   dt === 'holder'
                                     ? 'bg-brand-cyan-soft text-brand-blue-strong border-brand-cyan/40'
-                                    : 'bg-brand-blue-soft text-brand-blue-strong border-brand-blue/30'
+                                    : dt === 'cashea'
+                                      ? 'bg-warning-soft text-warning border-warning/40'
+                                      : 'bg-brand-blue-soft text-brand-blue-strong border-brand-blue/30'
                                 }
                               >
-                                {dt === 'holder' ? 'Titular' : 'Seguro'}
+                                {dt === 'holder'
+                                  ? 'Titular'
+                                  : dt === 'cashea'
+                                    ? 'Cashea'
+                                    : 'Seguro'}
                               </Badge>
                               {fixed ? (
                                 <Badge

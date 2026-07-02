@@ -32,7 +32,7 @@ function thinBorder(): Partial<ExcelJS.Borders> {
 }
 
 /** Sanitiza string para nombre de archivo (sin chars problemáticos en Windows/macOS). */
-function safeFilenameSegment(s: string): string {
+export function safeFilenameSegment(s: string): string {
   return s.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').trim().slice(0, 80) || 'sin_nombre';
 }
 

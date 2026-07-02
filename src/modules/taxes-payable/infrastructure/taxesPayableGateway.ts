@@ -82,6 +82,24 @@ export const taxesPayableGateway = {
     );
     return data;
   },
+  /** Guarda los datos del comprobante ISLR del lote (N° + fecha de emisión). */
+  async setComprobante(
+    id: string,
+    data: { comprobanteNumber: string; issueDate: string },
+  ): Promise<TaxBatch> {
+    const { data: batch } = await api.patch<TaxBatch>(
+      `${BASE}/${id}/comprobante`,
+      data,
+    );
+    return batch;
+  },
+  /** Fija (`taxUnitId`) o quita (`null`) el ajuste de UT del lote. */
+  async setAdjustment(id: string, taxUnitId: string | null): Promise<TaxBatch> {
+    const { data } = await api.patch<TaxBatch>(`${BASE}/${id}/adjustment`, {
+      taxUnitId,
+    });
+    return data;
+  },
   async registerPayment(
     id: string,
     payments: TaxPayablePaymentInput[],

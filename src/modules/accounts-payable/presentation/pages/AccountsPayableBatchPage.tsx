@@ -45,6 +45,8 @@ import { UsdRateSelect } from '@/modules/exchange-rates/presentation/components/
 import { doctorGateway } from '@/modules/doctors/infrastructure/doctorGateway';
 import { careCenterGateway } from '@/modules/care-centers/infrastructure/careCenterGateway';
 import { useTaxUnit } from '@/lib/taxes/useTaxUnit';
+import { TaxUnitSelect } from '@/modules/tax-units/presentation/components/TaxUnitSelect';
+import type { TaxUnit } from '@/modules/tax-units/domain/models/taxUnit';
 import {
   calcRetention,
   type RetentionResult,
@@ -130,6 +132,10 @@ export function AccountsPayableBatchPage() {
     () => new Set(createState?.internalOrderIds ?? []),
   );
   const [search, setSearch] = useState('');
+  // UT del lote: por defecto la vigente, pero el usuario puede elegir otra.
+  const { taxUnit: currentTaxUnit } = useTaxUnit();
+  const [selectedTaxUnit, setSelectedTaxUnit] = useState<TaxUnit | null>(null);
+  const batchTaxUnit = selectedTaxUnit ?? currentTaxUnit;
   // Si vino selección de la lista, fijamos el proveedor de entrada.
   const lockedProvider = useMemo<CreateProvider | null>(
     () =>
@@ -254,6 +260,7 @@ export function AccountsPayableBatchPage() {
           activeProvider.recipientType === 'care_center'
             ? activeProvider.providerId
             : undefined,
+        taxUnitId: batchTaxUnit?.id,
         internalOrderIds: selectedRows.map((r) => r.internalOrderId),
       });
       notify.success('Lote creado');
@@ -402,6 +409,18 @@ export function AccountsPayableBatchPage() {
               </Badge>
             ) : null}
           </div>
+        </FormSection>
+
+        <FormSection
+          title="Unidad Tributaria"
+          description="UT usada para calcular la retención SENIAT del lote. Por defecto la vigente; puedes seleccionar otra."
+        >
+          <TaxUnitSelect
+            className="max-w-md"
+            selectedId={batchTaxUnit?.id ?? null}
+            selectedFallback={batchTaxUnit}
+            onSelect={setSelectedTaxUnit}
+          />
         </FormSection>
 
         <div className="flex items-center justify-end gap-2">
@@ -713,6 +732,18 @@ function BatchDetail({ id }: { id: string }) {
     }
   };
 
+  const onSetTaxUnit = async (taxUnitId: string) => {
+    setBusy(true);
+    try {
+      setBatch(await accountsPayableGateway.setTaxUnit(id, taxUnitId));
+      notify.success('Unidad Tributaria actualizada');
+    } catch (e) {
+      notify.fromError(e, 'No se pudo cambiar la Unidad Tributaria');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const existingInternalIds = useMemo(
     () => new Set((batch?.orders ?? []).map((o) => o.internalOrderId)),
     [batch],
@@ -730,8 +761,10 @@ function BatchDetail({ id }: { id: string }) {
   }
 
   // Desglose SENIAT (espejo del cálculo del BE) para la sección Resumen.
+  // Usa la UT del lote; los lotes previos (sin UT propia) caen a la vigente.
   const seniatPersonType: SeniatPersonType = personTypeOf(batch);
-  const taxUnitBs = taxUnit ? Number(taxUnit.amountBs) : null;
+  const effectiveTaxUnit = batch.taxUnit ?? taxUnit;
+  const taxUnitBs = effectiveTaxUnit ? Number(effectiveTaxUnit.amountBs) : null;
   const seniatBreakdown: RetentionResult | null =
     taxUnitBs && taxUnitBs > 0
       ? calcRetention({
@@ -794,6 +827,30 @@ function BatchDetail({ id }: { id: string }) {
           taxUnitBs={taxUnitBs}
           result={seniatBreakdown}
         />
+
+        <Can permission={PERMISSIONS.ACCOUNTS_PAYABLE.UPDATE}>
+          <div className="mt-4">
+            <TaxUnitSelect
+              className="max-w-md"
+              label="Unidad Tributaria del lote"
+              placeholder="UT vigente al calcular"
+              selectedId={batch.taxUnitId ?? null}
+              selectedFallback={batch.taxUnit ?? null}
+              onSelect={(ut) => onSetTaxUnit(ut.id)}
+              disabled={isPaid || busy}
+              lockNote={
+                isPaid
+                  ? 'El lote está pagado: edita o quita un pago para cambiar la UT.'
+                  : undefined
+              }
+            />
+            {!isPaid ? (
+              <p className="text-xs text-muted-foreground mt-1.5">
+                Cambiar la UT recalcula la retención y el neto a pagar del lote.
+              </p>
+            ) : null}
+          </div>
+        </Can>
       </FormSection>
 
       {/* Órdenes */}

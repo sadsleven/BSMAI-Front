@@ -330,7 +330,7 @@ export function OrderBillingStep({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-[18px]">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-[18px] mt-4">
           <div className="space-y-1.5">
             <Label htmlFor="invoiceNumber">
               Número de factura <span className="text-destructive">*</span>
@@ -353,7 +353,7 @@ export function OrderBillingStep({
               value={controlNumber}
               maxLength={50}
               disabled={isFinalized}
-              placeholder="Ej. 00-00012345"
+              placeholder="Ej. 00012345"
               onChange={(e) => setControlNumber(e.target.value)}
             />
           </div>

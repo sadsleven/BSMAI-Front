@@ -305,6 +305,9 @@ export function InsuranceList() {
                 Teléfono
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                Modalidad
+              </TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Estado
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
@@ -317,10 +320,10 @@ export function InsuranceList() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <SkeletonTableRows rows={5} columns={5} />
+              <SkeletonTableRows rows={5} columns={6} />
             ) : insurances.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="p-0">
+                <TableCell colSpan={6} className="p-0">
                   <EmptyState
                     icon={Shield}
                     title={hasActiveFilters ? 'Sin resultados' : 'Aún no hay seguros'}
@@ -359,6 +362,17 @@ export function InsuranceList() {
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm text-muted-foreground">
                     {i.phones?.[0]?.number ?? '—'}
+                  </TableCell>
+                  <TableCell className="py-3.5 px-4">
+                    {i.isIndexed ? (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-brand-cyan-soft text-brand-cyan-strong text-xs font-medium">
+                        <span className="w-1.5 h-1.5 rounded-full bg-brand-cyan-strong" /> Indexado
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-xs font-medium">
+                        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground" /> No indexado
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="py-3.5 px-4">
                     <StatusBadge i={i} />

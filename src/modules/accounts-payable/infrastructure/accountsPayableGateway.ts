@@ -88,6 +88,14 @@ export const accountsPayableGateway = {
     );
     return data;
   },
+  /** Cambia la UT del cálculo de retención del lote (recalcula neto/estado). */
+  async setTaxUnit(id: string, taxUnitId: string): Promise<AccountsPayableBatch> {
+    const { data } = await api.patch<AccountsPayableBatch>(
+      `${BASE}/${id}/tax-unit`,
+      { taxUnitId },
+    );
+    return data;
+  },
   async registerPayment(
     id: string,
     payments: AccountsPayablePaymentInput[],

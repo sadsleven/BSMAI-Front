@@ -6,6 +6,7 @@ import { z } from 'zod';
 import {
   ChevronDown,
   ChevronLeft,
+  Download,
   Pencil,
   Plus,
   Search,
@@ -44,10 +45,14 @@ import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchan
 import { useUsdRates } from '@/modules/exchange-rates/presentation/hooks/useUsdRates';
 import { UsdRateSelect } from '@/modules/exchange-rates/presentation/components/UsdRateSelect';
 import { accountsReceivableGateway } from '../../infrastructure/accountsReceivableGateway';
+import { downloadEstadoCuentaSeguro } from '../components/arExcel';
 import {
   debtorDisplayName,
+  DEBTOR_TYPE_LABEL,
+  pendingBatchKey,
   pendingDebtorId,
   pendingDebtorName,
+  pendingDebtorTypeLabel,
   type AccountsReceivableBatch,
   type AccountsReceivableDebtorType,
   type PendingReceivable,
@@ -62,8 +67,9 @@ const paymentSchema = z.object({
 type PaymentFormValues = z.infer<typeof paymentSchema>;
 
 type CreateState = {
-  debtorType: 'insurance' | 'holder';
-  debtorId: string;
+  debtorType: AccountsReceivableDebtorType;
+  /** null para cashea (el deudor es la fintech, sin id). */
+  debtorId: string | null;
   debtorName: string;
   useFixedRate?: boolean;
   orderIds: string[];
@@ -71,7 +77,7 @@ type CreateState = {
 
 type CreateDebtor = {
   debtorType: AccountsReceivableDebtorType;
-  debtorId: string;
+  debtorId: string | null;
   debtorName: string;
   useFixedRate: boolean;
 };
@@ -139,9 +145,12 @@ export function AccountsReceivableBatchPage() {
           ...(lockedDebtor
             ? {
                 debtorType: lockedDebtor.debtorType,
-                ...(lockedDebtor.debtorType === 'insurance'
+                // Cashea no filtra por id: cualquier orden cashea es candidata.
+                ...(lockedDebtor.debtorType === 'insurance' && lockedDebtor.debtorId
                   ? { insuranceId: lockedDebtor.debtorId }
-                  : { holderId: lockedDebtor.debtorId }),
+                  : lockedDebtor.debtorType === 'holder' && lockedDebtor.debtorId
+                    ? { holderId: lockedDebtor.debtorId }
+                    : {}),
               }
             : {}),
         });
@@ -173,23 +182,20 @@ export function AccountsReceivableBatchPage() {
     const first = selectedRows[0];
     return {
       debtorType: first.debtorType,
-      debtorId: pendingDebtorId(first) as string,
-      debtorName: pendingDebtorName(first),
+      debtorId: pendingDebtorId(first),
+      debtorName:
+        first.debtorType === 'cashea' ? 'Cashea' : pendingDebtorName(first),
       useFixedRate: first.useFixedRate,
     };
   }, [lockedDebtor, selectedRows]);
 
-  // Misma clave deudor + modo (tasa fija vs USD).
+  // Misma clave deudor + modo (tasa fija vs USD). Cashea agrupa sin id.
   const debtorKey = activeDebtor
-    ? `${activeDebtor.debtorType}:${activeDebtor.debtorId}:${activeDebtor.useFixedRate}`
+    ? `${activeDebtor.debtorType}:${activeDebtor.debtorType === 'cashea' ? '' : activeDebtor.debtorId ?? ''}:${activeDebtor.useFixedRate}`
     : null;
 
   const sameDebtor = useMemo(
-    () =>
-      selectedRows.every(
-        (r) =>
-          `${r.debtorType}:${pendingDebtorId(r)}:${r.useFixedRate}` === debtorKey,
-      ),
+    () => selectedRows.every((r) => pendingBatchKey(r) === debtorKey),
     [selectedRows, debtorKey],
   );
 
@@ -202,11 +208,7 @@ export function AccountsReceivableBatchPage() {
     if (!q) return [];
     return pending.filter((p) => {
       if (selected.has(p.orderId)) return false;
-      if (
-        debtorKey &&
-        `${p.debtorType}:${pendingDebtorId(p)}:${p.useFixedRate}` !== debtorKey
-      )
-        return false;
+      if (debtorKey && pendingBatchKey(p) !== debtorKey) return false;
       return (
         p.orderNumber.toLowerCase().includes(q) ||
         pendingDebtorName(p).toLowerCase().includes(q)
@@ -234,9 +236,13 @@ export function AccountsReceivableBatchPage() {
       const batch = await accountsReceivableGateway.createBatch({
         debtorType: activeDebtor.debtorType,
         insuranceId:
-          activeDebtor.debtorType === 'insurance' ? activeDebtor.debtorId : undefined,
+          activeDebtor.debtorType === 'insurance'
+            ? activeDebtor.debtorId ?? undefined
+            : undefined,
         holderId:
-          activeDebtor.debtorType === 'holder' ? activeDebtor.debtorId : undefined,
+          activeDebtor.debtorType === 'holder'
+            ? activeDebtor.debtorId ?? undefined
+            : undefined,
         orderIds: selectedRows.map((r) => r.orderId),
       });
       notify.success('Lote creado');
@@ -260,7 +266,7 @@ export function AccountsReceivableBatchPage() {
             <p className="text-sm text-muted-foreground">
               {activeDebtor
                 ? `Deudor: ${activeDebtor.debtorName} · ${
-                    activeDebtor.debtorType === 'holder' ? 'Titular' : 'Seguro'
+                    DEBTOR_TYPE_LABEL[activeDebtor.debtorType]
                   }${activeDebtor.useFixedRate ? ' · tasa fija' : ''}`
                 : 'Selecciona las órdenes pendientes de un mismo deudor y modo de cobro.'}
             </p>
@@ -361,10 +367,12 @@ export function AccountsReceivableBatchPage() {
                             className={
                               p.debtorType === 'holder'
                                 ? 'bg-brand-cyan-soft text-brand-blue-strong border-brand-cyan/40 text-[10px]'
-                                : 'bg-brand-blue-soft text-brand-blue-strong border-brand-blue/30 text-[10px]'
+                                : p.debtorType === 'cashea'
+                                  ? 'bg-warning-soft text-warning border-warning/40 text-[10px]'
+                                  : 'bg-brand-blue-soft text-brand-blue-strong border-brand-blue/30 text-[10px]'
                             }
                           >
-                            {p.debtorType === 'holder' ? 'Titular' : 'Seguro'}
+                            {pendingDebtorTypeLabel(p)}
                           </Badge>
                           {p.useFixedRate ? (
                             <Badge
@@ -403,7 +411,7 @@ export function AccountsReceivableBatchPage() {
             </div>
             {selectedRows.length > 0 && !sameDebtor ? (
               <Badge className="bg-warning text-white shrink-0">
-                Hay órdenes de otro deudor o modo
+                Hay órdenes de otro deudor o modo (sólo Cashea mezcla titulares)
               </Badge>
             ) : null}
           </div>
@@ -470,16 +478,31 @@ function BatchDetail({ id }: { id: string }) {
   }, [currentRateId, selectedUsdRateId]);
 
   const fixed = batch?.mode === 'fixed';
-  const debtorType = batch?.holderId ? 'holder' : 'insurance';
+  const debtorType: AccountsReceivableDebtorType = batch?.holderId
+    ? 'holder'
+    : batch?.insuranceId
+      ? 'insurance'
+      : 'cashea';
   const debtorId = batch?.holderId ?? batch?.insuranceId ?? null;
   const isCollected = batch?.status === 'collected';
+  // Seguro NO indexado: la tasa se escoge en la card Resumen (alimenta el
+  // estado de cuenta y la conversión de los cobros). Indexado usa la tasa fija
+  // de cada orden; crédito/cashea escogen la tasa en "Registrar cobro".
+  const rateInSummary = debtorType === 'insurance' && !fixed;
+  const [downloadingStatement, setDownloadingStatement] = useState(false);
 
   const loadCandidates = useCallback(async () => {
-    if (!batch || !debtorId) return;
+    if (!batch) return;
+    if (debtorType !== 'cashea' && !debtorId) return;
     try {
       const res = await accountsReceivableGateway.listPending({
         debtorType,
-        [debtorType === 'insurance' ? 'insuranceId' : 'holderId']: debtorId,
+        // Cashea: cualquier orden cashea pendiente es candidata (sin id).
+        ...(debtorType === 'insurance'
+          ? { insuranceId: debtorId as string }
+          : debtorType === 'holder'
+            ? { holderId: debtorId as string }
+            : {}),
         limit: 200,
         search: candidateSearch || undefined,
       });
@@ -494,9 +517,28 @@ function BatchDetail({ id }: { id: string }) {
     if (candidatesOpen) loadCandidates();
   }, [candidatesOpen, loadCandidates]);
 
+  // Seguro indexado: la tasa de los cobros es la tasa fija de la orden — no se
+  // elige. Con varias tasas fijas en el lote manda la de la primera orden que
+  // tenga una (mismo criterio del BE al convertir).
+  const fixedRate = useMemo<ExchangeRate | null>(() => {
+    if (!fixed) return null;
+    const raw = (batch?.orders ?? []).find((o) => o.order?.fixedExchangeRate)
+      ?.order?.fixedExchangeRate;
+    if (!raw) return null;
+    return (
+      usdRates.find((r) => r.id === raw.id) ?? {
+        id: raw.id,
+        currency: 'USD',
+        amountBs: String(raw.amountBs),
+        effectiveDate: '',
+        isActive: true,
+      }
+    );
+  }, [fixed, batch, usdRates]);
+
   const selectedMarketRate = useMemo(
-    () => usdRates.find((r) => r.id === selectedUsdRateId) ?? null,
-    [usdRates, selectedUsdRateId],
+    () => fixedRate ?? usdRates.find((r) => r.id === selectedUsdRateId) ?? null,
+    [fixedRate, usdRates, selectedUsdRateId],
   );
 
   // ---------------- Payment form ----------------
@@ -686,6 +728,18 @@ function BatchDetail({ id }: { id: string }) {
     }
   };
 
+  const onDownloadStatement = async () => {
+    if (!batch) return;
+    setDownloadingStatement(true);
+    try {
+      await downloadEstadoCuentaSeguro(batch, fixed ? null : selectedMarketRate);
+    } catch (e) {
+      notify.fromError(e, 'No se pudo generar el estado de cuenta');
+    } finally {
+      setDownloadingStatement(false);
+    }
+  };
+
   const existingOrderIds = useMemo(
     () => new Set((batch?.orders ?? []).map((o) => o.orderId)),
     [batch],
@@ -702,8 +756,6 @@ function BatchDetail({ id }: { id: string }) {
     );
   }
 
-  const usdRate = fixed ? null : selectedMarketRate;
-
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <PageBreadcrumbs />
@@ -713,8 +765,7 @@ function BatchDetail({ id }: { id: string }) {
             Lote de cobro N° {batch.receivableNumber}
           </h1>
           <p className="text-sm text-muted-foreground">
-            {debtorDisplayName(batch)} ·{' '}
-            {debtorType === 'holder' ? 'Titular' : 'Seguro'}
+            {debtorDisplayName(batch)} · {DEBTOR_TYPE_LABEL[debtorType]}
             {fixed ? ' · tasa fija' : ''} · {STATUS_TEXT[batch.status]}
           </p>
         </div>
@@ -759,7 +810,53 @@ function BatchDetail({ id }: { id: string }) {
             }
           />
         </div>
+        {rateInSummary ? (
+          <div className="mt-3 sm:max-w-xs">
+            <UsdRateSelect
+              rates={usdRates}
+              selectedId={selectedUsdRateId}
+              currentRateId={currentRateId}
+              onSelect={handleSelectRate}
+            />
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Tasa del estado de cuenta y de la conversión de los cobros.
+            </p>
+          </div>
+        ) : null}
       </FormSection>
+
+      {/* Estado de cuenta (sólo lotes de seguro) */}
+      {debtorType === 'insurance' ? (
+        <FormSection
+          title="Estado de cuenta"
+          description={
+            fixed
+              ? 'Seguro indexado: el Excel usa la tasa fija de cada orden.'
+              : 'Seguro no indexado: el Excel usa la tasa seleccionada en el Resumen.'
+          }
+        >
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <p className="text-xs text-muted-foreground">
+              Incluye las {batch.orders?.length ?? 0} órdenes del lote con
+              titular, paciente, factura y montos en USD y Bs.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onDownloadStatement}
+              disabled={downloadingStatement || (!fixed && !selectedMarketRate)}
+            >
+              <Download className="w-4 h-4 mr-1.5" />
+              {downloadingStatement ? 'Generando…' : 'Descargar estado de cuenta'}
+            </Button>
+          </div>
+          {!fixed && !selectedMarketRate ? (
+            <p className="text-xs text-warning mt-2">
+              Selecciona una tasa en el Resumen para generar el Excel.
+            </p>
+          ) : null}
+        </FormSection>
+      ) : null}
 
       {/* Órdenes */}
       <FormSection
@@ -819,6 +916,9 @@ function BatchDetail({ id }: { id: string }) {
                             N° {c.orderNumber}
                           </div>
                           <div className="text-[11px] text-muted-foreground">
+                            {debtorType === 'cashea'
+                              ? `${pendingDebtorName(c)} · `
+                              : ''}
                             {c.useFixedRate && c.targetBs !== null
                               ? `${formatMoney(c.targetBs)} Bs.`
                               : `${formatMoney(c.targetUsd ?? 0)} USD`}
@@ -954,7 +1054,7 @@ function BatchDetail({ id }: { id: string }) {
                     <OrderPaymentForm
                       payments={(field.value ?? []) as OrderPaymentValues[]}
                       onChange={(next) => field.onChange(next)}
-                      usdRate={usdRate ?? selectedMarketRate}
+                      usdRate={selectedMarketRate}
                       onEurRateLoaded={(r) =>
                         setEurRatesById((prev) =>
                           prev[r.id] ? prev : { ...prev, [r.id]: r },
@@ -969,9 +1069,16 @@ function BatchDetail({ id }: { id: string }) {
                 />
 
                 <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                  <div className="rounded-md border p-2 bg-muted/30">
+                  <div
+                    className={`rounded-md border p-2 bg-muted/30${
+                      rateInSummary ? ' col-span-2' : ''
+                    }`}
+                  >
                     <div className="text-xs text-muted-foreground">
                       Total de los cobros cargados ({fixed ? 'Bs.' : 'USD'})
+                      {rateInSummary && selectedMarketRate
+                        ? ` · tasa del Resumen: ${formatMoney(Number(selectedMarketRate.amountBs))} Bs.`
+                        : ''}
                     </div>
                     <div className="font-mono">
                       {fixed
@@ -979,17 +1086,20 @@ function BatchDetail({ id }: { id: string }) {
                         : `${formatMoney(totalPaymentsUsd)} USD`}
                     </div>
                   </div>
-                  <UsdRateSelect
-                    rates={usdRates}
-                    selectedId={selectedUsdRateId}
-                    currentRateId={currentRateId}
-                    onSelect={handleSelectRate}
-                    lockNote={
-                      fixed
-                        ? 'Tasa para convertir cobros en USD/EUR a Bs (referencia).'
-                        : undefined
-                    }
-                  />
+                  {!rateInSummary ? (
+                    <UsdRateSelect
+                      rates={fixed && fixedRate ? [fixedRate] : usdRates}
+                      selectedId={fixed && fixedRate ? fixedRate.id : selectedUsdRateId}
+                      currentRateId={currentRateId}
+                      onSelect={handleSelectRate}
+                      disabled={fixed && !!fixedRate}
+                      lockNote={
+                        fixed
+                          ? 'Tasa fija de la orden (seguro indexado): con ella se convierten los cobros en USD/EUR a Bs.'
+                          : undefined
+                      }
+                    />
+                  ) : null}
                 </div>
 
                 <div className="mt-3 rounded-md border p-3 flex items-center justify-between gap-3 text-sm">

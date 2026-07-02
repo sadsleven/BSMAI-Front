@@ -219,8 +219,13 @@ export function OrderForm({
   };
   const [holder, setHolder] = useState<Patient | null>(initialHolder);
   const [patient, setPatient] = useState<Patient | null>(initialPatient);
+  // Con titular pero sin paciente cargado (borrador a medias o carga fallida)
+  // el checkbox debe quedar DESMARCADO: mostrarlo marcado ocultaría el select
+  // mientras el form no tiene un patientId válido.
   const [sameAsHolder, setSameAsHolder] = useState(
-    initialHolder && initialPatient ? initialHolder.id === initialPatient.id : true,
+    initialHolder
+      ? !!initialPatient && initialHolder.id === initialPatient.id
+      : true,
   );
   const [createPatientOpen, setCreatePatientOpen] = useState(false);
   const [createTarget, setCreateTarget] = useState<'holder' | 'patient' | null>(null);
@@ -311,6 +316,44 @@ export function OrderForm({
     eurRatesById[id] ??
     (currentRate && currentRate.id === id ? currentRate : null);
 
+  // Pagos ya existentes (borrador reanudado / orden en edición) pueden referir
+  // una tasa EUR que ya no es la vigente: se cargan por id para que
+  // `paymentInUsd` no las cuente como $0 y bloquee el cuadre. `attempted`
+  // evita re-fetch infinito de ids muertos (tasa borrada).
+  const attemptedEurRateIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const missing = Array.from(
+      new Set(
+        (payments ?? [])
+          .filter((p) => p.amountCurrency === 'EUR')
+          .map((p) => (p.exchangeRateId ?? '').trim())
+          .filter(
+            (id) =>
+              id && !eurRatesById[id] && !attemptedEurRateIds.current.has(id),
+          ),
+      ),
+    );
+    if (missing.length === 0) return;
+    missing.forEach((id) => attemptedEurRateIds.current.add(id));
+    let cancelled = false;
+    Promise.all(
+      missing.map((id) => exchangeRateGateway.getById(id).catch(() => null)),
+    ).then((rates) => {
+      if (cancelled) return;
+      const found = rates.filter((r): r is ExchangeRate => !!r);
+      if (found.length) {
+        setEurRatesById((prev) => {
+          const next = { ...prev };
+          for (const r of found) next[r.id] = r;
+          return next;
+        });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [payments, eurRatesById]);
+
   // Holder/patient sync
   const onHolderChange = (next: Patient | null) => {
     setHolder(next);
@@ -335,18 +378,36 @@ export function OrderForm({
     }
   };
 
-  // Order type change
+  // Order type change. Al cambiar de tipo se limpian los campos EXCLUSIVOS del
+  // tipo anterior: sin esto quedan valores fantasma (pagos, inicial cashea,
+  // clave de servicio) que zod sigue validando sobre secciones ya ocultas y el
+  // submit se bloquea con errores en campos invisibles.
+  const applyTypeChange = (next: OrderType) => {
+    setValue('type', next, { shouldValidate: true, shouldDirty: true });
+    if (next !== 'cash' && next !== 'cashea') {
+      setValue('payments', [], { shouldDirty: true });
+    }
+    if (next !== 'cashea') {
+      setValue('casheaFirstInstallmentAmount', 0, { shouldDirty: true });
+    }
+    if (next !== 'insurance') {
+      setValue('serviceKey', '', { shouldDirty: true });
+    }
+    if (next !== 'credit') {
+      setValue('isReimbursement', false, { shouldDirty: true });
+    }
+  };
   const requestTypeChange = (next: OrderType) => {
     if (next === type) return;
     if (holder || patient) {
       setConfirmTypeChange(next);
     } else {
-      setValue('type', next, { shouldValidate: true, shouldDirty: true });
+      applyTypeChange(next);
     }
   };
   const confirmTypeChangeApply = () => {
     if (!confirmTypeChange) return;
-    setValue('type', confirmTypeChange, { shouldValidate: true, shouldDirty: true });
+    applyTypeChange(confirmTypeChange);
     setHolder(null);
     setPatient(null);
     setSameAsHolder(true);

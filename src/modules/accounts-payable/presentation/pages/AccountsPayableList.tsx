@@ -337,6 +337,7 @@ export function AccountsPayableList() {
                   <Button
                     size="lg"
                     onClick={goCreate}
+                    disabled={selectedRows.length > 0 && !canCreate}
                     className="bg-brand-blue text-white shadow-sm hover:bg-brand-blue-strong font-semibold"
                   >
                     <Plus className="w-4 h-4 mr-1.5" />
@@ -353,7 +354,7 @@ export function AccountsPayableList() {
             {selectedRows.length > 0 && !sharedProvider ? (
               <div className="mx-4 mt-3 rounded-lg border border-warning/30 bg-warning-soft p-2.5 text-xs text-warning">
                 Las órdenes seleccionadas son de proveedores distintos. Un lote
-                agrupa órdenes de un solo proveedor.
+                agrupa órdenes de un solo doctor o de un solo centro.
               </div>
             ) : null}
             {pendingError ? (

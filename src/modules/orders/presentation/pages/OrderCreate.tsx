@@ -22,8 +22,7 @@ import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { patientGateway } from '@/modules/patients/infrastructure/patientGateway';
 import { displayName } from '@/modules/patients/domain/models/patient';
 import type { Patient } from '@/modules/patients/domain/models/patient';
-
-const todayIso = () => new Date().toISOString().slice(0, 10);
+import { localTodayIso } from '@/lib/dates';
 
 const DEFAULT_VALUES: OrderValues = {
   branchId: '',
@@ -38,7 +37,7 @@ const DEFAULT_VALUES: OrderValues = {
   specialtyId: '',
   serviceTypes: [],
   pathologyIds: [],
-  orderDate: todayIso(),
+  orderDate: localTodayIso(),
   appointmentDate: '',
   priceAmount: 0,
   casheaFirstInstallmentAmount: 0,
@@ -86,7 +85,12 @@ function buildDto(values: OrderValues): CreateOrderDto {
       values.type === 'insurance' && values.useFixedRate && values.fixedExchangeRateId
         ? values.fixedExchangeRateId
         : undefined,
-    payments: (values.payments ?? []).map((p) => ({
+    // Pagos sólo aplican a contado/cashea; un cambio de tipo tardío no debe
+    // arrastrar filas fantasma al backend.
+    payments: (values.type === 'cash' || values.type === 'cashea'
+      ? values.payments ?? []
+      : []
+    ).map((p) => ({
       type: p.type,
       paymentDate: p.paymentDate,
       referenceNumber: p.referenceNumber || undefined,
@@ -144,10 +148,31 @@ export function OrderCreate() {
           ]);
           if (cancelled) return;
           setInitialHolder(h);
-          setInitialPatient(p ?? h);
+          if (patientId && patientId === holderId) {
+            setInitialPatient(h);
+          } else if (patientId) {
+            // Paciente distinto del titular. Si su carga falla (borrado, etc.)
+            // NO caer al titular: el form conservaría un patientId invisible.
+            // Se limpia para que el select vacío refleje lo que se enviaría.
+            setInitialPatient(p);
+            if (!p) methods.setValue('patientId', '');
+          } else {
+            // Borrador guardado sin paciente elegido: select de paciente vacío
+            // (no se simula "mismo titular").
+            setInitialPatient(null);
+          }
         }
       } catch (e) {
         notify.fromError(e, 'No se pudo cargar el borrador.');
+        if (!cancelled) {
+          // Borrador irrecuperable (borrado en otra pestaña, 404): soltar el id
+          // para que "Guardar borrador" cree uno nuevo en vez de PATCHear un id
+          // muerto por siempre.
+          setDraftId(null);
+          const next = new URLSearchParams(searchParams);
+          next.delete('draft');
+          setSearchParams(next, { replace: true });
+        }
       } finally {
         if (!cancelled) setHydrating(false);
       }
@@ -181,13 +206,25 @@ export function OrderCreate() {
       }
       const dto = {
         branchId: values.branchId || undefined,
-        label,
+        // Columna y DTO capan a 200: un businessName largo no debe tumbar el guardado.
+        label: label.slice(0, 200),
         payload: values as Partial<OrderValues>,
       };
-      const saved = draftId
-        ? await orderDraftGateway.update(draftId, dto)
-        : await orderDraftGateway.create(dto);
-      if (!draftId) {
+      let saved;
+      if (draftId) {
+        try {
+          saved = await orderDraftGateway.update(draftId, dto);
+        } catch (err) {
+          // Borrador borrado en otra pestaña: crear uno nuevo en vez de fallar.
+          const status = (err as { response?: { status?: number } })?.response
+            ?.status;
+          if (status !== 404) throw err;
+          saved = await orderDraftGateway.create(dto);
+        }
+      } else {
+        saved = await orderDraftGateway.create(dto);
+      }
+      if (saved.id !== draftId) {
         setDraftId(saved.id);
         const next = new URLSearchParams(searchParams);
         next.set('draft', saved.id);
