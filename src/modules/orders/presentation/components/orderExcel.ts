@@ -6,6 +6,7 @@ import {
   orderServiceKeyDisplay,
 } from '../../domain/models/order';
 import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
+import { formatDateOnly } from '@/lib/dates';
 
 const COMPANY = {
   name: 'ATENCIÓN MÉDICA AFMI',
@@ -21,10 +22,9 @@ function holderId(p?: { cedula?: string | null; rif?: string | null } | null): s
   return p.cedula ?? p.rif ?? '';
 }
 
-function fmtDate(iso?: string | null): string {
-  if (!iso) return '';
-  return new Date(iso).toLocaleDateString('es-VE');
-}
+// `orderDate` es columna `date` (string YYYY-MM-DD): formatear sin `new Date`
+// para no imprimir el día anterior en UTC-4.
+const fmtDate = formatDateOnly;
 
 function thinBorder(): Partial<ExcelJS.Borders> {
   const s: Partial<ExcelJS.Border> = { style: 'thin', color: { argb: 'FF000000' } };
@@ -38,13 +38,17 @@ export function safeFilenameSegment(s: string): string {
 
 function ageFromBirthDate(iso?: string | null): string {
   if (!iso) return '';
-  const b = new Date(iso);
+  // Mediodía local: `new Date('YYYY-MM-DD')` es medianoche UTC y en VE (UTC-4)
+  // los getters locales devuelven el día anterior.
+  const b = new Date(`${iso.slice(0, 10)}T12:00:00`);
   if (Number.isNaN(b.getTime())) return '';
   const now = new Date();
-  let age = now.getFullYear() - b.getFullYear();
-  const m = now.getMonth() - b.getMonth();
-  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--;
-  return age >= 0 && age < 150 ? String(age) : '';
+  let months = (now.getFullYear() - b.getFullYear()) * 12 + (now.getMonth() - b.getMonth());
+  if (now.getDate() < b.getDate()) months--;
+  if (months < 0 || months >= 150 * 12) return '';
+  // Bebés (<1 año) se expresan en meses.
+  if (months < 12) return `${months} ${months === 1 ? 'mes' : 'meses'}`;
+  return String(Math.floor(months / 12));
 }
 
 /** Carga la imagen del logo AFMI desde public/. Devuelve null si falla. */
@@ -248,16 +252,20 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
     wrapText: true,
   };
 
-  // R4 — Razón social. Seguro → nombre del seguro; resto → titular.
+  // R4 — Razón social — valor mergeado C:E. Seguro → nombre del seguro; resto → titular.
   {
     const c4a = ws.getCell('A4');
     c4a.value = 'Nombre  o Razón Social :';
     c4a.font = DEFAULT_FONT;
     c4a.alignment = { horizontal: 'left', vertical: 'middle' };
+    ws.mergeCells('C4:E4');
     const c4c = ws.getCell('C4');
     c4c.value = contratanteName;
     c4c.font = DEFAULT_FONT;
     c4c.alignment = wrapLeft;
+    // Excel no auto-ajusta filas con celdas mergeadas: altura explícita.
+    const nameLines = Math.max(1, Math.ceil(contratanteName.length / 78));
+    ws.getRow(4).height = 2.25 + nameLines * 13.5;
   }
 
   // R5 — Dirección fiscal — valor mergeado C:E. Seguro → seguro; resto → titular.
@@ -295,16 +303,20 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
     c6d.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
   }
 
-  // R7 — Contratante. Seguro directo al paciente / no seguro → el titular.
+  // R7 — Contratante — valor mergeado C:E. Seguro directo al paciente / no seguro → el titular.
   {
     const c7a = ws.getCell('A7');
     c7a.value = 'Contratante:';
     c7a.font = DEFAULT_FONT;
     c7a.alignment = { horizontal: 'left', vertical: 'top' };
+    ws.mergeCells('C7:E7');
     const c7c = ws.getCell('C7');
     c7c.value = contratante;
     c7c.font = SMALL_FONT;
     c7c.alignment = wrapLeftTop;
+    // Excel no auto-ajusta filas con celdas mergeadas: altura explícita.
+    const contratanteLines = Math.max(1, Math.ceil(contratante.length / 78));
+    ws.getRow(7).height = 2.25 + contratanteLines * 13.5;
   }
 
   // R8 — Titular
@@ -337,15 +349,15 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
   c9d.font = DEFAULT_FONT;
   c9d.alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
 
-  // R10 — Clave de Servicio. orderServiceKeyDisplay ya resuelve la 'R' de
-  // reembolso (crédito + isReimbursement).
+  // R10 — Clave de Servicio. La factura usa serviceKey tal cual; la 'R' de
+  // reembolso (crédito + isReimbursement) es sólo de la orden interna.
   {
     const c10a = ws.getCell('A10');
     c10a.value = 'Clave de Servicio Nº:';
     c10a.font = DEFAULT_FONT;
     c10a.alignment = { horizontal: 'left', vertical: 'middle' };
     const c10c = ws.getCell('C10');
-    c10c.value = orderServiceKeyDisplay(order);
+    c10c.value = order.serviceKey ?? '';
     c10c.font = DEFAULT_FONT;
     c10c.alignment = wrapLeft;
   }
@@ -493,16 +505,19 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
   re.font = DEFAULT_FONT;
   re.alignment = { horizontal: 'center' };
 
-  // Tasa de cambio + IVA
+  // Tasa de cambio + IVA. Seguro no indexado (useFixedRate, tasa fija de la
+  // orden): la factura NO muestra la tasa usada.
   const tasaRow = equivRow + 1;
-  ra = ws.getCell(`A${tasaRow}`);
-  ra.value = 'Tasa de cambio BCV :  ';
-  ra.font = DEFAULT_FONT;
-  rb = ws.getCell(`B${tasaRow}`);
-  rb.value = rateBs;
-  rb.numFmt = '#,##0.00';
-  rb.font = DEFAULT_FONT;
-  rb.alignment = { horizontal: 'center' };
+  if (!order.useFixedRate) {
+    ra = ws.getCell(`A${tasaRow}`);
+    ra.value = 'Tasa de cambio BCV :  ';
+    ra.font = DEFAULT_FONT;
+    rb = ws.getCell(`B${tasaRow}`);
+    rb.value = rateBs;
+    rb.numFmt = '#,##0.00';
+    rb.font = DEFAULT_FONT;
+    rb.alignment = { horizontal: 'center' };
+  }
   rc = ws.getCell(`C${tasaRow}`);
   rc.value = 'IVA %  ( E )';
   rc.font = DEFAULT_FONT;
@@ -707,7 +722,8 @@ export async function downloadOrdenInternaForProvider(
   const age = ageFromBirthDate(order.patient?.birthDate);
   const phone = order.patient?.phones?.[0]?.number ?? '';
   put('A9', 'Edad: ', C11B, leftMid);
-  put('B9', age ? Number(age) : '', C11, center);
+  // Edad puede ser texto ("3 meses" para bebés) o años numéricos.
+  put('B9', /^\d+$/.test(age) ? Number(age) : age, C11, center);
   put('D9', 'Teléfono:', C11B, leftMid);
   put('E9', phone, C11, { horizontal: 'left', vertical: 'middle' }, '@');
   put('F9', 'Referencia:', C11B, leftMid);

@@ -1,6 +1,7 @@
 import { Banknote } from 'lucide-react';
 import { PAYMENT_TYPE_LABEL } from '@/modules/orders/domain/models/order';
 import { formatMoney } from '@/lib/format/money';
+import { formatDateOnly } from '@/lib/dates';
 
 type PaymentLike = {
   id: string;
@@ -53,9 +54,7 @@ export function PaymentHistoryList({
     <div className="space-y-2">
       <ul className="space-y-2">
         {sorted.map((p) => {
-          const date = p.paymentDate
-            ? new Date(p.paymentDate).toLocaleDateString('es-VE')
-            : '—';
+          const date = p.paymentDate ? formatDateOnly(p.paymentDate) : '—';
           const amount = formatMoney(p.amountValue);
           const nativeAmount = formatMoney(
             (isBsNative ? p.amountInBs : p.amountInUsd) ?? 0,

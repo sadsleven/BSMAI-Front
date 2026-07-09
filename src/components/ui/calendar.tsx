@@ -43,7 +43,10 @@ function CalendarDropdown({ value, onChange, options }: DropdownProps) {
       >
         <SelectValue />
       </SelectTrigger>
-      <SelectContent className="max-h-72">
+      {/* popper: anclado bajo el trigger con scroll; el modo item-aligned
+          (default) centra la lista sobre el ítem y con ~130 años ocupa toda
+          la pantalla. */}
+      <SelectContent position="popper" className="max-h-72">
         {options?.map((o) => (
           <SelectItem
             key={o.value}
@@ -63,7 +66,7 @@ function CalendarDropdown({ value, onChange, options }: DropdownProps) {
  * Shadcn-styled Calendar built on react-day-picker v9. Default locale `es`.
  * Use inside `<Popover>` for date pickers.
  */
-export function Calendar({ className, classNames, ...props }: CalendarProps) {
+export function Calendar({ className, classNames, style, ...props }: CalendarProps) {
   const defaults = getDefaultClassNames();
   return (
     <DayPicker
@@ -71,6 +74,17 @@ export function Calendar({ className, classNames, ...props }: CalendarProps) {
       showOutsideDays
       animate
       className={cn('p-3', className)}
+      // Celdas de día (td) al mismo ancho que los headers de weekday (w-9 =
+      // 2.25rem); el default de rdp v9 es 2.75rem y desalinea lu-do vs días.
+      // Inline porque el style.css de rdp entra al bundle después de las
+      // utilities de Tailwind y una clase arbitraria pierde el empate.
+      style={{
+        '--rdp-day-width': '2.25rem',
+        '--rdp-day-height': '2.25rem',
+        '--rdp-day_button-width': '2.25rem',
+        '--rdp-day_button-height': '2.25rem',
+        ...style,
+      } as React.CSSProperties}
       classNames={{
         ...defaults,
         root: cn(defaults.root, 'group/calendar w-fit'),

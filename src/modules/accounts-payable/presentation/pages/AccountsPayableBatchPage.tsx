@@ -33,6 +33,8 @@ import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { getHttpErrorMessage } from '@/lib/api';
 import { formatMoney } from '@/lib/format/money';
+import { formatDateOnly } from '@/lib/dates';
+import { PageLoader } from '@/components/ui/spinner';
 import { egressPaymentSchema, type OrderPaymentValues } from '@/lib/validations/schemas';
 import {
   OrderPaymentForm,
@@ -42,6 +44,7 @@ import {
 } from '@/modules/orders/presentation/components/OrderPaymentForm';
 import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchangeRate';
 import { UsdRateSelect } from '@/modules/exchange-rates/presentation/components/UsdRateSelect';
+import { useUsdRates } from '@/modules/exchange-rates/presentation/hooks/useUsdRates';
 import { doctorGateway } from '@/modules/doctors/infrastructure/doctorGateway';
 import { careCenterGateway } from '@/modules/care-centers/infrastructure/careCenterGateway';
 import { useTaxUnit } from '@/lib/taxes/useTaxUnit';
@@ -553,6 +556,35 @@ function BatchDetail({ id }: { id: string }) {
     } as ExchangeRate;
   }, [batch]);
 
+  // Tasa de pago seleccionable: si el pago se hizo otro día, se puede elegir la
+  // tasa de ese día. Por defecto (null) aplica la tasa de facturación.
+  const { usdRates, currentRateId } = useUsdRates();
+  const [paymentRateId, setPaymentRateId] = useState<string | null>(null);
+  const ratesForSelect = useMemo<ExchangeRate[]>(() => {
+    const list = [...usdRates];
+    if (usdRate && !list.some((r) => r.id === usdRate.id)) list.push(usdRate);
+    // Tasas ya snapshoteadas en pagos del lote (para prefijar al editar).
+    for (const p of batch?.payments ?? []) {
+      const er = p.exchangeRate;
+      if (er && er.currency === 'USD' && !list.some((r) => r.id === er.id)) {
+        list.push({
+          id: er.id,
+          currency: 'USD',
+          amountBs: String(er.amountBs),
+          effectiveDate: '',
+          isActive: true,
+        } as ExchangeRate);
+      }
+    }
+    return list;
+  }, [usdRates, usdRate, batch]);
+  const paymentRate = useMemo<ExchangeRate | null>(
+    () =>
+      (paymentRateId ? ratesForSelect.find((r) => r.id === paymentRateId) : null) ??
+      usdRate,
+    [paymentRateId, ratesForSelect, usdRate],
+  );
+
   // ---------------- Payment form ----------------
   const methods = useForm<PaymentFormValues>({
     resolver: zodResolver(paymentSchema),
@@ -573,7 +605,7 @@ function BatchDetail({ id }: { id: string }) {
       amountValue: 0,
     };
     if (type === 'mobile_payment' || type === 'bank_transfer' || type === 'cash_bs') {
-      return { ...base, exchangeRateId: usdRate?.id ?? '', amountCurrency: 'BS' };
+      return { ...base, exchangeRateId: paymentRate?.id ?? '', amountCurrency: 'BS' };
     }
     if (type === 'cash_usd') return { ...base, amountCurrency: 'USD' };
     if (type === 'cash_eur') return { ...base, amountCurrency: 'EUR' };
@@ -595,16 +627,19 @@ function BatchDetail({ id }: { id: string }) {
 
   const lookupRate = useCallback(
     (rid: string): ExchangeRate | null =>
-      eurRatesById[rid] ?? (usdRate && usdRate.id === rid ? usdRate : null),
-    [eurRatesById, usdRate],
+      eurRatesById[rid] ?? ratesForSelect.find((r) => r.id === rid) ?? null,
+    [eurRatesById, ratesForSelect],
   );
 
   const watchedPayments = methods.watch('payments') ?? [];
   const totalPaymentsBs = useMemo(
     () =>
-      watchedPayments.reduce((sum, p) => sum + paymentInBs(p, usdRate, lookupRate), 0),
+      watchedPayments.reduce(
+        (sum, p) => sum + paymentInBs(p, paymentRate, lookupRate),
+        0,
+      ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [watchedPayments, usdRate, eurRatesById],
+    [watchedPayments, paymentRate, eurRatesById],
   );
 
   // Datos del lote (provistos por el BE).
@@ -625,7 +660,12 @@ function BatchDetail({ id }: { id: string }) {
         referenceNumber: p.referenceNumber || undefined,
         bankCode: p.bankCode || undefined,
         accountNumber: p.accountNumber || undefined,
-        exchangeRateId: p.exchangeRateId || undefined,
+        // Pagos no-EUR se convierten con la tasa de pago elegida; EUR mantiene
+        // su tasa EUR/Bs snapshot.
+        exchangeRateId:
+          p.amountCurrency === 'EUR'
+            ? p.exchangeRateId || undefined
+            : paymentRate?.id || p.exchangeRateId || undefined,
         amountCurrency: p.amountCurrency,
         amountValue: p.amountValue,
       }));
@@ -644,6 +684,7 @@ function BatchDetail({ id }: { id: string }) {
       setBatch(updated);
       reset({ payments: [] });
       setEditingPaymentId(null);
+      setPaymentRateId(null);
     } catch (e) {
       notify.fromError(e, 'No se pudo registrar el pago');
     } finally {
@@ -655,6 +696,10 @@ function BatchDetail({ id }: { id: string }) {
     const p = batch?.payments?.find((x) => x.id === paymentId);
     if (!p) return;
     setEditingPaymentId(paymentId);
+    // Prefijar la tasa de pago con la snapshot del pago (si es USD/Bs).
+    setPaymentRateId(
+      p.amountCurrency !== 'EUR' && p.exchangeRateId ? p.exchangeRateId : null,
+    );
     reset({
       payments: [
         {
@@ -674,6 +719,7 @@ function BatchDetail({ id }: { id: string }) {
 
   const cancelEdit = () => {
     setEditingPaymentId(null);
+    setPaymentRateId(null);
     reset({ payments: [] });
   };
 
@@ -753,11 +799,7 @@ function BatchDetail({ id }: { id: string }) {
   );
 
   if (loading || !batch) {
-    return (
-      <div className="max-w-3xl mx-auto p-6 text-sm text-muted-foreground">
-        Cargando lote…
-      </div>
-    );
+    return <PageLoader label="Cargando lote…" />;
   }
 
   // Desglose SENIAT (espejo del cálculo del BE) para la sección Resumen.
@@ -985,9 +1027,7 @@ function BatchDetail({ id }: { id: string }) {
                 <div className="flex-1 min-w-0 text-sm">
                   <div className="font-medium">
                     {PAYMENT_TYPE_LABEL[p.type]} ·{' '}
-                    {p.paymentDate
-                      ? new Date(p.paymentDate).toLocaleDateString('es-VE')
-                      : '—'}
+                    {p.paymentDate ? formatDateOnly(p.paymentDate) : '—'}
                   </div>
                   <div className="text-xs text-muted-foreground font-mono">
                     {formatMoney(p.amountValue)} {p.amountCurrency} ·{' '}
@@ -1053,7 +1093,7 @@ function BatchDetail({ id }: { id: string }) {
                         <OrderPaymentForm
                           payments={(field.value ?? []) as OrderPaymentValues[]}
                           onChange={(next) => field.onChange(next)}
-                          usdRate={usdRate}
+                          usdRate={paymentRate}
                           onEurRateLoaded={(r) =>
                             setEurRatesById((prev) =>
                               prev[r.id] ? prev : { ...prev, [r.id]: r },
@@ -1093,14 +1133,24 @@ function BatchDetail({ id }: { id: string }) {
                         </div>
                         <div className="font-mono">{formatMoney(totalPaymentsBs)} Bs.</div>
                       </div>
-                      <UsdRateSelect
-                        rates={usdRate ? [usdRate] : []}
-                        selectedId={usdRate?.id ?? ''}
-                        onSelect={() => {}}
-                        disabled
-                        label="Tasa de facturación"
-                        lockNote="Tasa de la orden — define el neto en Bs."
-                      />
+                      <div>
+                        <UsdRateSelect
+                          rates={ratesForSelect}
+                          selectedId={paymentRate?.id ?? ''}
+                          currentRateId={currentRateId}
+                          onSelect={setPaymentRateId}
+                          label="Tasa de pago (USD/Bs)"
+                        />
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                          Si el pago se hizo otro día, elige la tasa de ese día.
+                          Convierte los pagos en USD a Bs. El neto del lote se
+                          mantiene a la tasa de facturación
+                          {usdRate
+                            ? ` (1 USD = ${formatMoney(usdRate.amountBs)} Bs.)`
+                            : ''}
+                          .
+                        </p>
+                      </div>
                     </div>
 
                     <div className="mt-3 rounded-md border p-3 flex items-center justify-between gap-3 text-sm">

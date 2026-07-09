@@ -84,6 +84,8 @@ export interface OrderServiceTypeRow {
   careCenter?: (OrderRefSummary & { centerAddress?: string | null }) | null;
   /** Cantidad del ST (≥1, default 1). Todo ST admite cantidad. */
   quantity?: number;
+  /** ST indexado (tasa del día del cobro). Sólo con seguro no indexado (orden tasa fija). */
+  isIndexed?: boolean;
   /** FK a la orden interna del proveedor de esta fila. */
   internalOrderId?: string;
   /** Orden interna (número) del proveedor de esta fila — para el N° por fila en facturación. */
@@ -246,6 +248,8 @@ export interface OrderServiceTypeRowInput {
   quantity?: number;
   /** Nombre de este ST para la orden. Obligatorio. */
   customName: string;
+  /** ST indexado (tasa del día del cobro). Sólo con seguro no indexado (orden tasa fija). */
+  isIndexed?: boolean;
 }
 
 export interface CreateOrderDto {

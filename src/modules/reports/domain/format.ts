@@ -1,4 +1,5 @@
 /** VE locale formatters for reports. */
+import { formatDateOnly } from '@/lib/dates';
 import {
   formatBs as fmtBs,
   formatBsCompact as fmtBsCompact,
@@ -28,11 +29,14 @@ export function formatPercent(n: number | null | undefined, decimals = 1): strin
   return fmtPercent(n, { decimals });
 }
 
+/**
+ * Fecha-solo (`YYYY-MM-DD` de columnas `date`) → DD/MM/YYYY sin `new Date`:
+ * parsearlo crea medianoche UTC y en VE (UTC-4) imprime el día anterior.
+ */
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return '—';
-  const d = new Date(iso);
-  if (!Number.isFinite(d.getTime())) return '—';
-  return d.toLocaleDateString('es-VE');
+  const s = formatDateOnly(iso);
+  return s || '—';
 }
 
 export function daysBetween(from: string, to: Date = new Date()): number {

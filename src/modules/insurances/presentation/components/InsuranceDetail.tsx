@@ -44,9 +44,9 @@ export function InsuranceDetailBody({ insurance }: { insurance: Insurance }) {
           label="Modalidad de cobro"
           value={
             insurance.isIndexed ? (
-              <DetailBadge tone="info">Indexado (tasa del día de la orden)</DetailBadge>
+              <DetailBadge tone="info">No indexado (tasa del día de la orden)</DetailBadge>
             ) : (
-              <DetailBadge tone="neutral">No indexado (tasa del día del cobro)</DetailBadge>
+              <DetailBadge tone="neutral">Indexado (tasa del día del cobro)</DetailBadge>
             )
           }
         />

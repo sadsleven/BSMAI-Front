@@ -488,8 +488,8 @@ export function OrderForm({
       ? `${currentInsuranceSource}|${currentInsuranceId}|${currentContractorId ?? ''}`
       : '';
 
-  // ¿El seguro seleccionado es indexado? De ahí se deriva el modo tasa fija de la
-  // orden (ya no es un checkbox por-orden).
+  // ¿El seguro seleccionado tiene `isIndexed=true` (UI: "No indexado")? De ahí
+  // se deriva el modo tasa fija de la orden (ya no es un checkbox por-orden).
   const selectedInsuranceIndexed = useMemo(() => {
     if (type !== 'insurance' || !currentInsuranceId) return false;
     const opt = availableInsurances.find(
@@ -570,9 +570,10 @@ export function OrderForm({
     name: 'fixedExchangeRateId',
   }) as string | '' | undefined;
   useEffect(() => {
-    // Mientras no sepamos si el seguro es indexado (la lista de seguros del
-    // titular aún carga), NO toques los valores reseteados: evita borrar la tasa
-    // persistida de una orden indexada en edición y ensuciar el form al abrir.
+    // Mientras no sepamos el flag `isIndexed` del seguro (la lista de seguros
+    // del titular aún carga), NO toques los valores reseteados: evita borrar la
+    // tasa persistida de una orden con tasa fija en edición y ensuciar el form
+    // al abrir.
     if (
       type === 'insurance' &&
       currentInsuranceId &&
@@ -580,7 +581,7 @@ export function OrderForm({
     ) {
       return;
     }
-    // `useFixedRate` se deriva de si el seguro es indexado (no es un checkbox).
+    // `useFixedRate` se deriva del flag `isIndexed` del seguro (no es un checkbox).
     if (!selectedInsuranceIndexed) {
       if (useFixedRateVal)
         setValue('useFixedRate', false, { shouldDirty: true, shouldValidate: true });
@@ -1161,7 +1162,7 @@ export function OrderForm({
                   <div className="space-y-1.5">
                     <RequiredLabel required>Tasa de la orden (USD/Bs)</RequiredLabel>
                     <p className="text-[11px] text-muted-foreground">
-                      Seguro <strong>indexado</strong>: la cuenta por cobrar queda
+                      Seguro <strong>no indexado</strong>: la cuenta por cobrar queda
                       fija en bolívares a la tasa del día de la orden. Los cobros se
                       descuentan en Bs sin importar la tasa del día del pago.
                     </p>
@@ -1216,7 +1217,7 @@ export function OrderForm({
                   </div>
                 ) : (
                   <div className="rounded-md border border-dashed bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
-                    Seguro <strong>no indexado</strong>: la cuenta por cobrar se
+                    Seguro <strong>indexado</strong>: la cuenta por cobrar se
                     cobra a la tasa del día del cobro (USD).
                   </div>
                 )}
@@ -1355,6 +1356,7 @@ export function OrderForm({
                   careCenterId?: string;
                   quantity?: number;
                   customName?: string | null;
+                  isIndexed?: boolean;
                 }>}
                 onChange={field.onChange}
                 serviceTypes={serviceTypes}
@@ -1362,6 +1364,7 @@ export function OrderForm({
                 initialProviders={initialProvidersMap}
                 priceByServiceTypeId={stPriceMap}
                 restrictToPriced={restrictToPriced}
+                showIndexedCheck={selectedInsuranceIndexed}
               />
             );
           }}

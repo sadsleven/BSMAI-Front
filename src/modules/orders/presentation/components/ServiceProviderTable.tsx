@@ -10,6 +10,7 @@ import { createPortal } from 'react-dom';
 import { Plus, Trash2, AlertTriangle, Search, ChevronDown, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { FormSwitch } from '@/components/ui/form-switch';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { formatMoney } from '@/lib/format/money';
@@ -27,6 +28,8 @@ export type ServiceProviderRowValue = {
   quantity?: number;
   /** Nombre personalizado del ST en la orden (override de serviceType.name). */
   customName?: string | null;
+  /** ST indexado (tasa del día del cobro). Sólo con seguro no indexado. */
+  isIndexed?: boolean;
 };
 
 export type ServiceProviderRowErrors = {
@@ -57,6 +60,12 @@ export type ServiceProviderTableProps = {
    * (baremo) definido. El ST ya elegido en la fila se mantiene aunque no tenga.
    */
   restrictToPriced?: boolean;
+  /**
+   * Si true (seguro no indexado, orden en modo tasa fija), cada fila muestra el
+   * switch "Servicio indexado": ese ST se cobra a la tasa del día del cobro en
+   * vez de la tasa fija de la orden.
+   */
+  showIndexedCheck?: boolean;
 };
 
 /**
@@ -73,6 +82,7 @@ export function ServiceProviderTable({
   disabled,
   priceByServiceTypeId,
   restrictToPriced,
+  showIndexedCheck,
 }: ServiceProviderTableProps) {
   // Etiqueta de opción: nombre + precio USD (si hay) para el selector.
   const optionLabel = (s: ServiceType): string => {
@@ -356,6 +366,19 @@ export function ServiceProviderTable({
                     )}
                   </div>
                 </div>
+
+                {/* Fila 3 (sólo seguro no indexado): ST indexado → tasa del día del cobro */}
+                {showIndexedCheck && (
+                  <div className="rounded-md border border-dashed bg-muted/40 px-3 py-2">
+                    <FormSwitch
+                      label="Servicio indexado"
+                      description="Este servicio se cobra a la tasa del día del cobro, no a la tasa fija de la orden."
+                      checked={!!row.isIndexed}
+                      onCheckedChange={(v) => updateRow(idx, { isIndexed: v })}
+                      disabled={disabled}
+                    />
+                  </div>
+                )}
               </div>
             );
           })}

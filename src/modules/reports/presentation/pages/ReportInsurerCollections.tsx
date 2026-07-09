@@ -19,7 +19,7 @@ import {
 import { getHttpErrorMessage } from '@/lib/api';
 
 const STATE_LABEL: Record<ReceivableOrderState, string> = {
-  sin_lote: 'Sin lote',
+  sin_lote: 'Por cobrar',
   uncollected: 'Por cobrar',
   partially_collected: 'Cobro parcial',
   collected: 'Cobrado',
@@ -256,7 +256,7 @@ export function ReportInsurerCollections() {
 
         <ChartCard
           title="Órdenes por estado"
-          description="Distribución de la cartera (incluye sin lote)"
+          description="Distribución de la cartera (incluye por cobrar)"
           icon={PieChart}
           height={380}
           empty={noData && byStatus.length === 0}

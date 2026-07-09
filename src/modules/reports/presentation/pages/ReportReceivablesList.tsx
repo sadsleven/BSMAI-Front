@@ -36,7 +36,7 @@ import {
 import { getHttpErrorMessage } from '@/lib/api';
 
 const STATE_LABEL: Record<ReceivableOrderState, string> = {
-  sin_lote: 'Sin lote',
+  sin_lote: 'Por cobrar',
   uncollected: 'Por cobrar',
   partially_collected: 'Cobro parcial',
   collected: 'Cobrado',
@@ -190,8 +190,8 @@ export function ReportReceivablesList() {
               value: formatUsd(summary.pendingUsd),
               hint:
                 summary.pendingBs > 0
-                  ? `+ ${formatBs(summary.pendingBs)} (tasa fija) · incluye sin lote`
-                  : 'Incluye órdenes sin lote',
+                  ? `+ ${formatBs(summary.pendingBs)} (tasa fija) · incluye por cobrar`
+                  : 'Incluye órdenes por cobrar',
             },
             {
               icon: Coins,

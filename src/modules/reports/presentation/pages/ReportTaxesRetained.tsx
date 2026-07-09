@@ -36,7 +36,7 @@ import {
 import { getHttpErrorMessage } from '@/lib/api';
 
 const STATE_LABEL: Record<TaxObligationState, string> = {
-  sin_lote: 'Sin lote',
+  sin_lote: 'Por pagar',
   unpaid: 'Por pagar',
   partially_paid: 'Pago parcial',
   paid: 'Pagado',
@@ -187,7 +187,7 @@ export function ReportTaxesRetained() {
               tone: 'warning',
               label: 'Pendiente de pago',
               value: formatBs(summary.pendingBs),
-              hint: 'Incluye retenciones sin lote',
+              hint: 'Incluye retenciones por pagar',
             },
             {
               icon: Wallet,

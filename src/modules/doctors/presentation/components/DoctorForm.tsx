@@ -112,7 +112,8 @@ export function DoctorForm({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="email" className="text-sm font-medium">
-              Email <span className="text-destructive">*</span>
+              Email{' '}
+              <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
             </Label>
             <Controller
               name="email"
@@ -121,6 +122,7 @@ export function DoctorForm({
                 <Input
                   id="email"
                   type="email"
+                  autoComplete="off"
                   value={field.value ?? ''}
                   onChange={field.onChange}
                   onBlur={field.onBlur}
@@ -327,7 +329,10 @@ export function DoctorForm({
 
           <div className="space-y-1.5">
             <Label htmlFor="accessEmail" className="text-sm font-medium">
-              Email de acceso (usuario) <span className="text-destructive">*</span>
+              Email de acceso (usuario){' '}
+              <span className="text-xs text-muted-foreground font-normal">
+                (requerido solo si defines contraseña)
+              </span>
             </Label>
             <Controller
               name="email"
@@ -336,6 +341,7 @@ export function DoctorForm({
                 <Input
                   id="accessEmail"
                   type="email"
+                  autoComplete="off"
                   value={field.value ?? ''}
                   onChange={field.onChange}
                   onBlur={field.onBlur}
@@ -346,7 +352,7 @@ export function DoctorForm({
             <FieldError message={errors.email?.message} />
             <p className="text-xs text-muted-foreground">
               Es el mismo email del doctor y funciona como usuario de inicio de sesión.
-              Corregilo si está vacío o si ya está en uso por otra cuenta.
+              Corrígelo si está vacío o si ya está en uso por otra cuenta.
             </p>
           </div>
 

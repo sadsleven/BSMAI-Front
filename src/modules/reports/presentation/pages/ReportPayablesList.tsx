@@ -38,7 +38,7 @@ import {
 import { getHttpErrorMessage } from '@/lib/api';
 
 const STATE_LABEL: Record<PayableObligationState, string> = {
-  sin_lote: 'Sin lote',
+  sin_lote: 'Por pagar',
   unpaid: 'Por pagar',
   partially_paid: 'Pago parcial',
   paid: 'Pagado',
@@ -203,7 +203,7 @@ export function ReportPayablesList() {
               tone: 'warning',
               label: 'Pendiente por pagar',
               value: formatBs(summary.pendingBs),
-              hint: 'Incluye obligaciones sin lote',
+              hint: 'Incluye obligaciones por pagar',
             },
             {
               icon: Banknote,

@@ -167,6 +167,7 @@ export function UserForm({ mode, canEditSuperAdmin, existingRoles, existingBranc
             <Input
               id="email"
               type="email"
+              autoComplete="off"
               {...register('email')}
               readOnly={mode === 'edit'}
               disabled={mode === 'edit'}

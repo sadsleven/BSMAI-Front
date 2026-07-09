@@ -73,6 +73,12 @@ function buildDto(values: OrderValues): CreateOrderDto {
         r.providerType === 'care_center' ? r.careCenterId || undefined : undefined,
       quantity: r.quantity ?? undefined,
       customName: (r.customName ?? '').trim(),
+      // ST indexado sólo viaja con seguro no indexado (orden en modo tasa fija);
+      // así un cambio de seguro tardío no arrastra flags fantasma.
+      isIndexed:
+        values.type === 'insurance' && values.useFixedRate
+          ? !!r.isIndexed
+          : undefined,
     })),
     pathologyIds: values.pathologyIds ?? [],
     orderDate: values.orderDate,

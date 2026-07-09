@@ -4,6 +4,7 @@ import {
   effectiveTaxAmountBs,
   obligationProviderId,
   recipientName,
+  type RecipientType,
   type TaxBatch,
   type TaxInvoiceRow,
   type TaxObligation,
@@ -24,8 +25,13 @@ const LEGAL_TEXT =
 
 const TITLE = 'COMPROBANTE DE RETENCION DE IMPUESTO SOBRE LA RENTA';
 
-/** Código SENIAT del concepto: honorarios profesionales no mercantiles. */
-const SENIAT_CONCEPT_CODE = '002';
+/**
+ * Código SENIAT del concepto según el tipo de persona del sujeto retenido:
+ * 002 = persona natural (honorarios profesionales), 004 = persona jurídica.
+ */
+function seniatConceptCode(o: TaxObligation): string {
+  return o.personType === 'legal_entity' ? '004' : '002';
+}
 
 // ---- Estilos (Calibri, espejo de los templates Excel del proyecto) ----
 const font = (opts: Partial<ExcelJS.Font> = {}): Partial<ExcelJS.Font> => ({
@@ -183,7 +189,9 @@ function allocateRetention(rows: TaxInvoiceRow[], totalRetentionBs: number): num
 }
 
 interface ProviderGroup {
+  key: string;
   name: string;
+  recipientType: RecipientType;
   obligations: TaxObligation[];
 }
 
@@ -191,7 +199,14 @@ function groupByProvider(batch: TaxBatch): ProviderGroup[] {
   const groups = new Map<string, ProviderGroup>();
   for (const o of batch.obligations ?? []) {
     const key = `${o.recipientType}:${obligationProviderId(o)}`;
-    const g = groups.get(key) ?? { name: recipientName(o), obligations: [] };
+    const g =
+      groups.get(key) ??
+      ({
+        key,
+        name: recipientName(o),
+        recipientType: o.recipientType,
+        obligations: [],
+      } as ProviderGroup);
     g.obligations.push(o);
     groups.set(key, g);
   }
@@ -199,18 +214,49 @@ function groupByProvider(batch: TaxBatch): ProviderGroup[] {
 }
 
 /**
+ * Correlativo del comprobante por hoja: el N° base suma 1 por cada sujeto
+ * retenido (hoja) que pasa, preservando los ceros a la izquierda.
+ */
+export function comprobanteNumberForSheet(base: string, index: number): string {
+  if (index === 0 || !/^\d+$/.test(base)) return base;
+  return (BigInt(base) + BigInt(index)).toString().padStart(base.length, '0');
+}
+
+/** Sujeto retenido (proveedor) del lote SENIAT, en el orden de las hojas del comprobante. */
+export interface IslrProviderOption {
+  key: string;
+  name: string;
+  recipientType: RecipientType;
+}
+
+/** Sujetos retenidos del lote en el mismo orden que las hojas del comprobante general. */
+export function islrProviderOptions(batch: TaxBatch): IslrProviderOption[] {
+  return groupByProvider(batch).map(({ key, name, recipientType }) => ({
+    key,
+    name,
+    recipientType,
+  }));
+}
+
+/**
  * COMPROBANTE DE RETENCION DE IMPUESTO SOBRE LA RENTA (Decreto 1.808) del lote
  * SENIAT. Sigue la planilla ISLR de la empresa: una hoja por sujeto retenido
- * (proveedor), con una fila por factura de las órdenes de origen. Si el lote
- * tiene ajuste de UT, los montos retenidos usan los valores ajustados.
+ * (proveedor), con una fila por factura de las órdenes de origen. El correlativo
+ * del comprobante suma 1 por hoja. Si el lote tiene ajuste de UT, los montos
+ * retenidos usan los valores ajustados.
+ *
+ * Con `providerKey` genera sólo la hoja de ese sujeto, conservando el
+ * correlativo que le corresponde en el comprobante general.
  */
 export async function downloadIslrComprobanteXlsx(
   batch: TaxBatch,
   opts: IslrComprobanteOptions,
+  providerKey?: string,
 ): Promise<void> {
   const wb = new ExcelJS.Workbook();
   wb.creator = AGENT.name;
   wb.created = new Date();
+  wb.calcProperties.fullCalcOnLoad = true;
 
   const logoBuf = await loadLogoBuffer();
   const logoId = logoBuf ? wb.addImage({ buffer: logoBuf, extension: 'png' }) : null;
@@ -219,10 +265,17 @@ export async function downloadIslrComprobanteXlsx(
   const fiscalYear = issue.getFullYear();
   const fiscalMonth = String(issue.getMonth() + 1).padStart(2, '0');
 
-  const groups = groupByProvider(batch);
+  const allGroups = groupByProvider(batch);
+  const groups = allGroups
+    .map((group, index) => ({
+      group,
+      comprobanteNumber: comprobanteNumberForSheet(opts.comprobanteNumber, index),
+    }))
+    .filter(({ group }) => !providerKey || group.key === providerKey);
+  if (groups.length === 0) throw new Error('Proveedor sin retenciones en el lote');
   const usedNames = new Set<string>();
 
-  for (const group of groups) {
+  for (const { group, comprobanteNumber } of groups) {
     let sheetName = safeSheetName(group.name);
     let suffix = 2;
     while (usedNames.has(sheetName.toLowerCase())) {
@@ -239,13 +292,17 @@ export async function downloadIslrComprobanteXlsx(
         margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 },
       },
     });
-    buildProviderSheet(ws, group, issue, fiscalYear, fiscalMonth, opts, logoId);
+    buildProviderSheet(ws, group, issue, fiscalYear, fiscalMonth, comprobanteNumber, logoId);
   }
 
   const buf = await wb.xlsx.writeBuffer();
-  const filename = `Comprobante-ISLR-${safeFilenameSegment(
-    opts.comprobanteNumber,
-  )}-Lote-${safeFilenameSegment(batch.taxBatchNumber)}.xlsx`;
+  const filename = providerKey
+    ? `Comprobante-ISLR-${safeFilenameSegment(
+        groups[0].comprobanteNumber,
+      )}-${safeFilenameSegment(groups[0].group.name)}.xlsx`
+    : `Comprobante-ISLR-${safeFilenameSegment(
+        opts.comprobanteNumber,
+      )}-Lote-${safeFilenameSegment(batch.taxBatchNumber)}.xlsx`;
   saveAs(new Blob([buf]), filename);
 }
 
@@ -255,7 +312,7 @@ function buildProviderSheet(
   issue: Date,
   fiscalYear: number,
   fiscalMonth: string,
-  opts: IslrComprobanteOptions,
+  comprobanteNumber: string,
   logoId: number | null,
 ): void {
   ws.columns = [
@@ -292,7 +349,7 @@ function buildProviderSheet(
   ws.getCell('G2').value = issue;
   ws.getCell('G2').numFmt = 'dd/mm/yyyy';
   ws.mergeCells('H2:I2');
-  ws.getCell('H2').value = opts.comprobanteNumber;
+  ws.getCell('H2').value = comprobanteNumber;
   ws.getCell('H2').numFmt = '@';
   for (const addr of ['G2', 'H2']) {
     const c = ws.getCell(addr);
@@ -395,7 +452,7 @@ function buildProviderSheet(
   ws.getCell('E17').value = 'CODIGO DEL CONCEPTO DE RETENCIÓN SENIAT';
   ws.getCell('E17').font = font({ bold: true });
   ws.getCell('E17').alignment = { horizontal: 'right', vertical: 'middle' };
-  ws.getCell('I17').value = SENIAT_CONCEPT_CODE;
+  ws.getCell('I17').value = seniatConceptCode(first);
   ws.getCell('I17').numFmt = '@';
   ws.getCell('I17').font = font({ bold: true, size: 10 });
   ws.getCell('I17').alignment = { horizontal: 'center', vertical: 'middle' };
@@ -427,11 +484,16 @@ function buildProviderSheet(
   let r = headerRow + 1;
   const firstDataRow = r;
   let oper = 1;
+  let totalGrossBs = 0;
+  let totalRetainedBs = 0;
   for (const o of group.obligations) {
     const invoices = invoiceRowsOf(o);
     const retentions = allocateRetention(invoices, effectiveTaxAmountBs(o));
     const rate = Number(o.taxRate) || 0;
     invoices.forEach((inv, i) => {
+      const grossBs = round2(Number(inv.grossBs) || 0);
+      totalGrossBs = round2(totalGrossBs + grossBs);
+      totalRetainedBs = round2(totalRetainedBs + (retentions[i] ?? 0));
       ws.getRow(r).height = 15;
       ws.getCell(r, 2).value = String(oper).padStart(2, '0');
       ws.getCell(r, 2).numFmt = '@';
@@ -441,8 +503,11 @@ function buildProviderSheet(
       ws.getCell(r, 4).numFmt = '@';
       ws.getCell(r, 5).value = inv.controlNumber ?? '';
       ws.getCell(r, 5).numFmt = '@';
-      ws.getCell(r, 6).value = round2(Number(inv.grossBs) || 0);
-      ws.getCell(r, 7).value = { formula: `F${r}` } as ExcelJS.CellFormulaValue;
+      ws.getCell(r, 6).value = grossBs;
+      ws.getCell(r, 7).value = {
+        formula: `F${r}`,
+        result: grossBs,
+      } as ExcelJS.CellFormulaValue;
       ws.getCell(r, 8).value = rate;
       ws.getCell(r, 8).numFmt = '0%';
       ws.getCell(r, 8).alignment = { horizontal: 'center' };
@@ -474,6 +539,7 @@ function buildProviderSheet(
       const letter = String.fromCharCode(64 + col); // F, G, I
       cell.value = {
         formula: `SUM(${letter}${firstDataRow}:${letter}${lastDataRow})`,
+        result: col === 9 ? totalRetainedBs : totalGrossBs,
       } as ExcelJS.CellFormulaValue;
       cell.numFmt = '#,##0.00';
     }
@@ -494,6 +560,7 @@ function buildProviderSheet(
   ws.getCell(`H${r}`).border = THIN_BORDER;
   ws.getCell(`I${r}`).value = {
     formula: `I${totalsRow}`,
+    result: totalRetainedBs,
   } as ExcelJS.CellFormulaValue;
   ws.getCell(`I${r}`).numFmt = '#,##0.00';
   ws.getCell(`I${r}`).font = font({ bold: true, size: 10 });

@@ -46,7 +46,8 @@ export interface Doctor {
 
 export interface CreateDoctorDto {
   cedula: string;
-  email: string;
+  /** Opcional; requerido solo para habilitar acceso (password). `''` en update → null. */
+  email?: string;
   firstName: string;
   lastName: string;
   isLegalEntity?: boolean;

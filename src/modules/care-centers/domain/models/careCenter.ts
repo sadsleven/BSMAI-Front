@@ -44,7 +44,8 @@ export interface CareCenter {
 
 export interface CreateCareCenterDto {
   businessName: string;
-  email: string;
+  /** Opcional; requerido solo para habilitar acceso (password). `''` en update → null. */
+  email?: string;
   rif?: string;
   centerAddress?: string;
   phones: { number: string; label?: string }[];

@@ -12,6 +12,18 @@ export function localTodayIso(): string {
   return dayjs().format('YYYY-MM-DD');
 }
 
+/**
+ * Fecha-solo (`YYYY-MM-DD` o ISO más largo) → `DD/MM/YYYY` SIN pasar por
+ * `new Date()`: JS parsea `YYYY-MM-DD` como medianoche UTC y en Venezuela
+ * (UTC-4) `toLocaleDateString` imprime el día anterior. Usar para columnas
+ * `date` del BE (`orderDate`, `paymentDate`, `birthDate`, …).
+ */
+export function formatDateOnly(s: string | null | undefined): string {
+  if (!s) return '';
+  const [y, m, d] = s.slice(0, 10).split('-');
+  return y && m && d ? `${d}/${m}/${y}` : '';
+}
+
 /** DD/MM/YYYY (sin hora). Returns '—' on invalid input. */
 export function formatCreated(iso: string | null | undefined): string {
   if (!iso) return '—';
