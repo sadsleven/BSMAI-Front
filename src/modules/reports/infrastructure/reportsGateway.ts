@@ -30,6 +30,10 @@ export interface ReportPayableRow {
   providerType: 'doctor' | 'care_center';
   providerId: string | null;
   providerName: string;
+  patientName: string;
+  insuranceName: string | null;
+  procedure: string | null;
+  facturacionUsd: number;
   personType: 'natural' | 'legal_entity';
   grossUsd: number;
   billingRateBs: number;
@@ -38,6 +42,8 @@ export interface ReportPayableRow {
   netBs: number;
   payableId: string | null;
   payableNumber: string | null;
+  paymentDate: string | null;
+  paymentReference: string | null;
   state: PayableObligationState;
 }
 
@@ -81,7 +87,19 @@ export interface ReportReceivableRow {
   debtorType: 'insurance' | 'holder';
   debtorId: string | null;
   debtorName: string;
+  holderName: string;
+  holderId: string;
+  patientName: string;
+  patientId: string;
+  doctorName: string;
+  serviceKey: string;
+  invoiceNumber: string;
+  controlNumber: string;
+  costoUsd: number;
   useFixedRate: boolean;
+  rateBs: number | null;
+  /** Porción de la orden (mixtas emiten fila `fixed` + `indexed`). */
+  portion: 'full' | 'fixed' | 'indexed';
   targetUsd: number | null;
   targetBs: number | null;
   receivableId: string | null;
@@ -158,7 +176,8 @@ export interface ReportDisbursementRow extends ReportPaymentRow {
 export interface ReportCollectionRow extends ReportPaymentRow {
   receivableNumber: string;
   debtorName: string;
-  debtorType: 'insurance' | 'holder';
+  /** `cashea` = lote sin seguro ni titular (deudor es la fintech). */
+  debtorType: 'insurance' | 'holder' | 'cashea';
 }
 export interface ReportFlowSummary {
   count: number;
@@ -185,6 +204,44 @@ export interface ReportAgingResult {
 export interface ReportEnvelope<TRow, TSummary> {
   rows: TRow[];
   summary: TSummary;
+}
+
+// ---- ARC (Comprobante de Agente de Retención, Decreto 1.808) ----
+export interface ArcLine {
+  /** Fecha de pago o abono en cuenta (ISO). */
+  paymentDate: string | null;
+  /** Cantidad objeto de retención (base imponible) en Bs. */
+  baseBs: number;
+  /** % o tarifa aplicada. */
+  ratePct: number;
+  /** Impuesto retenido en Bs. */
+  retainedBs: number;
+  /** Total cantidad de retención acumulada (base) en Bs. */
+  accBaseBs: number;
+  /** Impuesto retenido acumulado en Bs. */
+  accRetainedBs: number;
+  /** Impuesto enterado — fecha (ISO) y banco. Null si aún no enterado. */
+  enteradoDate: string | null;
+  enteradoBank: string | null;
+}
+
+export interface ArcBeneficiary {
+  providerType: 'doctor' | 'care_center';
+  providerId: string | null;
+  name: string;
+  personType: 'natural' | 'legal_entity';
+  cedula: string | null;
+  rif: string | null;
+  address: string | null;
+  phone: string | null;
+  lines: ArcLine[];
+  totalBaseBs: number;
+  totalRetainedBs: number;
+}
+
+export interface ArcReport {
+  period: { from: string; to: string; year: number };
+  beneficiaries: ArcBeneficiary[];
 }
 
 function params(q: ReportQuery & { groupBy?: string }): Record<string, string | undefined> {
@@ -253,6 +310,12 @@ export const reportsGateway = {
   },
   async aging(q: ReportQuery = {}): Promise<ReportAgingResult> {
     const { data } = await api.get(`${BASE}/aging`, { params: params(q) });
+    return data;
+  },
+  async arc(q: ReportQuery & { year?: string } = {}): Promise<ArcReport> {
+    const { data } = await api.get(`${BASE}/arc`, {
+      params: { ...params(q), year: q.year },
+    });
     return data;
   },
 };

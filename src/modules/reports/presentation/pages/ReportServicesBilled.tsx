@@ -28,6 +28,8 @@ import {
 import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
+import { ReportDownloadButton } from '../components/ReportDownloadButton';
+import { downloadReportTableXlsx } from '../components/reportsExcel';
 import {
   formatUsd,
   formatNumber,
@@ -65,12 +67,22 @@ export function ReportServicesBilled() {
   const [overCap, setOverCap] = useState(false);
   const usdRate = useUsdRate();
 
+  // Filtros al BE: la ventana de REPORT_PAGE_SIZE corta sobre el conjunto ya
+  // filtrado (ordenado por orderDate, la dimensión del filtro).
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
     orderGateway
-      .list({ limit: REPORT_PAGE_SIZE, page: 1, sortDir: 'DESC' })
+      .list({
+        limit: REPORT_PAGE_SIZE,
+        page: 1,
+        sortBy: 'orderDate',
+        sortDir: 'DESC',
+        type: filters.type || undefined,
+        orderDateFrom: filters.from || undefined,
+        orderDateTo: filters.to || undefined,
+      })
       .then((res) => {
         if (cancelled) return;
         setRows(res.data);
@@ -85,7 +97,7 @@ export function ReportServicesBilled() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [filters.from, filters.to, filters.type]);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -124,7 +136,7 @@ export function ReportServicesBilled() {
           r = { serviceTypeId: id, name, uses: 0, ordersCount: 0, estimatedUsd: 0 };
           map.set(id, r);
         }
-        r.uses += 1;
+        r.uses += row.quantity ?? 1;
         r.estimatedUsd += perSt;
         if (!orderSet.has(id)) orderSet.set(id, new Set());
         orderSet.get(id)!.add(o.id);
@@ -160,6 +172,40 @@ export function ReportServicesBilled() {
     <ReportShell
       title="Servicios facturados"
       description="Demanda y revenue estimado por tipo de servicio — monto distribuido equitativamente entre los servicios de cada orden"
+      headerRight={
+        <ReportDownloadButton
+          disabled={loading || aggregated.length === 0}
+          onDownload={() =>
+            downloadReportTableXlsx({
+              filename: 'Servicios-facturados',
+              title: 'Servicios facturados',
+              sheetName: 'SERVICIOS FACTURADOS',
+              rows: aggregated,
+              columns: [
+                { header: '#', value: (_r, i) => i + 1, width: 5, align: 'center' },
+                { header: 'Servicio', value: (r) => r.name, width: 30 },
+                { header: 'Realizaciones', value: (r) => r.uses, width: 13, numFmt: '#,##0', total: true },
+                { header: 'Órdenes distintas', value: (r) => r.ordersCount, width: 14, numFmt: '#,##0', total: true },
+                {
+                  header: '% del volumen',
+                  value: (r) => (totals.uses > 0 ? (r.uses / totals.uses) * 100 : 0),
+                  width: 12,
+                  numFmt: '0.0',
+                  align: 'center',
+                },
+                { header: 'Revenue USD', value: (r) => r.estimatedUsd, width: 14, numFmt: '0.00', total: true },
+                {
+                  header: 'Revenue Bs.',
+                  value: (r) => usdToBs(r.estimatedUsd, usdRate) ?? 0,
+                  width: 15,
+                  numFmt: '#,##0.00',
+                  total: true,
+                },
+              ],
+            })
+          }
+        />
+      }
       kpis={
         <KpiRow
           items={[

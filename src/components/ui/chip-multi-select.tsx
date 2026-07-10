@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   AlertTriangle,
@@ -43,6 +44,8 @@ export type ChipMultiSelectProps = {
   createLabel?: string;
 };
 
+const DROPDOWN_MAX_HEIGHT = 260;
+
 /**
  * Multi-select compacto: input con dropdown de opciones y chips de los seleccionados
  * fuera del selector (también deseleccionables desde el chip). Evita saturar la UI
@@ -70,14 +73,49 @@ export function ChipMultiSelect({
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [rect, setRect] = useState<{
+    top?: number;
+    bottom?: number;
+    left: number;
+    width: number;
+  } | null>(null);
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (wrapRef.current?.contains(target) || dropdownRef.current?.contains(target)) return;
+      setOpen(false);
     }
     document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
+
+  // Posiciona el dropdown (portal fixed) anclado al input, así no lo recorta el
+  // overflow de modales/contenedores scrolleables. Si abajo no cabe y arriba hay
+  // más espacio, abre hacia arriba. Recalcula en scroll/resize.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const update = () => {
+      const el = anchorRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - r.bottom;
+      if (spaceBelow < DROPDOWN_MAX_HEIGHT + 8 && r.top > spaceBelow) {
+        setRect({ bottom: window.innerHeight - r.top + 4, left: r.left, width: r.width });
+      } else {
+        setRect({ top: r.bottom + 4, left: r.left, width: r.width });
+      }
+    };
+    update();
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('resize', update);
+    };
+  }, [open]);
 
   const optionsById = useMemo(() => {
     const m = new Map<string, ChipMultiSelectOption>();
@@ -160,7 +198,7 @@ export function ChipMultiSelect({
         </span>
       </Label>
 
-      <div className="relative">
+      <div className="relative" ref={anchorRef}>
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
         <Input
           ref={searchRef}
@@ -189,8 +227,23 @@ export function ChipMultiSelect({
           />
         )}
 
-        {open ? (
-          <div className="absolute z-30 mt-1 w-full max-h-[260px] overflow-y-auto rounded-lg border bg-card shadow-md">
+        {open && rect ? (
+          createPortal(
+          <div
+            ref={dropdownRef}
+            style={{
+              position: 'fixed',
+              top: rect.top,
+              bottom: rect.bottom,
+              left: rect.left,
+              width: rect.width,
+              maxHeight: DROPDOWN_MAX_HEIGHT,
+              // Radix modal pone pointer-events:none en <body>; el portal
+              // necesita reactivarlos para ser clickeable dentro de modales.
+              pointerEvents: 'auto',
+            }}
+            className="z-50 overflow-y-auto rounded-lg border bg-card shadow-md"
+          >
             {loading ? (
               <div className="p-3 text-sm text-muted-foreground flex items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -257,7 +310,9 @@ export function ChipMultiSelect({
                 </button>
               </div>
             ) : null}
-          </div>
+          </div>,
+          document.body,
+          )
         ) : null}
       </div>
 

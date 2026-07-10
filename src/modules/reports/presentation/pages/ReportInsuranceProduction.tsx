@@ -15,7 +15,10 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
+import { ReportDownloadButton } from '../components/ReportDownloadButton';
+import { downloadReportTableXlsx } from '../components/reportsExcel';
 import { formatUsd, formatBs, formatNumber, formatPercent } from '../../domain/format';
+import { bsToUsd, useUsdRate } from '../../domain/useUsdRate';
 import {
   reportsGateway,
   type ReportReceivableDebtorRow,
@@ -36,6 +39,7 @@ export function ReportInsuranceProduction() {
   const [rows, setRows] = useState<ReportReceivableDebtorRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const usdRate = useUsdRate();
 
   useEffect(() => {
     let cancelled = false;
@@ -81,25 +85,38 @@ export function ReportInsuranceProduction() {
     setSp(next, { replace: true });
   };
 
+  // Aseguradoras no indexadas facturan/cobran en Bs (tasa fija): esa porción
+  // se convierte a USD con la tasa vigente para KPIs, sort y % de cobranza.
   const filtered = useMemo(() => {
     const s = filters.search.toLowerCase().trim();
     return rows
       .filter((r) => !s || r.debtorName.toLowerCase().includes(s))
-      .sort((a, b) => b.targetUsd - a.targetUsd);
-  }, [rows, filters.search]);
+      .map((r) => ({
+        ...r,
+        billedUsd: r.targetUsd + bsToUsd(r.targetBs, usdRate),
+        collectedTotalUsd: r.collectedUsd + bsToUsd(r.collectedBs, usdRate),
+        pendingTotalUsd: r.pendingUsd + bsToUsd(r.pendingBs, usdRate),
+      }))
+      .sort((a, b) => b.billedUsd - a.billedUsd);
+  }, [rows, filters.search, usdRate]);
+
+  const pctFor = (r: { billedUsd: number; collectedTotalUsd: number }) =>
+    r.billedUsd > 0 ? (r.collectedTotalUsd / r.billedUsd) * 100 : 0;
 
   const totals = useMemo(() => {
     let billed = 0;
     let collected = 0;
     let pending = 0;
     let orders = 0;
+    let anyBs = false;
     filtered.forEach((r) => {
-      billed += r.targetUsd;
-      collected += r.collectedUsd;
-      pending += r.pendingUsd;
+      billed += r.billedUsd;
+      collected += r.collectedTotalUsd;
+      pending += r.pendingTotalUsd;
       orders += r.ordersCount;
+      if (r.targetBs > 0 || r.collectedBs > 0 || r.pendingBs > 0) anyBs = true;
     });
-    return { billed, collected, pending, orders };
+    return { billed, collected, pending, orders, anyBs };
   }, [filtered]);
 
   const top = filtered[0];
@@ -113,6 +130,38 @@ export function ReportInsuranceProduction() {
     <ReportShell
       title="Producción por aseguradora"
       description="Volumen y recaudo por cada compañía de seguros"
+      headerRight={
+        <ReportDownloadButton
+          disabled={loading || filtered.length === 0}
+          onDownload={() =>
+            downloadReportTableXlsx({
+              filename: 'Produccion-por-aseguradora',
+              title: 'Producción por aseguradora',
+              sheetName: 'PRODUCCION ASEGURADORA',
+              rows: filtered,
+              columns: [
+                { header: '#', value: (_r, i) => i + 1, width: 5, align: 'center' },
+                { header: 'Aseguradora', value: (r) => r.debtorName, width: 26 },
+                { header: 'Órdenes', value: (r) => r.ordersCount, width: 10, numFmt: '#,##0', total: true },
+                { header: 'Lotes', value: (r) => r.lotesCount, width: 8, numFmt: '#,##0', total: true },
+                { header: 'Facturado USD', value: (r) => r.targetUsd, width: 14, numFmt: '0.00', total: true },
+                { header: 'Facturado Bs.', value: (r) => r.targetBs, width: 15, numFmt: '#,##0.00', total: true },
+                { header: 'Cobrado USD', value: (r) => r.collectedUsd, width: 14, numFmt: '0.00', total: true },
+                { header: 'Cobrado Bs.', value: (r) => r.collectedBs, width: 15, numFmt: '#,##0.00', total: true },
+                { header: 'Pendiente USD', value: (r) => r.pendingUsd, width: 14, numFmt: '0.00', total: true },
+                { header: 'Pendiente Bs.', value: (r) => r.pendingBs, width: 15, numFmt: '#,##0.00', total: true },
+                {
+                  header: '% Cobranza',
+                  value: (r) => pctFor(r),
+                  width: 11,
+                  numFmt: '0.0',
+                  align: 'center',
+                },
+              ],
+            })
+          }
+        />
+      }
       kpis={
         <KpiRow
           items={[
@@ -128,6 +177,7 @@ export function ReportInsuranceProduction() {
               tone: 'cyan',
               label: 'Total facturado',
               value: formatUsd(totals.billed),
+              hint: totals.anyBs ? 'Incluye porción Bs (tasa fija) a tasa vigente' : undefined,
             },
             {
               icon: TrendingUp,
@@ -141,7 +191,7 @@ export function ReportInsuranceProduction() {
               tone: 'warning',
               label: 'Top aseguradora',
               value: top ? top.debtorName : '—',
-              hint: top ? formatUsd(top.targetUsd) : undefined,
+              hint: top ? formatUsd(top.billedUsd) : undefined,
             },
           ]}
         />
@@ -205,7 +255,7 @@ export function ReportInsuranceProduction() {
               </TableRow>
             ) : (
               filtered.map((r, idx) => {
-                const pct = r.targetUsd > 0 ? (r.collectedUsd / r.targetUsd) * 100 : 0;
+                const pct = pctFor(r);
                 return (
                   <TableRow
                     key={`${r.debtorType}:${r.debtorId}`}

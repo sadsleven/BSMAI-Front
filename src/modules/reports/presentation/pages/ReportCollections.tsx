@@ -28,6 +28,8 @@ import {
 import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
+import { ReportDownloadButton } from '../components/ReportDownloadButton';
+import { downloadReportTableXlsx, excelDateCell } from '../components/reportsExcel';
 import { formatUsd, formatBs, formatDate, formatNumber } from '../../domain/format';
 import { formatMoney } from '@/lib/format/money';
 import {
@@ -39,7 +41,11 @@ import { getHttpErrorMessage } from '@/lib/api';
 
 const COLUMNS = 8;
 
-const EMPTY_SUMMARY: ReportFlowSummary = { count: 0, totalUsd: 0, totalBs: 0 };
+const DEBTOR_TYPE_LABEL: Record<ReportCollectionRow['debtorType'], string> = {
+  insurance: 'Seguro',
+  holder: 'Titular',
+  cashea: 'Cashea',
+};
 
 export function ReportCollections() {
   const [sp, setSp] = useSearchParams();
@@ -56,7 +62,6 @@ export function ReportCollections() {
   );
   const [searchInput, setSearchInput] = useState(filters.search);
   const [items, setItems] = useState<ReportCollectionRow[]>([]);
-  const [summary, setSummary] = useState<ReportFlowSummary>(EMPTY_SUMMARY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,7 +78,6 @@ export function ReportCollections() {
         });
         if (cancelled) return;
         setItems(res.rows);
-        setSummary(res.summary);
       } catch (e) {
         if (!cancelled) setError(getHttpErrorMessage(e, 'No se pudo cargar el reporte'));
       } finally {
@@ -111,6 +115,22 @@ export function ReportCollections() {
     return items.filter((it) => !filters.type || it.type === filters.type);
   }, [items, filters.type]);
 
+  // KPIs derivados de las filas visibles: así el filtro de método (client-side)
+  // afecta totales, conteo y promedio igual que a la tabla y al Excel.
+  const summary: ReportFlowSummary = useMemo(() => {
+    let totalUsd = 0;
+    let totalBs = 0;
+    filtered.forEach((it) => {
+      totalUsd += it.amountInUsd;
+      totalBs += it.amountInBs;
+    });
+    return {
+      count: filtered.length,
+      totalUsd: Math.round(totalUsd * 100) / 100,
+      totalBs: Math.round(totalBs * 100) / 100,
+    };
+  }, [filtered]);
+
   const topMethod = useMemo(() => {
     const byType = new Map<string, number>();
     filtered.forEach((it) => byType.set(it.type, (byType.get(it.type) ?? 0) + it.amountInUsd));
@@ -137,6 +157,31 @@ export function ReportCollections() {
     <ReportShell
       title="Cobros recibidos"
       description="Pagos registrados desde aseguradoras y titulares (cuentas por cobrar)"
+      headerRight={
+        <ReportDownloadButton
+          disabled={loading || filtered.length === 0}
+          onDownload={() =>
+            downloadReportTableXlsx({
+              filename: 'Cobros-recibidos',
+              title: 'Cobros recibidos',
+              sheetName: 'COBROS RECIBIDOS',
+              rows: filtered,
+              columns: [
+                { header: 'Fecha', value: (r) => excelDateCell(r.paymentDate), width: 12, numFmt: 'dd/mm/yyyy', align: 'center' },
+                { header: 'Deudor', value: (r) => r.debtorName, width: 24 },
+                { header: 'Tipo', value: (r) => DEBTOR_TYPE_LABEL[r.debtorType] ?? r.debtorType, width: 10 },
+                { header: 'N° Lote', value: (r) => r.receivableNumber, width: 12, align: 'center' },
+                { header: 'Método', value: (r) => PAYMENT_TYPE_LABEL[r.type as OrderPaymentType] ?? r.type, width: 16 },
+                { header: 'Referencia', value: (r) => r.referenceNumber ?? '', width: 16 },
+                { header: 'Moneda', value: (r) => r.amountCurrency, width: 9, align: 'center' },
+                { header: 'Monto', value: (r) => r.amountValue, width: 13, numFmt: '#,##0.00' },
+                { header: 'Monto USD', value: (r) => r.amountInUsd, width: 13, numFmt: '0.00', total: true },
+                { header: 'Monto Bs.', value: (r) => r.amountInBs, width: 14, numFmt: '#,##0.00', total: true },
+              ],
+            })
+          }
+        />
+      }
       kpis={
         <KpiRow
           items={[
@@ -250,7 +295,7 @@ export function ReportCollections() {
                   <TableCell className="py-3.5 px-4 text-sm font-medium">
                     <div>{it.debtorName}</div>
                     <div className="text-xs text-muted-foreground">
-                      {it.debtorType === 'insurance' ? 'Seguro' : 'Titular'}
+                      {DEBTOR_TYPE_LABEL[it.debtorType] ?? it.debtorType}
                     </div>
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono">
