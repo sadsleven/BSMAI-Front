@@ -1,4 +1,5 @@
 /** VE locale formatters for reports. */
+import { formatDateOnly } from '@/lib/dates';
 import {
   formatBs as fmtBs,
   formatBsCompact as fmtBsCompact,
@@ -28,18 +29,28 @@ export function formatPercent(n: number | null | undefined, decimals = 1): strin
   return fmtPercent(n, { decimals });
 }
 
+/**
+ * Fecha-solo (`YYYY-MM-DD` de columnas `date`) → DD/MM/YYYY sin `new Date`:
+ * parsearlo crea medianoche UTC y en VE (UTC-4) imprime el día anterior.
+ */
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return '—';
-  const d = new Date(iso);
-  if (!Number.isFinite(d.getTime())) return '—';
-  return d.toLocaleDateString('es-VE');
+  const s = formatDateOnly(iso);
+  return s || '—';
 }
 
+/**
+ * Días calendario transcurridos desde una fecha-solo (`YYYY-MM-DD`). Parsea a
+ * medianoche LOCAL — `new Date('YYYY-MM-DD')` crea medianoche UTC y en VE
+ * (UTC-4) infla el conteo +1 entre las 20:00 y 23:59.
+ */
 export function daysBetween(from: string, to: Date = new Date()): number {
-  const a = new Date(from);
+  const [y, m, d] = from.slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return 0;
+  const a = new Date(y, m - 1, d);
   if (!Number.isFinite(a.getTime())) return 0;
-  const ms = to.getTime() - a.getTime();
-  return Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
+  const b = new Date(to.getFullYear(), to.getMonth(), to.getDate());
+  return Math.max(0, Math.round((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24)));
 }
 
 /** Inclusive `from`/`to` date string filter — both `YYYY-MM-DD` optional. */

@@ -348,6 +348,7 @@ export function PatientForm({
             <Input
               id="email"
               type="email"
+              autoComplete="off"
               {...register('email')}
               className={cn('h-9', invalid('email'))}
             />

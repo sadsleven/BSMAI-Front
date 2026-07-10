@@ -42,6 +42,8 @@ import {
 import { ReportShell } from '../components/ReportShell';
 import { KpiRow, type KpiTone } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
+import { ReportDownloadButton } from '../components/ReportDownloadButton';
+import { downloadReportTableXlsx, excelDateCell } from '../components/reportsExcel';
 import {
   formatUsd,
   formatDate,
@@ -94,12 +96,23 @@ export function ReportOrdersPipeline() {
   const [error, setError] = useState<string | null>(null);
   const [overCap, setOverCap] = useState(false);
 
+  // Filtros al BE: la ventana de REPORT_PAGE_SIZE corta sobre el conjunto ya
+  // filtrado (ordenado por orderDate, la dimensión del filtro).
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
     orderGateway
-      .list({ limit: REPORT_PAGE_SIZE, page: 1, sortDir: 'DESC' })
+      .list({
+        limit: REPORT_PAGE_SIZE,
+        page: 1,
+        sortBy: 'orderDate',
+        sortDir: 'DESC',
+        status: filters.status || undefined,
+        type: filters.type || undefined,
+        orderDateFrom: filters.from || undefined,
+        orderDateTo: filters.to || undefined,
+      })
       .then((res) => {
         if (cancelled) return;
         setRows(res.data);
@@ -114,7 +127,7 @@ export function ReportOrdersPipeline() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [filters.from, filters.to, filters.status, filters.type]);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -201,6 +214,29 @@ export function ReportOrdersPipeline() {
     <ReportShell
       title="Seguimiento de órdenes"
       description="Distribución de órdenes por etapa del flujo y tiempo en cada estado"
+      headerRight={
+        <ReportDownloadButton
+          disabled={loading || filtered.length === 0}
+          onDownload={() =>
+            downloadReportTableXlsx({
+              filename: 'Seguimiento-de-ordenes',
+              title: 'Seguimiento de órdenes',
+              sheetName: 'SEGUIMIENTO ORDENES',
+              rows: filtered,
+              columns: [
+                { header: 'N° Orden', value: (o) => orderInternalNumbers(o).join(' · '), width: 14, align: 'center' },
+                { header: 'Fecha', value: (o) => excelDateCell(o.orderDate), width: 12, numFmt: 'dd/mm/yyyy', align: 'center' },
+                { header: 'Paciente', value: (o) => holderDisplayName(o.patient), width: 24 },
+                { header: 'Especialidad', value: (o) => o.specialty?.name ?? '', width: 20 },
+                { header: 'Tipo', value: (o) => ORDER_TYPE_LABEL[o.type], width: 14 },
+                { header: 'Estado', value: (o) => ORDER_STATUS_LABEL[o.status], width: 14 },
+                { header: 'Días en sistema', value: (o) => daysBetween(o.orderDate), width: 13, numFmt: '#,##0', align: 'center' },
+                { header: 'Monto USD', value: (o) => Number(o.priceAmount) || 0, width: 13, numFmt: '0.00', total: true },
+              ],
+            })
+          }
+        />
+      }
       kpis={
         <KpiRow
           items={top4.map((st) => ({

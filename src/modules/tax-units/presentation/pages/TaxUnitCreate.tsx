@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { taxUnitGateway } from '../../infrastructure/taxUnitGateway';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { CurrencyAmountInput } from '@/components/ui/currency-amount-input';
 import { FormSwitch } from '@/components/ui/form-switch';
 import { FormSection, FormGrid } from '@/components/ui/form-section';
@@ -118,13 +118,12 @@ export function TaxUnitCreate() {
                 control={control}
                 name="effectiveDate"
                 render={({ field }) => (
-                  <Input
+                  <DatePicker
                     id="effectiveDate"
-                    type="date"
-                    value={field.value}
-                    onChange={(e) => field.onChange(e.target.value)}
+                    value={field.value || undefined}
+                    onChange={(v) => field.onChange(v ?? '')}
                     onBlur={field.onBlur}
-                    aria-invalid={!!errors.effectiveDate}
+                    invalid={!!errors.effectiveDate}
                   />
                 )}
               />

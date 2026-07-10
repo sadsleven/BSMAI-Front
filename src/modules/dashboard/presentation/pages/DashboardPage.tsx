@@ -48,7 +48,7 @@ function greetingFor(date: Date) {
 }
 
 function formatDateEs(date: Date) {
-  return date.toLocaleDateString('es-AR', {
+  return date.toLocaleDateString('es-VE', {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
@@ -293,7 +293,7 @@ function formatHour(iso: string): string {
 function formatShortDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('es-AR', { day: '2-digit', month: 'short' });
+  return d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' });
 }
 
 function serviceLabel(o: Order): string {

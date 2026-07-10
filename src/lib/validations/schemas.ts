@@ -671,10 +671,28 @@ function refineOptionalPassword(
   }
 }
 
+/**
+ * El email del proveedor es opcional, pero si define contraseña (acceso al
+ * sistema) el email pasa a ser su usuario y se vuelve obligatorio.
+ */
+function refineAccessEmail(
+  val: { email?: string; password?: string },
+  ctx: z.RefinementCtx,
+): void {
+  const pwd = (val.password ?? '').trim();
+  if (pwd && !(val.email ?? '').trim()) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['email'],
+      message: 'El email es requerido para habilitar el acceso al sistema',
+    });
+  }
+}
+
 export const doctorSchema = z
   .object({
     cedula: cedulaSchema,
-    email: emailSchema,
+    email: optionalEmailSchema,
     firstName: nameSchema('El nombre'),
     lastName: nameSchema('El apellido'),
     isLegalEntity: z.boolean(),
@@ -718,6 +736,7 @@ export const doctorSchema = z
       });
     }
     refineOptionalPassword(val, ctx);
+    refineAccessEmail(val, ctx);
   });
 export type DoctorValues = z.infer<typeof doctorSchema>;
 
@@ -727,7 +746,7 @@ export const careCenterSchema = z
       .string({ error: 'La razón social es obligatoria' })
       .min(2, 'La razón social debe tener al menos 2 caracteres')
       .max(200, 'La razón social no puede superar 200 caracteres'),
-    email: emailSchema,
+    email: optionalEmailSchema,
     rif: optionalRifSchema,
     centerAddress: z
       .string()
@@ -747,6 +766,7 @@ export const careCenterSchema = z
   })
   .superRefine((val, ctx) => {
     refineOptionalPassword(val, ctx);
+    refineAccessEmail(val, ctx);
   });
 export type CareCenterValues = z.infer<typeof careCenterSchema>;
 
@@ -953,6 +973,8 @@ export const orderSchema = z
             .trim()
             .min(1, 'El nombre para la orden es obligatorio')
             .max(300, 'Máximo 300 caracteres'),
+          // ST indexado (tasa del día del cobro). Sólo con seguro no indexado.
+          isIndexed: z.boolean().optional(),
         }),
       )
       .min(1, 'Asigna al menos un tipo de servicio')

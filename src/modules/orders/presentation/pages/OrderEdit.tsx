@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import dayjs from 'dayjs';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { FormProvider, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -57,6 +58,12 @@ function buildDto(values: OrderValues): CreateOrderDto {
         r.providerType === 'care_center' ? r.careCenterId || undefined : undefined,
       quantity: r.quantity ?? undefined,
       customName: (r.customName ?? '').trim(),
+      // ST indexado sólo viaja con seguro no indexado (orden en modo tasa fija);
+      // así un cambio de seguro tardío no arrastra flags fantasma.
+      isIndexed:
+        values.type === 'insurance' && values.useFixedRate
+          ? !!r.isIndexed
+          : undefined,
     })),
     pathologyIds: values.pathologyIds ?? [],
     orderDate: values.orderDate,
@@ -191,10 +198,13 @@ export function OrderEdit() {
             careCenterId: row.careCenterId ?? '',
             quantity: row.quantity ?? undefined,
             customName: row.customName ?? '',
+            isIndexed: !!row.isIndexed,
           })),
           pathologyIds: (order.pathologies ?? []).map((p) => p.id),
           orderDate: order.orderDate.slice(0, 10),
-          appointmentDate: order.appointmentDate.slice(0, 16),
+          // El BE devuelve ISO UTC; el slice crudo dejaría la hora UTC (+4h en
+          // VE) y hasta el día siguiente para citas nocturnas. Formatear local.
+          appointmentDate: dayjs(order.appointmentDate).format('YYYY-MM-DDTHH:mm'),
           priceAmount: Number(order.priceAmount),
           casheaFirstInstallmentAmount:
             order.casheaFirstInstallmentAmount != null

@@ -26,6 +26,9 @@ import { fullName as doctorFullName, type Doctor } from '@/modules/doctors/domai
 import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
+import { ReportDownloadButton } from '../components/ReportDownloadButton';
+import { downloadReportTableXlsx } from '../components/reportsExcel';
+import { downloadArcXlsx } from '../components/arcExcel';
 import { formatBs, formatNumber, formatPercent } from '../../domain/format';
 import {
   reportsGateway,
@@ -36,20 +39,23 @@ import {
 import { getHttpErrorMessage } from '@/lib/api';
 
 const STATE_LABEL: Record<TaxObligationState, string> = {
-  sin_lote: 'Sin lote',
+  sin_lote: 'Por pagar',
   unpaid: 'Por pagar',
   partially_paid: 'Pago parcial',
   paid: 'Pagado',
 };
 
 const STATE_TONE: Record<TaxObligationState, string> = {
-  sin_lote: 'bg-muted text-muted-foreground',
+  sin_lote: 'bg-warning-soft text-warning',
   unpaid: 'bg-warning-soft text-warning',
   partially_paid: 'bg-brand-cyan-soft text-brand-blue-strong',
   paid: 'bg-success-soft text-success',
 };
 
-const COLUMNS = 10;
+const COLUMNS = 9;
+
+const CURRENT_YEAR = new Date().getFullYear();
+const ARC_YEARS = Array.from({ length: 6 }, (_, i) => CURRENT_YEAR - i);
 
 const EMPTY_SUMMARY: ReportTaxSummary = {
   count: 0,
@@ -69,6 +75,7 @@ export function ReportTaxesRetained() {
       to: sp.get('to') ?? '',
       doctorId: sp.get('doctorId') ?? '',
       status: sp.get('status') ?? '',
+      year: sp.get('year') ?? String(CURRENT_YEAR),
     }),
     [sp],
   );
@@ -165,6 +172,51 @@ export function ReportTaxesRetained() {
     <ReportShell
       title="Reporte de impuestos retenidos"
       description={`${formatNumber(summary.count)} retenci${summary.count === 1 ? 'ón' : 'ones'} en el rango filtrado`}
+      headerRight={
+        <div className="flex items-center gap-2">
+          <ReportDownloadButton
+            disabled={loading || rows.length === 0}
+            onDownload={() =>
+              downloadReportTableXlsx({
+                filename: 'Impuestos-retenidos',
+                title: 'Impuestos retenidos',
+                sheetName: 'IMPUESTOS RETENIDOS',
+                rows,
+                columns: [
+                  { header: 'Médico/Centro', value: (r) => r.providerName, width: 26 },
+                  {
+                    header: 'Tipo',
+                    value: (r) => (r.personType === 'legal_entity' ? 'Jurídico' : 'Natural'),
+                    width: 10,
+                  },
+                  {
+                    header: 'Órdenes internas',
+                    value: (r) => (r.internalNumbers ?? []).join(', '),
+                    width: 18,
+                  },
+                  { header: 'N° Retención', value: (r) => r.taxPayableNumber, width: 12, align: 'center' },
+                  { header: 'N° Lote', value: (r) => r.taxBatchNumber ?? '', width: 12, align: 'center' },
+                  { header: '% Ret.', value: (r) => (r.taxRate ? r.taxRate * 100 : 0), width: 9, numFmt: '0.0', align: 'center' },
+                  { header: 'Base Bs.', value: (r) => r.grossAmountBs, width: 14, numFmt: '#,##0.00', total: true },
+                  { header: 'Retenido Bs.', value: (r) => r.taxAmountBs, width: 14, numFmt: '#,##0.00', total: true },
+                  { header: 'Estado', value: (r) => STATE_LABEL[r.state], width: 12, align: 'center' },
+                ],
+              })
+            }
+          />
+          <ReportDownloadButton
+            label={`Descargar ARC ${filters.year}`}
+            disabled={loading}
+            onDownload={async () => {
+              const report = await reportsGateway.arc({
+                year: filters.year,
+                doctorId: filters.doctorId || undefined,
+              });
+              await downloadArcXlsx(report);
+            }}
+          />
+        </div>
+      }
       kpis={
         <KpiRow
           items={[
@@ -187,7 +239,7 @@ export function ReportTaxesRetained() {
               tone: 'warning',
               label: 'Pendiente de pago',
               value: formatBs(summary.pendingBs),
-              hint: 'Incluye retenciones sin lote',
+              hint: 'Incluye retenciones por pagar',
             },
             {
               icon: Wallet,
@@ -245,6 +297,21 @@ export function ReportTaxesRetained() {
                   <SelectItem value="unpaid">{STATE_LABEL.unpaid}</SelectItem>
                   <SelectItem value="partially_paid">{STATE_LABEL.partially_paid}</SelectItem>
                   <SelectItem value="paid">{STATE_LABEL.paid}</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                value={filters.year}
+                onValueChange={(v) => updateParam({ year: v })}
+              >
+                <SelectTrigger className="h-9 w-40" title="Año fiscal del comprobante ARC">
+                  <SelectValue placeholder="Año ARC" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ARC_YEARS.map((y) => (
+                    <SelectItem key={y} value={String(y)}>
+                      Año ARC: {y}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </>

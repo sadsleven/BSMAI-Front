@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/detail-dialog';
 import { notify } from '@/lib/notifications/toast';
 import { formatMoney } from '@/lib/format/money';
+import { formatDateOnly } from '@/lib/dates';
 import { orderGateway } from '../../infrastructure/orderGateway';
 import {
   holderDisplayId,
@@ -186,6 +187,11 @@ export function OrderDetailBody({
                         (x{row.quantity})
                       </span>
                     )}
+                    {row.isIndexed && (
+                      <span className="ml-2 inline-flex items-center rounded-full bg-brand-cyan-soft px-2 py-0.5 text-[10px] font-medium text-brand-cyan-strong">
+                        Indexado
+                      </span>
+                    )}
                     <span className="ml-2 text-xs text-muted-foreground">
                       {row.providerType === 'doctor'
                         ? holderDisplayName(row.doctor ?? undefined)
@@ -284,9 +290,7 @@ export function OrderDetailBody({
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium">
                     {PAYMENT_TYPE_LABEL[p.type]} ·{' '}
-                    {p.paymentDate
-                      ? new Date(p.paymentDate).toLocaleDateString('es-VE')
-                      : '—'}
+                    {p.paymentDate ? formatDateOnly(p.paymentDate) : '—'}
                   </div>
                   {(p.bankCode || p.referenceNumber) && (
                     <div className="text-xs text-muted-foreground truncate">

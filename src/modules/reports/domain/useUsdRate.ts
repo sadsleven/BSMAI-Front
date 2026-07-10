@@ -39,3 +39,26 @@ export function bsToUsd(bs: number | string | null | undefined, rate: number | n
   if (!rate || rate <= 0) return 0;
   return n / rate;
 }
+
+/** Forma mínima de un pago SENIAT para convertirlo a USD. */
+export type TaxPaymentLike = {
+  amountInBs: string | number;
+  amountCurrency?: string;
+  amountValue?: string | number;
+  exchangeRate?: { currency: string; amountBs: string | number } | null;
+};
+
+/**
+ * USD de un pago SENIAT histórico: monto directo si la moneda es USD; si no,
+ * Bs a la tasa USD del propio pago (snapshot). La tasa vigente (`currentRate`)
+ * es sólo fallback — revalorar pagos viejos con la tasa de hoy distorsiona el
+ * flujo de caja histórico.
+ */
+export function taxPaymentToUsd(p: TaxPaymentLike, currentRate: number | null): number {
+  if (p.amountCurrency === 'USD') return Number(p.amountValue || 0);
+  const ownUsdRate = p.exchangeRate?.currency === 'USD' ? Number(p.exchangeRate.amountBs) : 0;
+  if (Number.isFinite(ownUsdRate) && ownUsdRate > 0) {
+    return Number(p.amountInBs || 0) / ownUsdRate;
+  }
+  return bsToUsd(p.amountInBs, currentRate);
+}

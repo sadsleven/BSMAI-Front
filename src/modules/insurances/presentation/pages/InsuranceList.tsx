@@ -366,11 +366,11 @@ export function InsuranceList() {
                   <TableCell className="py-3.5 px-4">
                     {i.isIndexed ? (
                       <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-brand-cyan-soft text-brand-cyan-strong text-xs font-medium">
-                        <span className="w-1.5 h-1.5 rounded-full bg-brand-cyan-strong" /> Indexado
+                        <span className="w-1.5 h-1.5 rounded-full bg-brand-cyan-strong" /> No indexado
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-xs font-medium">
-                        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground" /> No indexado
+                        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground" /> Indexado
                       </span>
                     )}
                   </TableCell>

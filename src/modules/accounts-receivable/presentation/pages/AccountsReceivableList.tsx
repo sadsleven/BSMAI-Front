@@ -39,6 +39,8 @@ import {
   pendingDebtorId,
   pendingDebtorName,
   pendingDebtorTypeLabel,
+  pendingRowKey,
+  portionLabel,
   STATUS_LABEL,
   type AccountsReceivableBatch,
   type AccountsReceivableDebtorType,
@@ -221,8 +223,9 @@ export function AccountsReceivableList() {
       return next;
     });
 
+  // Claves por fila (orden + porción): una orden mixta aparece dos veces.
   const selectedRows = useMemo(
-    () => pending.filter((p) => selected.has(p.orderId)),
+    () => pending.filter((p) => selected.has(pendingRowKey(p))),
     [pending, selected],
   );
 
@@ -254,7 +257,7 @@ export function AccountsReceivableList() {
           debtorId: sharedDebtor.debtorId,
           debtorName: sharedDebtor.debtorName,
           useFixedRate: sharedDebtor.useFixedRate,
-          orderIds: selectedRows.map((r) => r.orderId),
+          pendingKeys: selectedRows.map((r) => pendingRowKey(r)),
         },
       });
       return;
@@ -415,16 +418,26 @@ export function AccountsReceivableList() {
                     </TableRow>
                   ) : (
                     pending.map((p) => (
-                      <TableRow key={p.orderId} className="hover:bg-muted/30">
+                      <TableRow key={pendingRowKey(p)} className="hover:bg-muted/30">
                         <TableCell className="py-3.5 px-4">
                           <Checkbox
-                            checked={selected.has(p.orderId)}
-                            onCheckedChange={() => toggleSelect(p.orderId)}
+                            checked={selected.has(pendingRowKey(p))}
+                            onCheckedChange={() => toggleSelect(pendingRowKey(p))}
                             aria-label="Seleccionar orden"
                           />
                         </TableCell>
                         <TableCell className="py-3.5 px-4 font-mono text-sm font-semibold">
-                          {p.orderNumber}
+                          <span className="inline-flex items-center gap-2">
+                            {p.orderNumber}
+                            {portionLabel(p.portion) ? (
+                              <Badge
+                                variant="outline"
+                                className="bg-brand-cyan-soft text-brand-cyan-strong border-brand-cyan/40 font-sans font-medium"
+                              >
+                                {portionLabel(p.portion)}
+                              </Badge>
+                            ) : null}
+                          </span>
                         </TableCell>
                         <TableCell className="py-3.5 px-4 text-sm">
                           <div className="flex items-center gap-2 flex-wrap">

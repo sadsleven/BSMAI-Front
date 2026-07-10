@@ -105,12 +105,23 @@ export function ReportOrdersAnalytics() {
   const [error, setError] = useState<string | null>(null);
   const [overCap, setOverCap] = useState(false);
 
+  // Los filtros viajan al BE: la ventana de REPORT_PAGE_SIZE se corta sobre el
+  // conjunto YA filtrado (y ordenado por orderDate, la misma dimensión del
+  // filtro) — así "aplica filtros para acotar" del aviso overCap sí funciona.
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
     orderGateway
-      .list({ limit: REPORT_PAGE_SIZE, page: 1, sortDir: 'DESC' })
+      .list({
+        limit: REPORT_PAGE_SIZE,
+        page: 1,
+        sortBy: 'orderDate',
+        sortDir: 'DESC',
+        type: filters.type || undefined,
+        orderDateFrom: filters.from || undefined,
+        orderDateTo: filters.to || undefined,
+      })
       .then((res) => {
         if (cancelled) return;
         setOrders(res.data);
@@ -125,7 +136,7 @@ export function ReportOrdersAnalytics() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [filters.from, filters.to, filters.type]);
 
   const filtered = useMemo(
     () =>

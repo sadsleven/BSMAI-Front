@@ -22,6 +22,8 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
+import { ReportDownloadButton } from '../components/ReportDownloadButton';
+import { downloadReportTableXlsx } from '../components/reportsExcel';
 import { formatUsd, formatBs, formatNumber } from '../../domain/format';
 import {
   reportsGateway,
@@ -103,6 +105,30 @@ export function ReportAging() {
     <ReportShell
       title="Antigüedad de saldos"
       description={`Distribución del saldo pendiente por días — modo ${isReceivable ? 'cuentas por cobrar' : 'cuentas por pagar'}`}
+      headerRight={
+        <ReportDownloadButton
+          disabled={loading || totalCount === 0}
+          onDownload={() =>
+            downloadReportTableXlsx({
+              filename: `Antiguedad-de-saldos-${isReceivable ? 'cobrar' : 'pagar'}`,
+              title: `Antigüedad de saldos — ${isReceivable ? 'Cuentas por cobrar' : 'Cuentas por pagar'}`,
+              sheetName: 'ANTIGUEDAD DE SALDOS',
+              rows: (['0-30', '31-60', '61-90', '90+'] as const).map((k) => byBucket(k)),
+              columns: [
+                { header: 'Antigüedad', value: (b) => BUCKET_LABEL[b.bucket], width: 18 },
+                { header: 'Obligaciones', value: (b) => b.count, width: 13, numFmt: '#,##0', total: true },
+                {
+                  header: isReceivable ? 'Pendiente USD' : 'Pendiente Bs.',
+                  value: (b) => valueOf(b),
+                  width: 16,
+                  numFmt: isReceivable ? '0.00' : '#,##0.00',
+                  total: true,
+                },
+              ],
+            })
+          }
+        />
+      }
       kpis={
         <KpiRow
           items={[

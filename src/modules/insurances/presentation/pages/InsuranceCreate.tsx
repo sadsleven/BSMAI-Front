@@ -266,8 +266,8 @@ export function InsuranceCreate() {
 
           <FormSection title="Modalidad de cobro">
             <FormSwitch
-              label="Seguro indexado"
-              description="Indexado: la cuenta por cobrar se fija en bolívares a la tasa del día de la orden (se asigna una tasa al crear la orden). No indexado: se cobra a la tasa del día del cobro."
+              label="Seguro no indexado"
+              description="No indexado: la cuenta por cobrar se fija en bolívares a la tasa del día de la orden (se asigna una tasa al crear la orden). Indexado: se cobra a la tasa del día del cobro."
               checked={isIndexed}
               onCheckedChange={(v) =>
                 setValue('isIndexed', v, { shouldDirty: true, shouldValidate: true })

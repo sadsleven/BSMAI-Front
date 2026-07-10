@@ -10,6 +10,7 @@ import { DateRangeFilter } from '../components/DateRangeFilter';
 import { ChartCard } from '../components/ChartCard';
 import { CHART_COLORS, baseDoughnutOptions, withAlpha } from '../components/chartSetup';
 import { formatUsd, formatPercent } from '../../domain/format';
+import { bsToUsd, useUsdRate } from '../../domain/useUsdRate';
 import {
   reportsGateway,
   type ReportReceivableDebtorRow,
@@ -19,7 +20,7 @@ import {
 import { getHttpErrorMessage } from '@/lib/api';
 
 const STATE_LABEL: Record<ReceivableOrderState, string> = {
-  sin_lote: 'Sin lote',
+  sin_lote: 'Por cobrar',
   uncollected: 'Por cobrar',
   partially_collected: 'Cobro parcial',
   collected: 'Cobrado',
@@ -42,6 +43,16 @@ const STATE_ORDER: ReceivableOrderState[] = [
   'overcollected',
 ];
 
+/** Precedencia para colapsar las porciones de una orden mixta a UN estado:
+ * gana el menos cobrado (si una porción está pendiente, la orden no está lista). */
+const STATE_PRECEDENCE: ReceivableOrderState[] = [
+  'sin_lote',
+  'uncollected',
+  'partially_collected',
+  'overcollected',
+  'collected',
+];
+
 export function ReportInsurerCollections() {
   const [sp, setSp] = useSearchParams();
   const filters = useMemo(
@@ -52,6 +63,7 @@ export function ReportInsurerCollections() {
   const [orders, setOrders] = useState<ReportReceivableRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const usdRate = useUsdRate();
 
   useEffect(() => {
     let cancelled = false;
@@ -65,7 +77,7 @@ export function ReportInsurerCollections() {
           reportsGateway.receivables(query),
         ]);
         if (cancelled) return;
-        setByInsurer(grouped.rows.sort((a, b) => b.targetUsd - a.targetUsd));
+        setByInsurer(grouped.rows);
         setOrders(perOrder.rows.filter((r) => r.debtorType === 'insurance'));
       } catch (e) {
         if (!cancelled) setError(getHttpErrorMessage(e, 'No se pudo cargar el reporte'));
@@ -78,42 +90,71 @@ export function ReportInsurerCollections() {
     };
   }, [filters.from, filters.to]);
 
+  // La dona cuenta ÓRDENES: una orden mixta emite 2 porciones (fija+indexada),
+  // se colapsan a un solo estado por precedencia.
   const byStatus = useMemo(() => {
+    const perOrder = new Map<string, ReceivableOrderState>();
+    orders.forEach((o) => {
+      const prev = perOrder.get(o.orderId);
+      if (
+        prev === undefined ||
+        STATE_PRECEDENCE.indexOf(o.state) < STATE_PRECEDENCE.indexOf(prev)
+      ) {
+        perOrder.set(o.orderId, o.state);
+      }
+    });
     const counts = new Map<ReceivableOrderState, number>();
-    orders.forEach((o) => counts.set(o.state, (counts.get(o.state) ?? 0) + 1));
+    perOrder.forEach((s) => counts.set(s, (counts.get(s) ?? 0) + 1));
     return STATE_ORDER.filter((s) => (counts.get(s) ?? 0) > 0).map((s) => ({
       status: s,
       count: counts.get(s) ?? 0,
     }));
   }, [orders]);
 
+  // Aseguradoras no indexadas facturan/cobran en Bs (tasa fija): esa porción se
+  // convierte a USD con la tasa vigente para que entre a KPIs, charts y sort.
+  const insurers = useMemo(
+    () =>
+      byInsurer
+        .map((r) => ({
+          ...r,
+          billedUsd: r.targetUsd + bsToUsd(r.targetBs, usdRate),
+          collectedTotalUsd: r.collectedUsd + bsToUsd(r.collectedBs, usdRate),
+          pendingTotalUsd: r.pendingUsd + bsToUsd(r.pendingBs, usdRate),
+        }))
+        .sort((a, b) => b.billedUsd - a.billedUsd),
+    [byInsurer, usdRate],
+  );
+
   const totals = useMemo(() => {
     let billed = 0;
     let collected = 0;
     let pending = 0;
-    byInsurer.forEach((r) => {
-      billed += r.targetUsd;
-      collected += r.collectedUsd;
-      pending += r.pendingUsd;
+    let anyBs = false;
+    insurers.forEach((r) => {
+      billed += r.billedUsd;
+      collected += r.collectedTotalUsd;
+      pending += r.pendingTotalUsd;
+      if (r.targetBs > 0 || r.collectedBs > 0 || r.pendingBs > 0) anyBs = true;
     });
     const rate = billed > 0 ? (collected / billed) * 100 : 0;
-    return { billed, collected, pending, rate };
-  }, [byInsurer]);
+    return { billed, collected, pending, rate, anyBs };
+  }, [insurers]);
 
-  const top = byInsurer.slice(0, 10);
+  const top = insurers.slice(0, 10);
 
   const billedVsCollected: ChartData<'bar'> = {
     labels: top.map((r) => r.debtorName),
     datasets: [
       {
         label: 'Facturado',
-        data: top.map((r) => r.targetUsd),
+        data: top.map((r) => r.billedUsd),
         backgroundColor: withAlpha(CHART_COLORS.blue, 0.85),
         borderRadius: 5,
       },
       {
         label: 'Cobrado',
-        data: top.map((r) => r.collectedUsd),
+        data: top.map((r) => r.collectedTotalUsd),
         backgroundColor: withAlpha(CHART_COLORS.success, 0.85),
         borderRadius: 5,
       },
@@ -139,14 +180,17 @@ export function ReportInsurerCollections() {
     },
   };
 
+  const pctFor = (r: { billedUsd: number; collectedTotalUsd: number }) =>
+    r.billedUsd > 0 ? (r.collectedTotalUsd / r.billedUsd) * 100 : 0;
+
   const collectionRate: ChartData<'bar'> = {
     labels: top.map((r) => r.debtorName),
     datasets: [
       {
         label: '% cobranza',
-        data: top.map((r) => (r.targetUsd > 0 ? (r.collectedUsd / r.targetUsd) * 100 : 0)),
+        data: top.map((r) => pctFor(r)),
         backgroundColor: top.map((r) => {
-          const pct = r.targetUsd > 0 ? (r.collectedUsd / r.targetUsd) * 100 : 0;
+          const pct = pctFor(r);
           if (pct >= 90) return withAlpha(CHART_COLORS.success, 0.85);
           if (pct >= 50) return withAlpha(CHART_COLORS.warning, 0.85);
           return withAlpha(CHART_COLORS.destructive, 0.85);
@@ -207,7 +251,13 @@ export function ReportInsurerCollections() {
       kpis={
         <KpiRow
           items={[
-            { icon: Wallet, tone: 'blue', label: 'Total facturado', value: formatUsd(totals.billed) },
+            {
+              icon: Wallet,
+              tone: 'blue',
+              label: 'Total facturado',
+              value: formatUsd(totals.billed),
+              hint: totals.anyBs ? 'Incluye porción Bs (tasa fija) a tasa vigente' : undefined,
+            },
             { icon: TrendingUp, tone: 'success', label: 'Cobrado', value: formatUsd(totals.collected) },
             { icon: Clock4, tone: 'warning', label: 'Pendiente', value: formatUsd(totals.pending) },
             {
@@ -256,7 +306,7 @@ export function ReportInsurerCollections() {
 
         <ChartCard
           title="Órdenes por estado"
-          description="Distribución de la cartera (incluye sin lote)"
+          description="Distribución de la cartera (incluye por cobrar)"
           icon={PieChart}
           height={380}
           empty={noData && byStatus.length === 0}

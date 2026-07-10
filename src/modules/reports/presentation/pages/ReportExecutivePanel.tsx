@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Chart, Doughnut } from 'react-chartjs-2';
+import { Chart } from 'react-chartjs-2';
 import type { ChartData, ChartOptions } from 'chart.js';
 import {
   ArrowDownCircle,
@@ -8,32 +8,19 @@ import {
   BarChart3,
   PercentCircle,
   Activity,
-  PieChart,
   CalendarRange,
-  Workflow,
 } from 'lucide-react';
 import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { accountsReceivableGateway } from '@/modules/accounts-receivable/infrastructure/accountsReceivableGateway';
 import { accountsPayableGateway } from '@/modules/accounts-payable/infrastructure/accountsPayableGateway';
 import { taxesPayableGateway } from '@/modules/taxes-payable/infrastructure/taxesPayableGateway';
 import { orderGateway } from '@/modules/orders/infrastructure/orderGateway';
-import {
-  ORDER_STATUS_LABEL,
-  ORDER_TYPE_LABEL,
-  type Order,
-  type OrderStatus,
-  type OrderType,
-} from '@/modules/orders/domain/models/order';
+import type { Order } from '@/modules/orders/domain/models/order';
 import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { ChartCard } from '../components/ChartCard';
-import {
-  CHART_COLORS,
-  baseDoughnutOptions,
-  paletteFor,
-  withAlpha,
-} from '../components/chartSetup';
+import { CHART_COLORS, withAlpha } from '../components/chartSetup';
 import {
   formatUsd,
   formatMonth,
@@ -43,30 +30,10 @@ import {
   monthBucket,
 } from '../../domain/format';
 import { REPORT_PAGE_SIZE } from '../../infrastructure/fetchAll';
-import { bsToUsd, useUsdRate } from '../../domain/useUsdRate';
+import { taxPaymentToUsd, useUsdRate, type TaxPaymentLike } from '../../domain/useUsdRate';
 import { getHttpErrorMessage } from '@/lib/api';
 
 type PaymentRow = { date: string; amountInUsd: number };
-
-const STATUS_COLOR: Record<OrderStatus, string> = {
-  draft: CHART_COLORS.neutral,
-  in_progress: CHART_COLORS.cyan,
-  attended: CHART_COLORS.blue,
-  report_issued: CHART_COLORS.warning,
-  finalized: CHART_COLORS.success,
-  cancelled: CHART_COLORS.destructive,
-};
-
-const STATUS_ORDER: OrderStatus[] = [
-  'draft',
-  'in_progress',
-  'attended',
-  'report_issued',
-  'finalized',
-  'cancelled',
-];
-
-const TYPE_ORDER: OrderType[] = ['cash', 'credit', 'insurance', 'cashea'];
 
 /** Últimos N meses (ascendente) presentes en los datos, hasta 12. */
 function lastMonths(months: Set<string>, max = 12): string[] {
@@ -113,11 +80,13 @@ export function ReportExecutivePanel() {
               amountInUsd: Number(p.amountInUsd || 0),
             })),
           );
-        const toPaymentsBs = (rows: { payments?: { paymentDate: string; amountInBs: string | number }[] }[]) =>
+        // Pagos SENIAT: conversión histórica per-pago (USD directo o tasa
+        // snapshot del pago); tasa vigente sólo como fallback.
+        const toPaymentsBs = (rows: { payments?: ({ paymentDate: string } & TaxPaymentLike)[] }[]) =>
           rows.flatMap((a) =>
             (a.payments ?? []).map((p) => ({
               date: p.paymentDate,
-              amountInUsd: bsToUsd(p.amountInBs, usdRate),
+              amountInUsd: taxPaymentToUsd(p, usdRate),
             })),
           );
         setArPayments(toPaymentsUsd(arRes.data));
@@ -143,21 +112,32 @@ export function ReportExecutivePanel() {
   );
 
   // ---- Flujo de caja por mes (USD, pagos reales) ----
+  // Los KPIs suman TODO el rango filtrado; el chart recorta a los últimos 12
+  // meses con datos (los totales no dependen del recorte).
   const cashFlow = useMemo(() => {
     const income = new Map<string, number>();
     const expense = new Map<string, number>();
+    let totalIncome = 0;
+    let totalExpense = 0;
     const add = (m: Map<string, number>, key: string, v: number) =>
       m.set(key, (m.get(key) ?? 0) + v);
-    arPayments.forEach((p) => within(p.date) && add(income, monthBucket(p.date), p.amountInUsd));
-    apPayments.forEach((p) => within(p.date) && add(expense, monthBucket(p.date), p.amountInUsd));
-    taxPayments.forEach((p) => within(p.date) && add(expense, monthBucket(p.date), p.amountInUsd));
+    arPayments.forEach((p) => {
+      if (!within(p.date)) return;
+      add(income, monthBucket(p.date), p.amountInUsd);
+      totalIncome += p.amountInUsd;
+    });
+    const addExpense = (p: PaymentRow) => {
+      if (!within(p.date)) return;
+      add(expense, monthBucket(p.date), p.amountInUsd);
+      totalExpense += p.amountInUsd;
+    };
+    apPayments.forEach(addExpense);
+    taxPayments.forEach(addExpense);
     const allMonths = new Set<string>([...income.keys(), ...expense.keys()]);
     const months = lastMonths(allMonths);
     const incomeArr = months.map((m) => income.get(m) ?? 0);
     const expenseArr = months.map((m) => expense.get(m) ?? 0);
     const netArr = months.map((_, i) => incomeArr[i] - expenseArr[i]);
-    const totalIncome = incomeArr.reduce((s, v) => s + v, 0);
-    const totalExpense = expenseArr.reduce((s, v) => s + v, 0);
     const net = totalIncome - totalExpense;
     const margin = totalIncome > 0 ? (net / totalIncome) * 100 : 0;
     return { months, incomeArr, expenseArr, netArr, totalIncome, totalExpense, net, margin };
@@ -168,24 +148,6 @@ export function ReportExecutivePanel() {
     () => orders.filter((o) => within(o.orderDate)),
     [orders, within],
   );
-
-  const byStatus = useMemo(() => {
-    const counts = new Map<OrderStatus, number>();
-    ordersInRange.forEach((o) => counts.set(o.status, (counts.get(o.status) ?? 0) + 1));
-    return STATUS_ORDER.filter((s) => (counts.get(s) ?? 0) > 0).map((s) => ({
-      status: s,
-      count: counts.get(s) ?? 0,
-    }));
-  }, [ordersInRange]);
-
-  const byType = useMemo(() => {
-    const counts = new Map<OrderType, number>();
-    ordersInRange.forEach((o) => counts.set(o.type, (counts.get(o.type) ?? 0) + 1));
-    return TYPE_ORDER.filter((t) => (counts.get(t) ?? 0) > 0).map((t) => ({
-      type: t,
-      count: counts.get(t) ?? 0,
-    }));
-  }, [ordersInRange]);
 
   const volumeByMonth = useMemo(() => {
     const counts = new Map<string, number>();
@@ -261,30 +223,6 @@ export function ReportExecutivePanel() {
     },
   };
 
-  const statusData: ChartData<'doughnut'> = {
-    labels: byStatus.map((s) => ORDER_STATUS_LABEL[s.status]),
-    datasets: [
-      {
-        data: byStatus.map((s) => s.count),
-        backgroundColor: byStatus.map((s) => STATUS_COLOR[s.status]),
-        borderWidth: 2,
-        borderColor: '#fff',
-      },
-    ],
-  };
-
-  const typeData: ChartData<'doughnut'> = {
-    labels: byType.map((t) => ORDER_TYPE_LABEL[t.type]),
-    datasets: [
-      {
-        data: byType.map((t) => t.count),
-        backgroundColor: paletteFor(byType.length),
-        borderWidth: 2,
-        borderColor: '#fff',
-      },
-    ],
-  };
-
   const volumeData: ChartData<'bar'> = {
     labels: volumeByMonth.months.map((m) => formatMonth(m)),
     datasets: [
@@ -323,7 +261,7 @@ export function ReportExecutivePanel() {
   return (
     <ReportShell
       title="Panel ejecutivo"
-      description="Vista gerencial: flujo de caja real y distribución de órdenes para la toma de decisiones"
+      description="Vista gerencial: flujo de caja real y volumen de órdenes para la toma de decisiones"
       kpis={
         <KpiRow
           items={[
@@ -399,32 +337,8 @@ export function ReportExecutivePanel() {
         </ChartCard>
 
         <ChartCard
-          title="Órdenes por estado"
-          description="Distribución del flujo de órdenes"
-          icon={Workflow}
-          empty={noData && byStatus.length === 0}
-          emptyText="Sin órdenes en el rango"
-        >
-          {byStatus.length > 0 ? (
-            <Doughnut data={statusData} options={baseDoughnutOptions} />
-          ) : null}
-        </ChartCard>
-
-        <ChartCard
-          title="Órdenes por tipo"
-          description="Contado, crédito, seguro y Cashea"
-          icon={PieChart}
-          empty={noData && byType.length === 0}
-          emptyText="Sin órdenes en el rango"
-        >
-          {byType.length > 0 ? (
-            <Doughnut data={typeData} options={baseDoughnutOptions} />
-          ) : null}
-        </ChartCard>
-
-        <ChartCard
           title="Volumen de órdenes por mes"
-          description={`${formatNumber(ordersInRange.length)} órdenes en el rango`}
+          description={`${formatNumber(volumeByMonth.data.reduce((s, v) => s + v, 0))} órdenes en los meses graficados (últimos 12 con datos)`}
           icon={Activity}
           className="lg:col-span-2"
           empty={noData && volumeByMonth.months.length === 0}

@@ -16,7 +16,7 @@ export interface Insurance {
   fiscalAddress?: string | null;
   rif?: string | null;
   isActive: boolean;
-  /** Seguro indexado: cobra a la tasa del día de la orden (fija en Bs). */
+  /** `true` = UI "No indexado": cobra a la tasa del día de la orden (fija en Bs). `false` = UI "Indexado": tasa del día del cobro. */
   isIndexed?: boolean;
   phones: InsurancePhone[];
   /** Precios de cobro por Tipo de Servicio que el seguro cubre. */

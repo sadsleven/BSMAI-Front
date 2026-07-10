@@ -14,6 +14,7 @@ import {
   type Patient,
 } from '../../domain/models/patient';
 import { notify } from '@/lib/notifications/toast';
+import { formatDateOnly } from '@/lib/dates';
 
 export type PatientDetailProps = {
   patientId: string | null;
@@ -50,11 +51,7 @@ export function PatientDetailBody({ patient }: { patient: Patient }) {
             <DetailRow label="Email" value={patient.email} />
             <DetailRow
               label="Nacimiento"
-              value={
-                patient.birthDate
-                  ? new Date(patient.birthDate).toLocaleDateString()
-                  : null
-              }
+              value={patient.birthDate ? formatDateOnly(patient.birthDate) : null}
             />
             <DetailRow label="Dirección" value={patient.address} />
             <DetailRow

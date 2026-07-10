@@ -26,7 +26,10 @@ import type { Insurance } from '@/modules/insurances/domain/models/insurance';
 import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
+import { ReportDownloadButton } from '../components/ReportDownloadButton';
+import { downloadReceivablesReportXlsx } from '../components/reportsExcel';
 import { formatUsd, formatBs, formatDate, formatNumber } from '../../domain/format';
+import { useUsdRate } from '../../domain/useUsdRate';
 import {
   reportsGateway,
   type ReportReceivableRow,
@@ -36,7 +39,7 @@ import {
 import { getHttpErrorMessage } from '@/lib/api';
 
 const STATE_LABEL: Record<ReceivableOrderState, string> = {
-  sin_lote: 'Sin lote',
+  sin_lote: 'Por cobrar',
   uncollected: 'Por cobrar',
   partially_collected: 'Cobro parcial',
   collected: 'Cobrado',
@@ -44,7 +47,7 @@ const STATE_LABEL: Record<ReceivableOrderState, string> = {
 };
 
 const STATE_TONE: Record<ReceivableOrderState, string> = {
-  sin_lote: 'bg-muted text-muted-foreground',
+  sin_lote: 'bg-warning-soft text-warning',
   uncollected: 'bg-warning-soft text-warning',
   partially_collected: 'bg-brand-cyan-soft text-brand-blue-strong',
   collected: 'bg-success-soft text-success',
@@ -83,6 +86,7 @@ export function ReportReceivablesList() {
   const [insurances, setInsurances] = useState<Insurance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const currentRateBs = useUsdRate();
 
   useEffect(() => {
     let cancelled = false;
@@ -166,6 +170,12 @@ export function ReportReceivablesList() {
     <ReportShell
       title="Reporte de cuentas por cobrar"
       description={`${formatNumber(summary.count)} orden${summary.count === 1 ? '' : 'es'} en el rango filtrado`}
+      headerRight={
+        <ReportDownloadButton
+          disabled={loading || rows.length === 0}
+          onDownload={() => downloadReceivablesReportXlsx(rows, currentRateBs)}
+        />
+      }
       kpis={
         <KpiRow
           items={[
@@ -190,8 +200,8 @@ export function ReportReceivablesList() {
               value: formatUsd(summary.pendingUsd),
               hint:
                 summary.pendingBs > 0
-                  ? `+ ${formatBs(summary.pendingBs)} (tasa fija) · incluye sin lote`
-                  : 'Incluye órdenes sin lote',
+                  ? `+ ${formatBs(summary.pendingBs)} (tasa fija) · incluye por cobrar`
+                  : 'Incluye órdenes por cobrar',
             },
             {
               icon: Coins,
@@ -265,12 +275,12 @@ export function ReportReceivablesList() {
           <TableHeader>
             <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Fecha</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Deudor</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Cliente</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Paciente</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Factura</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Orden</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Lote</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto USD</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto Bs.</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Modo</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Estado</TableHead>
             </TableRow>
           </TableHeader>
@@ -292,44 +302,59 @@ export function ReportReceivablesList() {
                 </TableCell>
               </TableRow>
             ) : (
-              paged.map((r) => (
-                <TableRow key={r.orderId} className="hover:bg-[oklch(0.985_0.003_250)]">
-                  <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
-                    {formatDate(r.orderDate)}
-                  </TableCell>
-                  <TableCell className="py-3.5 px-4 text-sm">
-                    <div className="font-medium truncate">{r.debtorName}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {r.debtorType === 'holder' ? 'Titular' : 'Seguro'}
-                    </div>
-                  </TableCell>
-                  <TableCell className="py-3.5 px-4 text-sm font-mono">
-                    {r.orderNumber}
-                  </TableCell>
-                  <TableCell className="py-3.5 px-4 text-sm font-mono">
-                    {r.receivableNumber ?? '—'}
-                  </TableCell>
-                  <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                    {r.targetUsd != null ? formatUsd(r.targetUsd) : '—'}
-                  </TableCell>
-                  <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                    {r.targetBs != null ? formatBs(r.targetBs) : '—'}
-                  </TableCell>
-                  <TableCell className="py-3.5 px-4 text-sm">
-                    <Badge variant="outline" className="text-xs font-normal">
-                      {r.useFixedRate ? 'Tasa fija (Bs)' : 'USD'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="py-3.5 px-4">
-                    <Badge
-                      variant="outline"
-                      className={`text-xs ${STATE_TONE[r.state]} border-transparent`}
-                    >
-                      {STATE_LABEL[r.state]}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))
+              paged.map((r) => {
+                const usd =
+                  r.targetUsd != null
+                    ? r.targetUsd
+                    : r.targetBs != null && r.rateBs
+                      ? r.targetBs / r.rateBs
+                      : null;
+                const bs =
+                  r.targetBs != null
+                    ? r.targetBs
+                    : r.targetUsd != null && currentRateBs
+                      ? r.targetUsd * currentRateBs
+                      : null;
+                return (
+                  <TableRow
+                    key={`${r.orderId}-${r.portion}`}
+                    className="hover:bg-[oklch(0.985_0.003_250)]"
+                  >
+                    <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                      {formatDate(r.orderDate)}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm">
+                      <div className="font-medium truncate">{r.debtorName}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {r.debtorType === 'holder' ? 'Titular' : 'Seguro'} · Titular: {r.holderName}
+                      </div>
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm truncate">
+                      {r.patientName || '—'}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono">
+                      {r.invoiceNumber || '—'}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono">
+                      {r.orderNumber}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
+                      {usd != null ? formatUsd(usd) : '—'}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
+                      {bs != null ? formatBs(bs) : '—'}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4">
+                      <Badge
+                        variant="outline"
+                        className={`text-xs ${STATE_TONE[r.state]} border-transparent`}
+                      >
+                        {STATE_LABEL[r.state]}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

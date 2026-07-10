@@ -23,6 +23,8 @@ import { taxesPayableGateway } from '@/modules/taxes-payable/infrastructure/taxe
 import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
+import { ReportDownloadButton } from '../components/ReportDownloadButton';
+import { downloadReportTableXlsx } from '../components/reportsExcel';
 import {
   formatUsd,
   formatMonth,
@@ -31,7 +33,7 @@ import {
   monthBucket,
 } from '../../domain/format';
 import { REPORT_PAGE_SIZE } from '../../infrastructure/fetchAll';
-import { bsToUsd, useUsdRate } from '../../domain/useUsdRate';
+import { taxPaymentToUsd, useUsdRate } from '../../domain/useUsdRate';
 import { getHttpErrorMessage } from '@/lib/api';
 
 type PaymentRow = { date: string; amountInUsd: number };
@@ -92,7 +94,8 @@ export function ReportFinancialSummary() {
           taxRes.data.flatMap((a) =>
             (a.payments ?? []).map((p) => ({
               date: p.paymentDate,
-              amountInUsd: bsToUsd(p.amountInBs, usdRate),
+              // Conversión histórica per-pago; tasa vigente sólo fallback.
+              amountInUsd: taxPaymentToUsd(p, usdRate),
             })),
           ),
         );
@@ -165,6 +168,37 @@ export function ReportFinancialSummary() {
     <ReportShell
       title="Resumen financiero"
       description="Ingresos vs egresos mensuales — basado en pagos efectivamente registrados"
+      headerRight={
+        <ReportDownloadButton
+          disabled={loading || buckets.length === 0}
+          onDownload={() =>
+            downloadReportTableXlsx({
+              filename: 'Resumen-financiero',
+              title: 'Resumen financiero',
+              sheetName: 'RESUMEN FINANCIERO',
+              rows: buckets,
+              columns: [
+                { header: 'Mes', value: (b) => formatMonth(b.month), width: 18 },
+                { header: 'Ingresos', value: (b) => b.income, width: 14, numFmt: '0.00', total: true },
+                { header: 'Egresos a proveedores', value: (b) => b.providerExpense, width: 16, numFmt: '0.00', total: true },
+                { header: 'Egresos a impuestos', value: (b) => b.taxExpense, width: 16, numFmt: '0.00', total: true },
+                { header: 'Total egresos', value: (b) => b.providerExpense + b.taxExpense, width: 14, numFmt: '0.00', total: true },
+                { header: 'Resultado neto', value: (b) => b.income - (b.providerExpense + b.taxExpense), width: 14, numFmt: '0.00', total: true },
+                {
+                  header: 'Margen',
+                  value: (b) => {
+                    const exp = b.providerExpense + b.taxExpense;
+                    return b.income > 0 ? ((b.income - exp) / b.income) * 100 : 0;
+                  },
+                  width: 10,
+                  numFmt: '0.0',
+                  align: 'center',
+                },
+              ],
+            })
+          }
+        />
+      }
       kpis={
         <KpiRow
           items={[

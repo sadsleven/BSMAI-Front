@@ -22,6 +22,8 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
+import { ReportDownloadButton } from '../components/ReportDownloadButton';
+import { downloadReportTableXlsx } from '../components/reportsExcel';
 import { formatUsd, formatBs, formatNumber } from '../../domain/format';
 import {
   reportsGateway,
@@ -113,6 +115,31 @@ export function ReportDoctorProduction() {
     <ReportShell
       title="Producción por médico"
       description="Volumen de órdenes y monto generado por cada proveedor (doctor o centro de atención)"
+      headerRight={
+        <ReportDownloadButton
+          disabled={loading || filtered.length === 0}
+          onDownload={() =>
+            downloadReportTableXlsx({
+              filename: 'Produccion-por-medico',
+              title: 'Producción por médico',
+              sheetName: 'PRODUCCION POR MEDICO',
+              rows: filtered,
+              columns: [
+                { header: '#', value: (_r, i) => i + 1, width: 5, align: 'center' },
+                { header: 'Proveedor', value: (r) => r.providerName, width: 26 },
+                { header: 'Tipo', value: (r) => (r.providerType === 'doctor' ? 'Doctor' : 'Centro'), width: 10 },
+                { header: 'Órdenes', value: (r) => r.ordersCount, width: 10, numFmt: '#,##0', total: true },
+                { header: 'Lotes', value: (r) => r.lotesCount, width: 8, numFmt: '#,##0', total: true },
+                { header: 'Total USD', value: (r) => r.grossUsd, width: 13, numFmt: '0.00', total: true },
+                { header: 'Total Bs.', value: (r) => r.grossBs, width: 14, numFmt: '#,##0.00', total: true },
+                { header: 'Neto Bs.', value: (r) => r.netBs, width: 14, numFmt: '#,##0.00', total: true },
+                { header: 'Pagado Bs.', value: (r) => r.paidBs, width: 14, numFmt: '#,##0.00', total: true },
+                { header: 'Pendiente Bs.', value: (r) => r.pendingBs, width: 14, numFmt: '#,##0.00', total: true },
+              ],
+            })
+          }
+        />
+      }
       kpis={
         <KpiRow
           items={[

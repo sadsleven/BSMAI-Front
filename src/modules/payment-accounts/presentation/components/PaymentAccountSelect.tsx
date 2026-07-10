@@ -4,6 +4,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
+  SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { paymentAccountGateway } from '../../infrastructure/paymentAccountGateway';
@@ -101,22 +102,36 @@ export function PaymentAccountSelect({
           error && 'border-destructive',
         )}
       >
-        {selected ? (
-          <span className="truncate text-left">
-            {selected.name}
-            {paymentAccountSummary(selected) ? (
-              <span className="ml-2 text-[11px] text-muted-foreground">
-                {paymentAccountSummary(selected)}
-              </span>
-            ) : null}
-          </span>
-        ) : (
-          <span className="text-muted-foreground">
-            {loading
+        {/*
+         * IMPORTANTE: el contenido custom debe ir DENTRO de <SelectValue>.
+         * El <SelectContent> global usa position="item-aligned", que requiere
+         * el nodo Select.Value en el trigger para posicionar el menú; sin él,
+         * el dropdown nunca se muestra al hacer click.
+         */}
+        <SelectValue
+          placeholder={
+            loading
               ? 'Cargando…'
-              : placeholder ?? `Cuenta de ${PAYMENT_ACCOUNT_TYPE_LABEL[type]}`}
-          </span>
-        )}
+              : placeholder ?? `Cuenta de ${PAYMENT_ACCOUNT_TYPE_LABEL[type]}`
+          }
+        >
+          {selected ? (
+            <span className="truncate text-left">
+              {selected.name}
+              {paymentAccountSummary(selected) ? (
+                <span className="ml-2 text-[11px] text-muted-foreground">
+                  {paymentAccountSummary(selected)}
+                </span>
+              ) : null}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">
+              {loading
+                ? 'Cargando…'
+                : placeholder ?? `Cuenta de ${PAYMENT_ACCOUNT_TYPE_LABEL[type]}`}
+            </span>
+          )}
+        </SelectValue>
       </SelectTrigger>
       <SelectContent>
         {items.length === 0 ? (

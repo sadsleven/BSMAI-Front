@@ -13,6 +13,7 @@ import {
   type OrderProviderGroup,
 } from './orderExcel';
 import { formatMoney } from '@/lib/format/money';
+import { formatDateOnly } from '@/lib/dates';
 
 const COMPANY = {
   name: 'ATENCIÓN MÉDICA AFMI',
@@ -28,10 +29,9 @@ function holderId(p?: { cedula?: string | null; rif?: string | null } | null): s
   return p.cedula ?? p.rif ?? '';
 }
 
-function fmtDate(iso?: string | null): string {
-  if (!iso) return '';
-  return new Date(iso).toLocaleDateString('es-VE');
-}
+// `orderDate` es columna `date` (string YYYY-MM-DD): formatear sin `new Date`
+// para no imprimir el día anterior en UTC-4.
+const fmtDate = formatDateOnly;
 
 function safeFilenameSegment(s: string): string {
   return s.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').trim().slice(0, 80) || 'sin_nombre';
@@ -39,13 +39,17 @@ function safeFilenameSegment(s: string): string {
 
 function ageFromBirthDate(iso?: string | null): string {
   if (!iso) return '';
-  const b = new Date(iso);
+  // Mediodía local: `new Date('YYYY-MM-DD')` es medianoche UTC y en VE (UTC-4)
+  // los getters locales devuelven el día anterior.
+  const b = new Date(`${iso.slice(0, 10)}T12:00:00`);
   if (Number.isNaN(b.getTime())) return '';
   const now = new Date();
-  let age = now.getFullYear() - b.getFullYear();
-  const m = now.getMonth() - b.getMonth();
-  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--;
-  return age >= 0 && age < 150 ? String(age) : '';
+  let months = (now.getFullYear() - b.getFullYear()) * 12 + (now.getMonth() - b.getMonth());
+  if (now.getDate() < b.getDate()) months--;
+  if (months < 0 || months >= 150 * 12) return '';
+  // Bebés (<1 año) se expresan en meses.
+  if (months < 12) return `${months} ${months === 1 ? 'mes' : 'meses'}`;
+  return String(Math.floor(months / 12));
 }
 
 /** Carga logo AFMI desde public/ como dataURL. Null si falla. */
@@ -174,13 +178,11 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
 
   // R4-R7 — Contratante. Seguro → datos del seguro; resto → titular.
   {
-    // R4 — Razón social
+    // R4 — Razón social (valor abarca C:E)
     body.push([
       'Nombre  o Razón Social :',
       '',
-      contratanteName,
-      '',
-      '',
+      { content: contratanteName, colSpan: 3 },
     ]);
     // R5 — Dirección fiscal (valor abarca C:E)
     body.push([
@@ -199,16 +201,16 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
         styles: { fontSize: 8 },
       },
     ]);
-    // R7 — Contratante. Seguro directo al paciente / no seguro → el titular.
+    // R7 — Contratante (valor abarca C:E). Seguro directo al paciente / no
+    // seguro → el titular.
     body.push([
       'Contratante:',
       '',
       {
         content: contratante,
+        colSpan: 3,
         styles: { fontSize: 8 },
       },
-      '',
-      '',
     ]);
   }
 
@@ -227,12 +229,12 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
     { content: `Rif ó CI: ${patientCi}`, colSpan: 2 },
   ]);
 
-  // R10 — Clave de servicio. orderServiceKeyDisplay ya resuelve la 'R' de
-  // reembolso (crédito + isReimbursement).
+  // R10 — Clave de servicio. La factura usa serviceKey tal cual; la 'R' de
+  // reembolso (crédito + isReimbursement) es sólo de la orden interna.
   body.push([
     'Clave de Servicio Nº:',
     '',
-    orderServiceKeyDisplay(order),
+    order.serviceKey ?? '',
     '',
     '',
   ]);
@@ -306,10 +308,15 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
     { content: 'Bs', styles: { halign: 'right' } },
     { content: fmtMoney(totalBs), styles: { halign: 'center' } },
   ]);
-  // R18 — Tasa de cambio + IVA
+  // R18 — Tasa de cambio + IVA. Seguro no indexado (useFixedRate, tasa fija de
+  // la orden): la factura NO muestra la tasa usada.
   body.push([
-    'Tasa de cambio BCV :  ',
-    { content: fmtMoney(rateBs), styles: { halign: 'center' } },
+    ...(order.useFixedRate
+      ? ['', '']
+      : [
+          'Tasa de cambio BCV :  ',
+          { content: fmtMoney(rateBs), styles: { halign: 'center' } },
+        ]),
     { content: 'IVA %  ( E )', styles: { halign: 'right' } },
     { content: 'Bs', styles: { halign: 'right' } },
     { content: '0,00', styles: { halign: 'center' } },

@@ -33,6 +33,8 @@ import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { getHttpErrorMessage } from '@/lib/api';
 import { formatBs, formatMoney } from '@/lib/format/money';
+import { formatDateOnly } from '@/lib/dates';
+import { PageLoader } from '@/components/ui/spinner';
 import { casheaBreakdownCents } from '@/lib/money/cashea';
 import { orderPaymentSchema, type OrderPaymentValues } from '@/lib/validations/schemas';
 import {
@@ -54,6 +56,8 @@ import {
   pendingDebtorId,
   pendingDebtorName,
   pendingDebtorTypeLabel,
+  pendingRowKey,
+  portionLabel,
   type AccountsReceivableBatch,
   type AccountsReceivableDebtorType,
   type PendingReceivable,
@@ -73,7 +77,8 @@ type CreateState = {
   debtorId: string | null;
   debtorName: string;
   useFixedRate?: boolean;
-  orderIds: string[];
+  /** Claves de fila pendiente (`orderId:portion`) preseleccionadas en la lista. */
+  pendingKeys: string[];
 } | null;
 
 type CreateDebtor = {
@@ -115,7 +120,7 @@ export function AccountsReceivableBatchPage() {
   const [createLoading, setCreateLoading] = useState(isCreate);
   const [createError, setCreateError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(
-    () => new Set(createState?.orderIds ?? []),
+    () => new Set(createState?.pendingKeys ?? []),
   );
   const [search, setSearch] = useState('');
   // Si vino selección de la lista, fijamos el deudor + modo de entrada.
@@ -171,8 +176,9 @@ export function AccountsReceivableBatchPage() {
     };
   }, [isCreate, lockedDebtor]);
 
+  // Claves por fila (orden + porción): una orden mixta aparece dos veces.
   const selectedRows = useMemo(
-    () => pending.filter((p) => selected.has(p.orderId)),
+    () => pending.filter((p) => selected.has(pendingRowKey(p))),
     [pending, selected],
   );
 
@@ -208,7 +214,7 @@ export function AccountsReceivableBatchPage() {
     const q = search.trim().toLowerCase();
     if (!q) return [];
     return pending.filter((p) => {
-      if (selected.has(p.orderId)) return false;
+      if (selected.has(pendingRowKey(p))) return false;
       if (debtorKey && pendingBatchKey(p) !== debtorKey) return false;
       return (
         p.orderNumber.toLowerCase().includes(q) ||
@@ -217,11 +223,11 @@ export function AccountsReceivableBatchPage() {
     });
   }, [pending, search, selected, debtorKey]);
 
-  const toggleSelect = (orderId: string) =>
+  const toggleSelect = (rowKey: string) =>
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(orderId)) next.delete(orderId);
-      else next.add(orderId);
+      if (next.has(rowKey)) next.delete(rowKey);
+      else next.add(rowKey);
       return next;
     });
 
@@ -245,6 +251,8 @@ export function AccountsReceivableBatchPage() {
             ? activeDebtor.debtorId ?? undefined
             : undefined,
         orderIds: selectedRows.map((r) => r.orderId),
+        // Resuelve qué porción de una orden mixta entra al lote.
+        mode: activeDebtor.useFixedRate ? 'fixed' : 'usd',
       });
       notify.success('Lote creado');
       navigate(`/accounts-receivable/${batch.id}`, { replace: true });
@@ -316,8 +324,8 @@ export function AccountsReceivableBatchPage() {
                     candidates.map((p) => (
                       <button
                         type="button"
-                        key={p.orderId}
-                        onClick={() => toggleSelect(p.orderId)}
+                        key={pendingRowKey(p)}
+                        onClick={() => toggleSelect(pendingRowKey(p))}
                         className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-muted/40"
                       >
                         <div className="min-w-0">
@@ -332,6 +340,14 @@ export function AccountsReceivableBatchPage() {
                                 className="bg-brand-blue-soft text-brand-blue-strong border-brand-blue/30 text-[10px]"
                               >
                                 Tasa fija
+                              </Badge>
+                            ) : null}
+                            {portionLabel(p.portion) ? (
+                              <Badge
+                                variant="outline"
+                                className="bg-brand-cyan-soft text-brand-cyan-strong border-brand-cyan/40 text-[10px]"
+                              >
+                                {portionLabel(p.portion)}
                               </Badge>
                             ) : null}
                           </div>
@@ -357,7 +373,7 @@ export function AccountsReceivableBatchPage() {
                 <ul className="text-sm divide-y rounded-lg border">
                   {selectedRows.map((p) => (
                     <li
-                      key={p.orderId}
+                      key={pendingRowKey(p)}
                       className="flex items-center justify-between gap-3 px-3 py-2.5"
                     >
                       <div className="min-w-0">
@@ -383,6 +399,14 @@ export function AccountsReceivableBatchPage() {
                               Tasa fija
                             </Badge>
                           ) : null}
+                          {portionLabel(p.portion) ? (
+                            <Badge
+                              variant="outline"
+                              className="bg-brand-cyan-soft text-brand-cyan-strong border-brand-cyan/40 text-[10px]"
+                            >
+                              {portionLabel(p.portion)}
+                            </Badge>
+                          ) : null}
                           <span className="truncate">{pendingDebtorName(p)}</span>
                         </div>
                       </div>
@@ -393,7 +417,7 @@ export function AccountsReceivableBatchPage() {
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                          onClick={() => toggleSelect(p.orderId)}
+                          onClick={() => toggleSelect(pendingRowKey(p))}
                           title="Quitar del lote"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -486,9 +510,10 @@ function BatchDetail({ id }: { id: string }) {
       : 'cashea';
   const debtorId = batch?.holderId ?? batch?.insuranceId ?? null;
   const isCollected = batch?.status === 'collected';
-  // Seguro NO indexado: la tasa se escoge en la card Resumen (alimenta el
-  // estado de cuenta y la conversión de los cobros). Indexado usa la tasa fija
-  // de cada orden; crédito/cashea escogen la tasa en "Registrar cobro".
+  // Seguro indexado (isIndexed=false, modo USD): la tasa se escoge en la card
+  // Resumen (alimenta el estado de cuenta y la conversión de los cobros). No
+  // indexado usa la tasa fija de cada orden; crédito/cashea escogen la tasa en
+  // "Registrar cobro".
   const rateInSummary = debtorType === 'insurance' && !fixed;
   const [downloadingStatement, setDownloadingStatement] = useState(false);
 
@@ -518,7 +543,7 @@ function BatchDetail({ id }: { id: string }) {
     if (candidatesOpen) loadCandidates();
   }, [candidatesOpen, loadCandidates]);
 
-  // Seguro indexado: la tasa de los cobros es la tasa fija de la orden — no se
+  // Seguro no indexado: la tasa de los cobros es la tasa fija de la orden — no se
   // elige. Con varias tasas fijas en el lote manda la de la primera orden que
   // tenga una (mismo criterio del BE al convertir).
   const fixedRate = useMemo<ExchangeRate | null>(() => {
@@ -789,11 +814,7 @@ function BatchDetail({ id }: { id: string }) {
   );
 
   if (loading || !batch) {
-    return (
-      <div className="max-w-3xl mx-auto p-6 text-sm text-muted-foreground">
-        Cargando lote…
-      </div>
-    );
+    return <PageLoader label="Cargando lote…" />;
   }
 
   return (
@@ -949,8 +970,8 @@ function BatchDetail({ id }: { id: string }) {
           title="Estado de cuenta"
           description={
             fixed
-              ? 'Seguro indexado: el Excel usa la tasa fija de cada orden.'
-              : 'Seguro no indexado: el Excel usa la tasa seleccionada en el Resumen.'
+              ? 'Seguro no indexado: el Excel usa la tasa fija de cada orden.'
+              : 'Seguro indexado: el Excel usa la tasa seleccionada en el Resumen.'
           }
         >
           <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -1030,8 +1051,16 @@ function BatchDetail({ id }: { id: string }) {
                           className="mt-0.5"
                         />
                         <div className="flex-1 min-w-0">
-                          <div className="text-xs font-mono font-semibold">
+                          <div className="text-xs font-mono font-semibold flex items-center gap-1.5">
                             N° {c.orderNumber}
+                            {portionLabel(c.portion) ? (
+                              <Badge
+                                variant="outline"
+                                className="bg-brand-cyan-soft text-brand-cyan-strong border-brand-cyan/40 text-[10px] font-sans font-medium"
+                              >
+                                {portionLabel(c.portion)}
+                              </Badge>
+                            ) : null}
                           </div>
                           <div className="text-[11px] text-muted-foreground">
                             {debtorType === 'cashea'
@@ -1067,8 +1096,16 @@ function BatchDetail({ id }: { id: string }) {
               key={o.orderId}
               className="flex items-center justify-between py-2 first:pt-0 last:pb-0 gap-3"
             >
-              <span className="font-mono font-medium">
+              <span className="font-mono font-medium inline-flex items-center gap-2">
                 N° {o.order?.orderNumber ?? '—'}
+                {portionLabel(o.portion) ? (
+                  <Badge
+                    variant="outline"
+                    className="bg-brand-cyan-soft text-brand-cyan-strong border-brand-cyan/40 text-[10px] font-sans font-medium"
+                  >
+                    {portionLabel(o.portion)}
+                  </Badge>
+                ) : null}
               </span>
               <div className="flex items-center gap-3 shrink-0">
                 <span className="font-mono">
@@ -1112,9 +1149,7 @@ function BatchDetail({ id }: { id: string }) {
                 <div className="flex-1 min-w-0 text-sm">
                   <div className="font-medium">
                     {PAYMENT_TYPE_LABEL[p.type]} ·{' '}
-                    {p.paymentDate
-                      ? new Date(p.paymentDate).toLocaleDateString('es-VE')
-                      : '—'}
+                    {p.paymentDate ? formatDateOnly(p.paymentDate) : '—'}
                   </div>
                   <div className="text-xs text-muted-foreground font-mono">
                     {formatMoney(p.amountValue)} {p.amountCurrency} ·{' '}
@@ -1213,7 +1248,7 @@ function BatchDetail({ id }: { id: string }) {
                       disabled={fixed && !!fixedRate}
                       lockNote={
                         fixed
-                          ? 'Tasa fija de la orden (seguro indexado): con ella se convierten los cobros en USD/EUR a Bs.'
+                          ? 'Tasa fija de la orden (seguro no indexado): con ella se convierten los cobros en USD/EUR a Bs.'
                           : undefined
                       }
                     />

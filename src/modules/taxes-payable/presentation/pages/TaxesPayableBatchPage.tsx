@@ -35,6 +35,9 @@ import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { getHttpErrorMessage } from '@/lib/api';
 import { formatMoney } from '@/lib/format/money';
+import { formatDateOnly } from '@/lib/dates';
+import { PageLoader } from '@/components/ui/spinner';
+import { DatePicker } from '@/components/ui/date-picker';
 import { taxPaymentSchema, type OrderPaymentValues } from '@/lib/validations/schemas';
 import {
   OrderPaymentForm,
@@ -49,7 +52,11 @@ import {
   type TaxBatch,
   type TaxObligation,
 } from '../../domain/models/taxesPayable';
-import { downloadIslrComprobanteXlsx } from '../components/taxesPayableExcel';
+import {
+  comprobanteNumberForSheet,
+  downloadIslrComprobanteXlsx,
+  islrProviderOptions,
+} from '../components/taxesPayableExcel';
 import { TaxUnitSelect } from '@/modules/tax-units/presentation/components/TaxUnitSelect';
 import {
   PAYMENT_TYPE_LABEL,
@@ -357,6 +364,9 @@ function BatchDetail({ id }: { id: string }) {
   const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [downloadingProviderKey, setDownloadingProviderKey] = useState<string | null>(
+    null,
+  );
 
   // Datos del comprobante ISLR (los pide el usuario al descargar).
   const [comprobanteNumber, setComprobanteNumber] = useState('');
@@ -598,6 +608,27 @@ function BatchDetail({ id }: { id: string }) {
     }
   };
 
+  const handleDownloadProviderComprobante = async (providerKey: string) => {
+    if (!batch || !comprobanteNumber.trim() || !comprobanteDate) return;
+    setDownloadingProviderKey(providerKey);
+    try {
+      await downloadIslrComprobanteXlsx(
+        batch,
+        { comprobanteNumber: comprobanteNumber.trim(), issueDate: comprobanteDate },
+        providerKey,
+      );
+    } catch (e) {
+      notify.error(getHttpErrorMessage(e, 'No se pudo generar el comprobante'));
+    } finally {
+      setDownloadingProviderKey(null);
+    }
+  };
+
+  const islrProviders = useMemo(
+    () => (batch ? islrProviderOptions(batch) : []),
+    [batch],
+  );
+
   const onSetAdjustment = async (taxUnitId: string | null) => {
     setBusy(true);
     try {
@@ -617,11 +648,7 @@ function BatchDetail({ id }: { id: string }) {
   const eligibleCandidates = candidates.filter((c) => !existingIds.has(c.id));
 
   if (loading || !batch) {
-    return (
-      <div className="max-w-3xl mx-auto p-6 text-sm text-muted-foreground">
-        Cargando lote…
-      </div>
-    );
+    return <PageLoader label="Cargando lote…" />;
   }
 
   return (
@@ -791,73 +818,6 @@ function BatchDetail({ id }: { id: string }) {
         </ul>
       </FormSection>
 
-      {/* Comprobante de retención ISLR */}
-      <FormSection
-        title="Comprobante de retención ISLR"
-        description="Documento general del lote (Decreto 1.808): una hoja por sujeto retenido, con una fila por factura. Completa los datos para descargarlo."
-      >
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-[18px]">
-          <div className="space-y-1.5">
-            <label
-              htmlFor="comprobante-number"
-              className="text-sm font-medium leading-none"
-            >
-              N° de comprobante <span className="text-destructive">*</span>
-            </label>
-            <Input
-              id="comprobante-number"
-              placeholder="Ej. 20260600000079"
-              value={comprobanteNumber}
-              onChange={(e) => setComprobanteNumber(e.target.value)}
-              className="h-9 font-mono"
-              maxLength={30}
-            />
-            <p className="text-xs text-muted-foreground">
-              Correlativo SENIAT del comprobante (año + mes + secuencia).
-            </p>
-          </div>
-          <div className="space-y-1.5">
-            <label
-              htmlFor="comprobante-date"
-              className="text-sm font-medium leading-none"
-            >
-              Fecha de emisión <span className="text-destructive">*</span>
-            </label>
-            <Input
-              id="comprobante-date"
-              type="date"
-              value={comprobanteDate}
-              onChange={(e) => setComprobanteDate(e.target.value)}
-              className="h-9"
-            />
-            <p className="text-xs text-muted-foreground">
-              Define también el período fiscal (año/mes) del comprobante.
-            </p>
-          </div>
-        </div>
-        <div className="flex justify-end gap-2 mt-3">
-          <Can permission={PERMISSIONS.TAXES_PAYABLE.UPDATE}>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onSaveComprobante}
-              disabled={busy || !comprobanteNumber.trim() || !comprobanteDate}
-            >
-              <Save className="w-3.5 h-3.5 mr-1.5" />
-              {busy ? 'Guardando…' : 'Guardar datos'}
-            </Button>
-          </Can>
-          <Button
-            type="button"
-            onClick={handleDownloadComprobante}
-            disabled={downloading || !comprobanteNumber.trim() || !comprobanteDate}
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5" />
-            {downloading ? 'Generando…' : 'Descargar comprobante (Excel)'}
-          </Button>
-        </div>
-      </FormSection>
-
       {/* Ajuste de UT */}
       <Can permission={PERMISSIONS.TAXES_PAYABLE.UPDATE}>
         <FormSection
@@ -908,6 +868,131 @@ function BatchDetail({ id }: { id: string }) {
         </FormSection>
       </Can>
 
+      {/* Comprobante de retención ISLR */}
+      <FormSection
+        title="Comprobante de retención ISLR"
+        description="Documento general del lote (Decreto 1.808): una hoja por sujeto retenido, con una fila por factura. Completa los datos para descargarlo."
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-[18px]">
+          <div className="space-y-1.5">
+            <label
+              htmlFor="comprobante-number"
+              className="text-sm font-medium leading-none"
+            >
+              N° de comprobante <span className="text-destructive">*</span>
+            </label>
+            <Input
+              id="comprobante-number"
+              placeholder="Ej. 20260600000079"
+              value={comprobanteNumber}
+              onChange={(e) =>
+                setComprobanteNumber(e.target.value.replace(/\D/g, '').slice(0, 14))
+              }
+              className="h-9 font-mono"
+              maxLength={14}
+              inputMode="numeric"
+            />
+            <p className="text-xs text-muted-foreground">
+              Correlativo SENIAT del comprobante (sólo números, máximo 14 dígitos).
+              Suma 1 por cada sujeto retenido del lote.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <label
+              htmlFor="comprobante-date"
+              className="text-sm font-medium leading-none"
+            >
+              Fecha de emisión <span className="text-destructive">*</span>
+            </label>
+            <DatePicker
+              id="comprobante-date"
+              value={comprobanteDate || undefined}
+              onChange={(v) => setComprobanteDate(v ?? '')}
+            />
+            <p className="text-xs text-muted-foreground">
+              Define también el período fiscal (año/mes) del comprobante.
+            </p>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-3">
+          <Can permission={PERMISSIONS.TAXES_PAYABLE.UPDATE}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onSaveComprobante}
+              disabled={busy || !comprobanteNumber.trim() || !comprobanteDate}
+            >
+              <Save className="w-3.5 h-3.5 mr-1.5" />
+              {busy ? 'Guardando…' : 'Guardar datos'}
+            </Button>
+          </Can>
+          <Button
+            type="button"
+            onClick={handleDownloadComprobante}
+            disabled={downloading || !comprobanteNumber.trim() || !comprobanteDate}
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5" />
+            {downloading ? 'Generando…' : 'Descargar comprobante (Excel)'}
+          </Button>
+        </div>
+      </FormSection>
+
+      {/* Comprobantes individuales por sujeto retenido */}
+      <FormSection
+        title="Comprobantes individuales"
+        description="Descarga el comprobante de un solo doctor o centro. Cada uno usa el correlativo que le corresponde en el comprobante general."
+      >
+        {islrProviders.length === 0 ? (
+          <p className="text-sm text-muted-foreground italic">
+            El lote no tiene sujetos retenidos.
+          </p>
+        ) : (
+          <ul className="text-sm divide-y">
+            {islrProviders.map((p, i) => (
+              <li
+                key={p.key}
+                className="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0"
+              >
+                <div className="min-w-0">
+                  <div className="font-medium truncate">{p.name}</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    {p.recipientType === 'doctor' ? 'Doctor' : 'Centro'}
+                    {comprobanteNumber.trim() ? (
+                      <>
+                        {' · N° comprobante '}
+                        <span className="font-mono">
+                          {comprobanteNumberForSheet(comprobanteNumber.trim(), i)}
+                        </span>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => handleDownloadProviderComprobante(p.key)}
+                  disabled={
+                    !!downloadingProviderKey ||
+                    !comprobanteNumber.trim() ||
+                    !comprobanteDate
+                  }
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5" />
+                  {downloadingProviderKey === p.key ? 'Generando…' : 'Descargar'}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {!comprobanteNumber.trim() || !comprobanteDate ? (
+          <p className="text-xs text-muted-foreground mt-2">
+            Completa el N° de comprobante y la fecha de emisión para descargar.
+          </p>
+        ) : null}
+      </FormSection>
+
       {/* Pagos registrados */}
       <FormSection
         title={`Pagos al SENIAT registrados (${batch.payments?.length ?? 0})`}
@@ -925,9 +1010,7 @@ function BatchDetail({ id }: { id: string }) {
                 <div className="flex-1 min-w-0 text-sm">
                   <div className="font-medium">
                     {PAYMENT_TYPE_LABEL[p.type]} ·{' '}
-                    {p.paymentDate
-                      ? new Date(p.paymentDate).toLocaleDateString('es-VE')
-                      : '—'}
+                    {p.paymentDate ? formatDateOnly(p.paymentDate) : '—'}
                   </div>
                   <div className="text-xs text-muted-foreground font-mono">
                     {formatMoney(p.amountInBs)} Bs.

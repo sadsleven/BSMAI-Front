@@ -47,10 +47,10 @@ function orderDateOf(o: AccountsReceivableOrder): Date | null {
 /**
  * Estado de cuenta para lotes cuyo deudor es un SEGURO (template
  * "EDOS DE CUENTA SEGUROS INDEXADO- NO INDEXADO.xlsx"):
- *  - Seguro NO indexado (lote modo USD): hoja "NO INDEXADO"; la tasa de TODAS
- *    las filas es la seleccionada en la card Resumen (`usdRate`, requerida).
+ *  - Seguro indexado (isIndexed=false, lote modo USD): la tasa de TODAS las
+ *    filas es la seleccionada en la card Resumen (`usdRate`, requerida).
  *    Monto Bs por fila = fórmula $ × tasa; fila final de totales.
- *  - Seguro indexado (lote modo tasa fija): hoja "INDEXADO"; sólo montos en $
+ *  - Seguro no indexado (isIndexed=true, lote modo tasa fija): sólo montos en $
  *    (sin columnas de tasa/Bs ni línea de corte "AL:").
  */
 export async function downloadEstadoCuentaSeguro(
@@ -63,7 +63,7 @@ export async function downloadEstadoCuentaSeguro(
   }
   const insuranceName = (batch.insurance?.name ?? '—').toUpperCase();
 
-  // Indexado: sin columnas TASA DEL DIA / MONTO FACTURADO Bs → última col J.
+  // Modo tasa fija (no indexado): sin columnas TASA DEL DIA / MONTO FACTURADO Bs → última col J.
   const lastCol = fixed ? 10 : 12;
   const lastColLetter = fixed ? 'J' : 'L';
 
@@ -90,7 +90,10 @@ export async function downloadEstadoCuentaSeguro(
     } as ExcelJS.ImagePosition);
   }
 
-  const today = new Date();
+  // ExcelJS interpreta los Date en UTC: anclar el día local a mediodía UTC para
+  // que después de las 20:00 VE no imprima la fecha de mañana.
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 12));
 
   // Fila 1: fecha de emisión a la derecha.
   const emitted = ws.getCell(`${lastColLetter}1`);
@@ -118,7 +121,7 @@ export async function downloadEstadoCuentaSeguro(
   rifCell.font = F8_BLUE;
   rifCell.alignment = { horizontal: 'left' };
 
-  // Fila 7: cabecera de la tabla (indexado: sin cols de tasa/Bs).
+  // Fila 7: cabecera de la tabla (modo tasa fija: sin cols de tasa/Bs).
   const HEADERS = [
     'FECHA',
     fixed ? 'NOMBRE CLIENTE' : 'CLIENTE',
@@ -154,9 +157,9 @@ export async function downloadEstadoCuentaSeguro(
   let rowNum = 8;
   for (const p of pivots) {
     const o = p.order;
-    const amountUsd = fixed
-      ? Number(o?.priceAmount ?? 0)
-      : Number(p.targetUsd ?? o?.priceAmount ?? 0);
+    // targetUsd del pivot = snapshot de la porción (una orden mixta sólo trae
+    // su porción fija a este lote); fallback al total para lotes legacy.
+    const amountUsd = Number(p.targetUsd ?? o?.priceAmount ?? 0);
 
     const row = ws.getRow(rowNum);
     const values: Array<[number, ExcelJS.CellValue, Partial<ExcelJS.Alignment>?, string?]> = [
@@ -197,7 +200,7 @@ export async function downloadEstadoCuentaSeguro(
   const totalsRow = ws.getRow(rowNum);
   const totalUsd = pivots.reduce((s, p) => {
     const o = p.order;
-    return s + (fixed ? Number(o?.priceAmount ?? 0) : Number(p.targetUsd ?? o?.priceAmount ?? 0));
+    return s + Number(p.targetUsd ?? o?.priceAmount ?? 0);
   }, 0);
 
   // Bordes en TODA la fila de totales, aun en celdas vacías.

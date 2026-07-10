@@ -17,6 +17,14 @@ export type AccountsReceivableStatus =
  */
 export type AccountsReceivableDebtorType = 'insurance' | 'holder' | 'cashea';
 
+/**
+ * Porción de una orden cubierta por una deuda: `full` = orden completa;
+ * una orden de seguro no indexado con STs indexados se parte en `fixed`
+ * (STs no indexados, Bs a la tasa de la orden) + `indexed` (STs indexados,
+ * USD a la tasa del día del cobro), cada una en un lote de su modo.
+ */
+export type AroPortion = 'full' | 'fixed' | 'indexed';
+
 export interface AccountsReceivablePayment {
   id: string;
   type: OrderPaymentType;
@@ -38,6 +46,8 @@ export interface AccountsReceivablePayment {
 export interface AccountsReceivableOrder {
   receivableId: string;
   orderId: string;
+  /** Porción de la orden cubierta por esta fila (default 'full'). */
+  portion?: AroPortion;
   useFixedRate: boolean;
   targetUsd?: string | number | null;
   targetBs?: string | number | null;
@@ -63,11 +73,16 @@ export interface AccountsReceivableOrder {
   } | null;
 }
 
-/** Orden finalizada con deudor, disponible para armar un lote (Pendiente). */
+/**
+ * Orden finalizada con deudor, disponible para armar un lote (Pendiente).
+ * Una orden mixta genera 2 pendientes (porción fija + porción indexada);
+ * `useFixedRate` es el modo de la PORCIÓN.
+ */
 export interface PendingReceivable {
   orderId: string;
   orderNumber: string;
   orderType: string;
+  portion?: AroPortion;
   debtorType: AccountsReceivableDebtorType;
   insuranceId: string | null;
   holderId: string | null;
@@ -145,6 +160,11 @@ export interface CreateAccountsReceivableBatchDto {
   insuranceId?: string;
   holderId?: string;
   orderIds: string[];
+  /**
+   * Modo del lote (tasa fija Bs vs USD). Resuelve qué porción de una orden
+   * mixta entra al lote; el FE lo envía siempre.
+   */
+  mode?: 'usd' | 'fixed';
 }
 
 export interface PaginatedResponse<T> {
@@ -210,6 +230,21 @@ export function pendingDebtorId(p: PendingReceivable): string | null {
 export function pendingBatchKey(p: PendingReceivable): string {
   const debtorId = p.debtorType === 'cashea' ? '' : pendingDebtorId(p) ?? '';
   return `${p.debtorType}:${debtorId}:${p.useFixedRate}`;
+}
+
+/**
+ * Clave única de una fila pendiente: una orden mixta aparece dos veces (una
+ * por porción), así que `orderId` solo no identifica la fila.
+ */
+export function pendingRowKey(p: PendingReceivable): string {
+  return `${p.orderId}:${p.portion ?? 'full'}`;
+}
+
+/** Etiqueta de la porción (null para 'full': sin badge). */
+export function portionLabel(portion?: AroPortion | null): string | null {
+  if (portion === 'fixed') return 'Porción tasa fija';
+  if (portion === 'indexed') return 'Porción indexada';
+  return null;
 }
 
 /** Etiqueta corta del tipo de deudor de una orden pendiente. */

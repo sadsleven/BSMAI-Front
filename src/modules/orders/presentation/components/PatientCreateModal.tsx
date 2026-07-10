@@ -117,6 +117,7 @@ export function PatientCreateModal({ open, onOpenChange, onCreated }: PatientCre
               void handleSubmit(onSubmit, (errs) => notifyFormErrors(errs))(e);
             }}
             className="flex flex-col flex-1 overflow-hidden"
+            autoComplete="off"
           >
             <div className="px-6 overflow-y-auto flex-1 py-4">
               <PatientForm />

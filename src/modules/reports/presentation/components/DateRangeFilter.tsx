@@ -1,5 +1,4 @@
 import { DatePicker } from '@/components/ui/date-picker';
-import { Label } from '@/components/ui/label';
 
 export type DateRangeFilterProps = {
   from?: string;
@@ -9,6 +8,11 @@ export type DateRangeFilterProps = {
   toLabel?: string;
 };
 
+/**
+ * Par de pickers Desde/Hasta para toolbars de reportes. Labels inline (a la
+ * izquierda de cada picker) para mantener la fila alineada con el resto de
+ * los controles h-9 del `DataTableToolbar`.
+ */
 export function DateRangeFilter({
   from,
   to,
@@ -17,12 +21,12 @@ export function DateRangeFilter({
   toLabel = 'Hasta',
 }: DateRangeFilterProps) {
   return (
-    <div className="flex items-end gap-2 flex-wrap">
-      <div className="flex flex-col gap-1">
-        <Label className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+    <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-center gap-1.5">
+        <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">
           {fromLabel}
-        </Label>
-        <div className="w-48">
+        </span>
+        <div className="w-44">
           <DatePicker
             value={from}
             onChange={(v) => onChange(v, to)}
@@ -30,11 +34,11 @@ export function DateRangeFilter({
           />
         </div>
       </div>
-      <div className="flex flex-col gap-1">
-        <Label className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+      <div className="flex items-center gap-1.5">
+        <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">
           {toLabel}
-        </Label>
-        <div className="w-48">
+        </span>
+        <div className="w-44">
           <DatePicker
             value={to}
             onChange={(v) => onChange(from, v)}

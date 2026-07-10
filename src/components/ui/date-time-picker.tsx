@@ -4,8 +4,14 @@ import { es } from 'date-fns/locale';
 import { Calendar as CalendarIcon, Clock } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
 export type DateTimePickerProps = {
@@ -38,6 +44,9 @@ function pad(n: number): string {
   return String(n).padStart(2, '0');
 }
 
+const HOURS = Array.from({ length: 24 }, (_, i) => pad(i));
+const MINUTE_STEPS = Array.from({ length: 12 }, (_, i) => pad(i * 5));
+
 /** Build local ISO string `YYYY-MM-DDTHH:mm:ss` (no TZ). Backend interprets as local. */
 function toLocalIso(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
@@ -69,7 +78,13 @@ export function DateTimePicker({
   }, []);
   const endYear = toYear ?? (disableFuture ? today.getFullYear() : today.getFullYear() + 5);
 
-  const timeValue = current ? `${pad(current.getHours())}:${pad(current.getMinutes())}` : '';
+  const hourValue = current ? pad(current.getHours()) : undefined;
+  const minuteValue = current ? pad(current.getMinutes()) : undefined;
+  // Pasos de 5 min + el minuto exacto del valor cargado si no calza (ej. 12:37).
+  const minuteOptions = React.useMemo(() => {
+    if (!minuteValue || MINUTE_STEPS.includes(minuteValue)) return MINUTE_STEPS;
+    return [...MINUTE_STEPS, minuteValue].sort();
+  }, [minuteValue]);
 
   const clampToNow = (d: Date): Date => {
     if (!disableFuture) return d;
@@ -89,13 +104,15 @@ export function DateTimePicker({
     onChange(toLocalIso(clampToNow(next)));
   };
 
-  const setTime = (raw: string) => {
-    const [hStr, mStr] = raw.split(':');
-    const h = Number(hStr);
-    const m = Number(mStr);
-    if (!Number.isFinite(h) || !Number.isFinite(m)) return;
+  const setHour = (h: string) => {
     const base = current ? new Date(current) : new Date();
-    base.setHours(h, m, 0, 0);
+    base.setHours(Number(h), current ? current.getMinutes() : 0, 0, 0);
+    onChange(toLocalIso(clampToNow(base)));
+  };
+
+  const setMinute = (m: string) => {
+    const base = current ? new Date(current) : new Date();
+    base.setMinutes(Number(m), 0, 0);
     onChange(toLocalIso(clampToNow(base)));
   };
 
@@ -142,18 +159,47 @@ export function DateTimePicker({
           disabled={disableFuture ? { after: today } : undefined}
         />
         <div className="border-t p-3 space-y-1.5">
-          <Label htmlFor={`${id ?? 'datetime'}-time`} className="text-xs font-medium flex items-center gap-1.5">
+          <Label className="text-xs font-medium flex items-center gap-1.5">
             <Clock className="w-3.5 h-3.5 text-muted-foreground" />
             Hora
           </Label>
-          <Input
-            id={`${id ?? 'datetime'}-time`}
-            type="time"
-            value={timeValue}
-            onChange={(e) => setTime(e.target.value)}
-            className="h-9"
-            step={60}
-          />
+          <div className="flex items-center gap-1.5">
+            <Select value={hourValue} onValueChange={setHour}>
+              <SelectTrigger
+                size="sm"
+                id={`${id ?? 'datetime'}-hour`}
+                aria-label="Hora"
+                className="flex-1 font-mono tabular-nums"
+              >
+                <SelectValue placeholder="--" />
+              </SelectTrigger>
+              <SelectContent position="popper" className="max-h-60 min-w-[4rem]">
+                {HOURS.map((h) => (
+                  <SelectItem key={h} value={h} className="font-mono tabular-nums">
+                    {h}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <span className="text-sm font-medium text-muted-foreground">:</span>
+            <Select value={minuteValue} onValueChange={setMinute}>
+              <SelectTrigger
+                size="sm"
+                id={`${id ?? 'datetime'}-minute`}
+                aria-label="Minutos"
+                className="flex-1 font-mono tabular-nums"
+              >
+                <SelectValue placeholder="--" />
+              </SelectTrigger>
+              <SelectContent position="popper" className="max-h-60 min-w-[4rem]">
+                {minuteOptions.map((m) => (
+                  <SelectItem key={m} value={m} className="font-mono tabular-nums">
+                    {m}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </PopoverContent>
     </Popover>

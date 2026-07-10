@@ -28,6 +28,8 @@ import type { CareCenter } from '@/modules/care-centers/domain/models/careCenter
 import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
+import { ReportDownloadButton } from '../components/ReportDownloadButton';
+import { downloadPayablesReportXlsx } from '../components/reportsExcel';
 import { formatUsd, formatBs, formatDate, formatNumber } from '../../domain/format';
 import {
   reportsGateway,
@@ -38,20 +40,20 @@ import {
 import { getHttpErrorMessage } from '@/lib/api';
 
 const STATE_LABEL: Record<PayableObligationState, string> = {
-  sin_lote: 'Sin lote',
+  sin_lote: 'Por pagar',
   unpaid: 'Por pagar',
   partially_paid: 'Pago parcial',
   paid: 'Pagado',
 };
 
 const STATE_TONE: Record<PayableObligationState, string> = {
-  sin_lote: 'bg-muted text-muted-foreground',
+  sin_lote: 'bg-warning-soft text-warning',
   unpaid: 'bg-warning-soft text-warning',
   partially_paid: 'bg-brand-cyan-soft text-brand-blue-strong',
   paid: 'bg-success-soft text-success',
 };
 
-const COLUMNS = 9;
+const COLUMNS = 8;
 
 const EMPTY_SUMMARY: ReportPayableSummary = {
   count: 0,
@@ -181,6 +183,12 @@ export function ReportPayablesList() {
     <ReportShell
       title="Reporte de cuentas por pagar"
       description={`${formatNumber(summary.count)} obligaci${summary.count === 1 ? 'ón' : 'ones'} en el rango filtrado`}
+      headerRight={
+        <ReportDownloadButton
+          disabled={loading || rows.length === 0}
+          onDownload={() => downloadPayablesReportXlsx(rows)}
+        />
+      }
       kpis={
         <KpiRow
           items={[
@@ -189,7 +197,7 @@ export function ReportPayablesList() {
               tone: 'blue',
               label: 'Neto a pagar',
               value: formatBs(summary.netBs),
-              hint: `Total${formatUsd(summary.grossUsd)} · tras retenciones`,
+              hint: `Total ${formatUsd(summary.grossUsd)} · tras retenciones`,
             },
             {
               icon: TrendingUp,
@@ -203,7 +211,7 @@ export function ReportPayablesList() {
               tone: 'warning',
               label: 'Pendiente por pagar',
               value: formatBs(summary.pendingBs),
-              hint: 'Incluye obligaciones sin lote',
+              hint: 'Incluye obligaciones por pagar',
             },
             {
               icon: Banknote,
@@ -296,12 +304,11 @@ export function ReportPayablesList() {
           <TableHeader>
             <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Fecha</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Orden interna</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Proveedor</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Lote</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">TotalUSD</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">TotalBs.</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Retención Bs.</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Paciente</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Procedimiento</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Orden</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Total USD</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Neto Bs.</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Estado</TableHead>
             </TableRow>
@@ -332,26 +339,24 @@ export function ReportPayablesList() {
                   <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
                     {formatDate(r.orderDate)}
                   </TableCell>
-                  <TableCell className="py-3.5 px-4 text-sm font-mono">
-                    {r.internalNumber}
-                  </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-medium">
                     <div>{r.providerName}</div>
                     <div className="text-xs text-muted-foreground">
                       {r.providerType === 'doctor' ? 'Doctor' : 'Centro'}
+                      {r.insuranceName ? ` · ${r.insuranceName}` : ''}
                     </div>
                   </TableCell>
+                  <TableCell className="py-3.5 px-4 text-sm truncate">
+                    {r.patientName || '—'}
+                  </TableCell>
+                  <TableCell className="py-3.5 px-4 text-sm truncate max-w-[220px]">
+                    {r.procedure || '—'}
+                  </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono">
-                    {r.payableNumber ?? '—'}
+                    {r.internalNumber}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
                     {formatUsd(r.grossUsd)}
-                  </TableCell>
-                  <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                    {formatBs(r.grossBs)}
-                  </TableCell>
-                  <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-muted-foreground">
-                    {formatBs(r.retentionBs)}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
                     {formatBs(r.netBs)}
