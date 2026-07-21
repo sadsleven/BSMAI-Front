@@ -20,11 +20,12 @@ import { exchangeRateSchema, type ExchangeRateValues } from '@/lib/validations/s
 import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { ChevronLeft, AlertTriangle } from 'lucide-react';
+import { toIsoWithOffset } from '@/lib/dates';
 
 function nowIsoLocal(): string {
   const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
+  d.setSeconds(0, 0);
+  return toIsoWithOffset(d);
 }
 
 export function ExchangeRateCreate() {

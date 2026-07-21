@@ -242,6 +242,8 @@ export interface ArcBeneficiary {
 export interface ArcReport {
   period: { from: string; to: string; year: number };
   beneficiaries: ArcBeneficiary[];
+  /** Rango de años seleccionable: orden más vieja → más nueva del sistema. */
+  years: { min: number; max: number };
 }
 
 function params(q: ReportQuery & { groupBy?: string }): Record<string, string | undefined> {

@@ -14,12 +14,14 @@ import {
   holderDisplayId,
   holderDisplayName,
   orderServiceKeyDisplay,
+  orderUserDisplayName,
   ORDER_STATUS_LABEL,
   ORDER_TYPE_LABEL,
   PAYMENT_TYPE_LABEL,
   type Order,
   type OrderStatus,
 } from '../../domain/models/order';
+import { OrderChangeHistory } from './OrderChangeHistory';
 
 export type OrderDetailProps = {
   orderId: string | null;
@@ -311,6 +313,7 @@ export function OrderDetailBody({
 
       {(order.createdAt || order.updatedAt) && (
         <DetailSection title="Auditoría">
+          <DetailRow label="Creada por" value={orderUserDisplayName(order.createdBy)} />
           {order.createdAt && (
             <DetailRow label="Creada" value={fmtDate(order.createdAt)} />
           )}
@@ -327,6 +330,8 @@ export function OrderDetailBody({
           )}
         </DetailSection>
       )}
+
+      <OrderChangeHistory orderId={order.id} />
     </div>
   );
 }

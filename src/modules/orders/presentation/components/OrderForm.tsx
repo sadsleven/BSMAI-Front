@@ -31,7 +31,7 @@ import {
   setLastBranchId,
 } from '@/lib/auth/branches';
 import type { OrderType } from '../../domain/models/order';
-import { ORDER_TYPE_LABEL } from '../../domain/models/order';
+import { ORDER_TYPE_LABEL, orderUserDisplayName } from '../../domain/models/order';
 import type { OrderValues } from '@/lib/validations/schemas';
 import type { Patient } from '@/modules/patients/domain/models/patient';
 import type { Specialty } from '@/modules/specialties/domain/models/specialty';
@@ -185,6 +185,12 @@ export type OrderFormProps = {
    * pegar al backend. `true` para tipos sin requisito o ya cuadrados.
    */
   onStep1PaymentOkChange?: (ok: boolean) => void;
+  /**
+   * Paso 1 de sólo lectura porque el usuario actual NO es quien creó la orden
+   * (sólo el creador — o Super Admin — puede modificarlo). Los pasos 2-4 no se
+   * ven afectados.
+   */
+  step1ReadOnly?: boolean;
 };
 
 export function OrderForm({
@@ -196,6 +202,7 @@ export function OrderForm({
   onStepChange,
   onOrderRefresh,
   onStep1PaymentOkChange,
+  step1ReadOnly = false,
 }: OrderFormProps) {
   const me = useAuthStore((s) => s.user);
   const { has } = usePermissions();
@@ -917,13 +924,23 @@ export function OrderForm({
 
       {!renderStep1 ? null : (
       <fieldset
-        disabled={isFinalized}
+        disabled={isFinalized || step1ReadOnly}
         className="space-y-6 border-0 p-0 m-0 min-w-0"
       >
       {isFinalized ? (
         <div className="rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground flex items-start gap-2">
           <ShieldCheck className="w-3.5 h-3.5 mt-0.5 shrink-0" />
           La orden está finalizada. Los datos del Paso 1 son de sólo lectura.
+        </div>
+      ) : step1ReadOnly ? (
+        <div className="rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground flex items-start gap-2">
+          <ShieldCheck className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+          Esta orden fue creada por{' '}
+          <span className="font-medium">
+            {orderUserDisplayName(savedOrder?.createdBy)}
+          </span>
+          . Solo ese usuario puede modificar el Paso 1; puedes continuar con los
+          demás pasos.
         </div>
       ) : null}
       <FormSection

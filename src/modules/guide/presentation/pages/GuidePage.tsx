@@ -464,16 +464,10 @@ export function GuidePage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Card title="Panel ejecutivo">
                 <p>
-                  Dashboard gerencial: flujo de caja mensual, órdenes por
-                  estado, KPIs principales. Punto de entrada para tomar
-                  decisiones de alto nivel sin entrar a cada reporte.
-                </p>
-              </Card>
-              <Card title="Análisis de órdenes">
-                <p>
-                  Volumen y mezcla de órdenes por tipo (Contado / Crédito /
-                  Seguro / Cashea), por especialidad y por sucursal. Gráficos
-                  de tendencia para entender qué se está vendiendo.
+                  Dashboard gerencial todo-en-uno con tres secciones: flujo de
+                  caja mensual con KPIs, análisis de órdenes (volumen y mezcla
+                  por tipo, especialidad y aseguradora) y cobranzas por
+                  aseguradora. Un solo filtro de fecha aplica a toda la página.
                 </p>
               </Card>
               <Card title="Resumen financiero">
@@ -492,12 +486,6 @@ export function GuidePage() {
                   Listado completo de cuentas por cobrar con su estado, target,
                   cobrado y pendiente. Filtrable por deudor (seguro / titular)
                   y estado.
-                </p>
-              </Card>
-              <Card title="Cobranzas por aseguradora">
-                <p>
-                  Cobros agrupados por compañía de seguros. Útil para evaluar
-                  qué aseguradoras pagan a tiempo y cuáles atrasan.
                 </p>
               </Card>
               <Card title="Cobros recibidos">

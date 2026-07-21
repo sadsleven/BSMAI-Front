@@ -44,6 +44,7 @@ import {
   type OrderType,
   holderDisplayName,
   orderInternalNumbers,
+  orderUserDisplayName,
 } from '../../domain/models/order';
 import { Can } from '@/modules/auth/presentation/components/Can';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
@@ -414,7 +415,7 @@ export function OrderList() {
               </TableHead>
               {!isProvider ? (
                 <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                  Sucursal
+                  Creado por
                 </TableHead>
               ) : null}
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
@@ -504,7 +505,7 @@ export function OrderList() {
                     </TableCell>
                     {!isProvider ? (
                       <TableCell className="py-3.5 px-4 text-sm">
-                        {order.branch?.name ?? '—'}
+                        {orderUserDisplayName(order.createdBy)}
                       </TableCell>
                     ) : null}
                     <TableCell className="py-3.5 px-4">

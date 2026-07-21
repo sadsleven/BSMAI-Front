@@ -564,6 +564,20 @@ export const paymentMethodsArraySchema = z
   .max(20, 'Máximo 20 métodos de pago')
   .optional();
 
+// ---- Bank (catálogo de bancos administrable) ----
+export const bankSchema = z.object({
+  code: z
+    .string({ error: 'El código es obligatorio' })
+    .trim()
+    .regex(/^\d{3,4}$/, 'El código debe tener 3 o 4 dígitos'),
+  name: z
+    .string({ error: 'El nombre es obligatorio' })
+    .trim()
+    .min(1, 'El nombre es obligatorio')
+    .max(200, 'El nombre no puede superar 200 caracteres'),
+});
+export type BankValues = z.infer<typeof bankSchema>;
+
 // ---- PaymentAccount (cuenta propia del negocio donde se recibe dinero) ----
 export const paymentAccountSchema = z
   .object({

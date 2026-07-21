@@ -6,8 +6,8 @@ import type { ArcBeneficiary, ArcReport } from '../../infrastructure/reportsGate
 /**
  * Comprobante ARC — Agente de Retención (Decreto 1.808). Emite una hoja por
  * beneficiario (proveedor) con sus datos, los del agente (AFMI) y la tabla del
- * impuesto retenido y enterado del ejercicio fiscal. Sigue el formato oficial
- * SENIAT del comprobante de agente de retención de ISLR.
+ * impuesto retenido del ejercicio fiscal (sin columnas de impuesto enterado).
+ * Sigue el formato oficial SENIAT del comprobante de agente de retención de ISLR.
  */
 
 /** Agente de retención (AFMI) — datos fijos del encabezado. */
@@ -79,25 +79,24 @@ function buildBeneficiarySheet(
   b: ArcBeneficiary,
   period: ArcReport['period'],
 ): void {
+  // 6 columnas que reparten el ancho total que antes ocupaban 8 (≈116).
   ws.columns = [
-    { width: 15 }, // A FECHA
-    { width: 16 }, // B CANTIDAD OBJETO
-    { width: 9 }, // C % TARIFA
-    { width: 15 }, // D IMPUESTO RETENIDO
-    { width: 18 }, // E TOTAL RETENCION ACUM
-    { width: 16 }, // F IMPUESTO RET ACUM
-    { width: 13 }, // G EN FECHA
-    { width: 14 }, // H BANCO
+    { width: 17 }, // A FECHA
+    { width: 18 }, // B CANTIDAD OBJETO
+    { width: 10 }, // C % TARIFA
+    { width: 17 }, // D IMPUESTO RETENIDO
+    { width: 27 }, // E TOTAL RETENCION ACUM
+    { width: 27 }, // F IMPUESTO RET ACUM
   ];
 
   // --- Encabezado SENIAT + título ---
   ws.getCell('A1').value = 'SENIAT';
   ws.getCell('A1').font = font({ bold: true });
-  ws.mergeCells('B1:H1');
+  ws.mergeCells('B1:F1');
   ws.getCell('B1').value = TITLE_1;
   ws.getCell('B1').font = font({ bold: true });
   ws.getCell('B1').alignment = { horizontal: 'center', vertical: 'middle' };
-  ws.mergeCells('B2:H2');
+  ws.mergeCells('B2:F2');
   ws.getCell('B2').value = TITLE_2;
   ws.getCell('B2').font = font({ bold: true });
   ws.getCell('B2').alignment = { horizontal: 'center', vertical: 'middle' };
@@ -105,7 +104,7 @@ function buildBeneficiarySheet(
   // --- Etiquetas de sección ---
   ws.getCell('A4').value = 'DATOS DEL AGENTE DE RETENCION';
   ws.getCell('A4').font = font({ bold: true });
-  ws.getCell('E4').value = 'DATOS DEL BENEFICIARIO';
+  ws.getCell('E4').value = 'DATOS DEL AGENTE RETENIDO';
   ws.getCell('E4').font = font({ bold: true });
 
   const lbl = (addr: string, text: string, wrap = false) => {
@@ -137,31 +136,27 @@ function buildBeneficiarySheet(
   ws.mergeCells('C10:D12');
   outlineBox(ws, 5, 1, 12, 4);
 
-  // --- Caja BENEFICIARIO (E5:H12), split 2+2 ---
+  // --- Caja BENEFICIARIO (E5:F12), split 1+1 ---
   const natural = b.personType !== 'legal_entity';
-  ws.mergeCells('E5:F5'); lbl('E5', 'Apellido (s) o Nombre (s) o Razón Social');
-  ws.mergeCells('G5:H5'); lbl('G5', 'Tipo de persona');
-  ws.mergeCells('E6:F6'); val('E6', b.name, true, true);
-  ws.mergeCells('G6:H6');
-  ws.getCell('G6').value = `Natural: [${natural ? 'X' : ' '}]     Jurídica: [${natural ? ' ' : 'X'}]`;
-  ws.getCell('G6').font = font({ size: 9 });
-  ws.getCell('G6').alignment = { horizontal: 'center', vertical: 'middle' };
-  ws.mergeCells('E7:F7'); lbl('E7', 'Cédula de Identidad:');
-  ws.mergeCells('G7:H7'); lbl('G7', 'Número de R.I.F.');
-  ws.mergeCells('E8:F8'); val('E8', b.cedula ?? ''); ws.getCell('E8').alignment = { horizontal: 'center', vertical: 'middle' };
-  ws.mergeCells('G8:H8'); val('G8', b.rif ?? ''); ws.getCell('G8').alignment = { horizontal: 'center', vertical: 'middle' };
-  ws.mergeCells('E9:F9'); lbl('E9', 'Dirección y Teléfono (s):');
-  ws.mergeCells('G9:H9'); lbl('G9', 'Período a que corresponden las remuneraciones pagadas', true);
-  ws.mergeCells('E10:F12');
+  lbl('E5', 'Apellido (s) o Nombre (s) o Razón Social', true);
+  lbl('F5', 'Tipo de persona');
+  val('E6', b.name, true, true);
+  ws.getCell('F6').value = `Natural: [${natural ? 'X' : ' '}]  Jurídica: [${natural ? ' ' : 'X'}]`;
+  ws.getCell('F6').font = font({ size: 9 });
+  ws.getCell('F6').alignment = { horizontal: 'center', vertical: 'middle' };
+  lbl('E7', 'Cédula de Identidad:');
+  lbl('F7', 'Número de R.I.F.');
+  val('E8', b.cedula ?? ''); ws.getCell('E8').alignment = { horizontal: 'center', vertical: 'middle' };
+  val('F8', b.rif ?? ''); ws.getCell('F8').alignment = { horizontal: 'center', vertical: 'middle' };
+  lbl('E9', 'Dirección y Teléfono (s):');
+  lbl('F9', 'Período a que corresponden las remuneraciones pagadas', true);
+  ws.mergeCells('E10:E12');
   val('E10', `${b.address ?? ''}${b.phone ? `\nTel: ${b.phone}` : ''}`, false, true);
-  ws.mergeCells('G10:H10');
-  ws.getCell('G10').value = `DESDE: ${period.from.slice(8, 10)}-${period.from.slice(5, 7)}-${period.from.slice(0, 4)}`;
-  ws.getCell('G10').font = font({ size: 9 });
-  ws.mergeCells('G11:H11');
-  ws.getCell('G11').value = `HASTA: ${period.to.slice(8, 10)}-${period.to.slice(5, 7)}-${period.to.slice(0, 4)}`;
-  ws.getCell('G11').font = font({ size: 9 });
-  ws.mergeCells('G12:H12');
-  outlineBox(ws, 5, 5, 12, 8);
+  ws.getCell('F10').value = `DESDE: ${period.from.slice(8, 10)}-${period.from.slice(5, 7)}-${period.from.slice(0, 4)}`;
+  ws.getCell('F10').font = font({ size: 9 });
+  ws.getCell('F11').value = `HASTA: ${period.to.slice(8, 10)}-${period.to.slice(5, 7)}-${period.to.slice(0, 4)}`;
+  ws.getCell('F11').font = font({ size: 9 });
+  outlineBox(ws, 5, 5, 12, 6);
 
   // --- Título de la tabla ---
   ws.getCell('A14').value = 'INFORMACION DEL IMPUESTO RETENIDO Y ENTERADO';
@@ -185,21 +180,8 @@ function buildBeneficiarySheet(
     cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
     cell.fill = HEADER_FILL;
   }
-  ws.mergeCells(H, 7, H, 8);
-  ws.getCell(H, 7).value = 'IMPUESTO ENTERADO';
-  ws.getCell(H, 7).font = font({ bold: true, size: 8 });
-  ws.getCell(H, 7).alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-  ws.getCell(H, 7).fill = HEADER_FILL;
-  ws.getCell(H + 1, 7).value = 'EN FECHA';
-  ws.getCell(H + 1, 8).value = 'BANCO';
-  for (const c of [7, 8]) {
-    const cell = ws.getCell(H + 1, c);
-    cell.font = font({ bold: true, size: 8 });
-    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-    cell.fill = HEADER_FILL;
-  }
   ws.getRow(H).height = 34;
-  for (let c = 1; c <= 8; c++) {
+  for (let c = 1; c <= 6; c++) {
     ws.getCell(H, c).border = THIN_BORDER;
     ws.getCell(H + 1, c).border = THIN_BORDER;
   }
@@ -215,8 +197,6 @@ function buildBeneficiarySheet(
       [4, line.retainedBs, '#,##0.00'],
       [5, line.accBaseBs, '#,##0.00'],
       [6, line.accRetainedBs, '#,##0.00'],
-      [7, dateCell(line.enteradoDate), 'dd/mm/yyyy', { horizontal: 'center' }],
-      [8, line.enteradoBank ?? '', '@', { horizontal: 'center' }],
     ];
     for (const [c, v, numFmt, align] of cells) {
       const cell = ws.getCell(r, c);
@@ -231,7 +211,7 @@ function buildBeneficiarySheet(
   const lastDataRow = r - 1;
 
   // --- Fila de TOTALES ---
-  for (let c = 1; c <= 8; c++) {
+  for (let c = 1; c <= 6; c++) {
     ws.getCell(r, c).border = THIN_BORDER;
     ws.getCell(r, c).font = font({ bold: true });
     ws.getCell(r, c).fill = HEADER_FILL;
@@ -257,7 +237,9 @@ function buildBeneficiarySheet(
   ws.getCell(r, 1).font = font({ size: 8 });
 }
 
-export async function downloadArcXlsx(report: ArcReport): Promise<void> {
+export async function downloadArcXlsx(
+  report: Pick<ArcReport, 'period' | 'beneficiaries'>,
+): Promise<void> {
   if (!report.beneficiaries.length) {
     throw new Error('No hay retenciones en el período para generar el ARC');
   }

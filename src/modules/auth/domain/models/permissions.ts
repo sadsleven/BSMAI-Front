@@ -52,6 +52,11 @@ export const PERMISSIONS = {
   BRANCHES: buildResource('branches'),
   TAX_UNITS: buildResource('tax-units'),
   PAYMENT_ACCOUNTS: buildResource('payment-accounts'),
+  BANKS: {
+    CREATE: 'banks.create',
+    UPDATE: 'banks.update',
+    TOGGLE_ACTIVE: 'banks.toggle-active',
+  },
   ORDERS: {
     LIST: 'orders.list',
     CREATE: 'orders.create',
@@ -104,6 +109,7 @@ export const PERMISSIONS = {
     ORDERS_TRACKING_LIST: 'reports.orders-tracking.list',
     SERVICES_BILLED_LIST: 'reports.services-billed.list',
     TAXES_RETAINED_LIST: 'reports.taxes-retained.list',
+    ARC_LIST: 'reports.arc.list',
     EXECUTIVE_PANEL_LIST: 'reports.executive-panel.list',
     ORDERS_ANALYTICS_LIST: 'reports.orders-analytics.list',
     INSURER_COLLECTIONS_LIST: 'reports.insurer-collections.list',

@@ -14,7 +14,7 @@ import {
 import { FormSection, FormGrid } from '@/components/ui/form-section';
 import { FormSwitch } from '@/components/ui/form-switch';
 import { bankGateway } from '@/modules/banks/infrastructure/bankGateway';
-import type { Bank } from '@/modules/banks/domain/models/bank';
+import { selectableBanks, type Bank } from '@/modules/banks/domain/models/bank';
 import { formatPhoneDigits } from '@/lib/validations/ve-formats';
 import type { PaymentAccountValues } from '@/lib/validations/schemas';
 import { cn } from '@/lib/utils';
@@ -75,6 +75,8 @@ export function PaymentAccountFormFields({ lockType }: PaymentAccountFormFieldsP
   const type = watch('type');
   const isActive = watch('isActive') ?? true;
   const bankCode = watch('bankCode');
+
+  const bankOptions = useMemo(() => selectableBanks(banks, bankCode), [banks, bankCode]);
 
   const invalid = (k: keyof PaymentAccountValues) =>
     errors[k] ? 'border-destructive focus-visible:ring-destructive/30' : '';
@@ -180,7 +182,7 @@ export function PaymentAccountFormFields({ lockType }: PaymentAccountFormFieldsP
                   <SelectValue placeholder={loadingBanks ? 'Cargando…' : 'Seleccionar banco'} />
                 </SelectTrigger>
                 <SelectContent>
-                  {banks.map((b) => (
+                  {bankOptions.map((b) => (
                     <SelectItem key={b.code} value={b.code}>
                       {b.code} — {b.name}
                     </SelectItem>
@@ -257,7 +259,7 @@ export function PaymentAccountFormFields({ lockType }: PaymentAccountFormFieldsP
                   <SelectValue placeholder={loadingBanks ? 'Cargando…' : 'Seleccionar banco'} />
                 </SelectTrigger>
                 <SelectContent>
-                  {banks.map((b) => (
+                  {bankOptions.map((b) => (
                     <SelectItem key={b.code} value={b.code}>
                       {b.code} — {b.name}
                     </SelectItem>
@@ -326,7 +328,7 @@ export function PaymentAccountFormFields({ lockType }: PaymentAccountFormFieldsP
                   <SelectValue placeholder={loadingBanks ? 'Cargando…' : 'Seleccionar banco'} />
                 </SelectTrigger>
                 <SelectContent>
-                  {banks.map((b) => (
+                  {bankOptions.map((b) => (
                     <SelectItem key={b.code} value={b.code}>
                       {b.code} — {b.name}
                     </SelectItem>
@@ -395,7 +397,7 @@ export function PaymentAccountFormFields({ lockType }: PaymentAccountFormFieldsP
                   <SelectValue placeholder={loadingBanks ? 'Cargando…' : 'Seleccionar banco'} />
                 </SelectTrigger>
                 <SelectContent>
-                  {banks.map((b) => (
+                  {bankOptions.map((b) => (
                     <SelectItem key={b.code} value={b.code}>
                       {b.code} — {b.name}
                     </SelectItem>

@@ -368,6 +368,103 @@ export function orderInternalNumbers(o: Order): string[] {
     .map((x) => x.internalNumber);
 }
 
+// ----- Historial de cambios por usuario -----
+
+export type OrderChangeAction =
+  | 'create'
+  | 'update'
+  | 'authorize_amount'
+  | 'attend'
+  | 'report'
+  | 'billing'
+  | 'payment_add'
+  | 'payment_update'
+  | 'payment_remove'
+  | 'soft_delete'
+  | 'restore';
+
+/** Fila del historial de cambios de la orden (mapea OrderChangeLog del BE). */
+export interface OrderChangeLog {
+  id: string;
+  orderId: string;
+  userId: string;
+  user?: {
+    id: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    email?: string | null;
+  } | null;
+  action: OrderChangeAction;
+  /** Detalle por campo `{ campo: { from, to } }`. Null si la acción no lleva diff. */
+  changes?: Record<string, { from?: unknown; to?: unknown }> | null;
+  createdAt: string;
+}
+
+export const ORDER_LOG_ACTION_LABEL: Record<OrderChangeAction, string> = {
+  create: 'Creación de la orden',
+  update: 'Edición del Paso 1',
+  authorize_amount: 'Autorización de monto',
+  attend: 'Atención del paciente',
+  report: 'Informe médico y estudios',
+  billing: 'Facturación y liquidación',
+  payment_add: 'Pago agregado',
+  payment_update: 'Pago modificado',
+  payment_remove: 'Pago eliminado',
+  soft_delete: 'Movida a la papelera',
+  restore: 'Restaurada',
+};
+
+export const ORDER_LOG_FIELD_LABEL: Record<string, string> = {
+  branchId: 'Sucursal',
+  type: 'Tipo de orden',
+  holderId: 'Titular',
+  patientId: 'Paciente',
+  contractorId: 'Contratista',
+  insuranceId: 'Seguro',
+  insuranceSource: 'Origen del seguro',
+  serviceKey: 'Clave de servicio',
+  isReimbursement: 'Reembolso',
+  specialtyId: 'Especialidad',
+  orderDate: 'Fecha de orden',
+  appointmentDate: 'Fecha de atención',
+  priceAmount: 'Monto',
+  casheaFirstInstallmentAmount: 'Inicial Cashea',
+  useFixedRate: 'Tasa fija',
+  fixedExchangeRateId: 'Tasa de la orden',
+  serviceTypes: 'Tipos de servicio',
+  pathologies: 'Patologías',
+  payments: 'Pagos',
+  attended: 'Atendido',
+  doctorAmount: 'Monto a proveedores',
+  invoiceNumber: 'N° de factura',
+  controlNumber: 'N° de control',
+  payment: 'Pago',
+};
+
+/** Campos cuyo valor es un ID interno: se muestran como "modificado" sin valores. */
+export const ORDER_LOG_ID_FIELDS = new Set<string>([
+  'branchId',
+  'holderId',
+  'patientId',
+  'contractorId',
+  'insuranceId',
+  'specialtyId',
+  'fixedExchangeRateId',
+]);
+
+/** Nombre visible de un usuario del sistema (creador de la orden, autor del cambio). */
+export function orderUserDisplayName(
+  u?: {
+    firstName?: string | null;
+    lastName?: string | null;
+    email?: string | null;
+  } | null,
+): string {
+  if (!u) return '—';
+  const name = `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim();
+  return name || u.email || '—';
+}
+
 export function holderDisplayName(p?: OrderRefSummary | null): string {
   if (!p) return '—';
   if (p.businessName) return p.businessName;
