@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { bankGateway } from '@/modules/banks/infrastructure/bankGateway';
-import type { Bank } from '@/modules/banks/domain/models/bank';
+import { selectableBanks, type Bank } from '@/modules/banks/domain/models/bank';
 import { formatPhoneDigits } from '@/lib/validations/ve-formats';
 import type { PaymentMethodValues } from '@/lib/validations/schemas';
 import { cn } from '@/lib/utils';
@@ -149,6 +149,7 @@ export function PaymentMethodsInput({
           {value.map((m, i) => {
             const err = errors?.[i];
             const Icon = TYPE_ICON[m.type];
+            const bankOptions = selectableBanks(banks, m.bankCode);
             return (
               <div key={i} className="border rounded-lg p-3 bg-muted/10 space-y-3">
                 <div className="flex items-center gap-2">
@@ -203,7 +204,7 @@ export function PaymentMethodsInput({
                           />
                         </SelectTrigger>
                         <SelectContent>
-                          {banks.map((b) => (
+                          {bankOptions.map((b) => (
                             <SelectItem key={b.code} value={b.code}>
                               {b.code} — {b.name}
                             </SelectItem>
@@ -265,7 +266,7 @@ export function PaymentMethodsInput({
                           />
                         </SelectTrigger>
                         <SelectContent>
-                          {banks.map((b) => (
+                          {bankOptions.map((b) => (
                             <SelectItem key={b.code} value={b.code}>
                               {b.code} — {b.name}
                             </SelectItem>

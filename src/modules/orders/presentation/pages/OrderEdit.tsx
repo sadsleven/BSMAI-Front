@@ -95,7 +95,7 @@ export function OrderEdit() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { has } = usePermissions();
+  const { has, isSuperAdmin } = usePermissions();
   const me = useAuthStore((s) => s.user);
   const providerLink = me?.providerLink ?? null;
   const canAttention = has(PERMISSIONS.ORDERS.STAGE_ATTENTION);
@@ -250,8 +250,16 @@ export function OrderEdit() {
     step1OkRef.current = ok;
   }, []);
 
+  // Solo el creador (o Super Admin) puede modificar el Paso 1. Los demás pasos
+  // siguen disponibles según sus permisos. Espejo del guard BE.
+  const step1Locked =
+    !!initialOrder &&
+    !!me &&
+    !isSuperAdmin &&
+    initialOrder.createdById !== me.id;
+
   const onSubmit = async (values: OrderValues) => {
-    if (!id) return;
+    if (!id || step1Locked) return;
     if (values.type === 'cash' && !step1OkRef.current) {
       notify.error(
         'La orden de contado debe estar cuadrada (pagos = total) para poder crearla y continuar al Paso 2.',
@@ -349,6 +357,7 @@ export function OrderEdit() {
             initialProvider={provider}
             savedOrder={initialOrder}
             currentStep={currentStep}
+            step1ReadOnly={step1Locked}
             onStepChange={setCurrentStep}
             onOrderRefresh={async () => {
               await fetchOrder();
@@ -361,7 +370,9 @@ export function OrderEdit() {
               <span className="text-destructive">*</span> Campos obligatorios
             </p>
             <div className="flex items-center gap-2 flex-wrap">
-              {currentStep === 'register' && initialOrder?.status === 'draft' ? (
+              {currentStep === 'register' &&
+              initialOrder?.status === 'draft' &&
+              !step1Locked ? (
                 <Button type="submit" disabled={methods.formState.isSubmitting}>
                   {methods.formState.isSubmitting ? 'Guardando…' : 'Guardar cambios'}
                 </Button>

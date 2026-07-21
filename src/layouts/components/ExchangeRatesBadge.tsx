@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { DollarSign, Euro } from 'lucide-react';
 import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
 import type {
@@ -20,6 +21,9 @@ export function ExchangeRatesBadge() {
   const { has } = usePermissions();
   const canSee = has(PERMISSIONS.EXCHANGE_RATES.LIST);
   const [summary, setSummary] = useState<Summary | null>(null);
+  // Refetch al navegar: sin esto el badge queda pegado a la tasa vigente
+  // al montar y muestra fecha/hora viejas tras crear o editar una tasa.
+  const { pathname } = useLocation();
 
   useEffect(() => {
     if (!canSee) return;
@@ -35,7 +39,7 @@ export function ExchangeRatesBadge() {
     return () => {
       cancelled = true;
     };
-  }, [canSee]);
+  }, [canSee, pathname]);
 
   if (!canSee || !summary) return null;
   if (!summary.USD && !summary.EUR) return null;

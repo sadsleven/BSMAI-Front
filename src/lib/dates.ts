@@ -24,6 +24,16 @@ export function formatDateOnly(s: string | null | undefined): string {
   return y && m && d ? `${d}/${m}/${y}` : '';
 }
 
+/**
+ * ISO 8601 local CON offset explícito (`2026-07-16T14:30:00-04:00`). Para
+ * columnas `timestamptz` (effectiveDate, appointmentDate): un ISO sin offset
+ * lo interpreta Postgres con la TZ de sesión del servidor — correcto en local
+ * (America/Caracas) pero corrido ±4h contra un servidor/BD en UTC.
+ */
+export function toIsoWithOffset(d: Date): string {
+  return dayjs(d).format('YYYY-MM-DDTHH:mm:ssZ');
+}
+
 /** DD/MM/YYYY (sin hora). Returns '—' on invalid input. */
 export function formatCreated(iso: string | null | undefined): string {
   if (!iso) return '—';

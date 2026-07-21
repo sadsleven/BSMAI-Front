@@ -5,6 +5,7 @@ import type {
   BillingOrderDto,
   CreateOrderDto,
   Order,
+  OrderChangeLog,
   OrderPayment,
   OrderPaymentInput,
   OrdersQuery,
@@ -44,6 +45,11 @@ export const orderGateway = {
   },
   async getById(id: string): Promise<Order> {
     const { data } = await api.get<Order>(`/orders/${id}`);
+    return data;
+  },
+  /** Historial de cambios por usuario de la orden (más reciente primero). */
+  async history(id: string): Promise<OrderChangeLog[]> {
+    const { data } = await api.get<OrderChangeLog[]>(`/orders/${id}/history`);
     return data;
   },
   /** Nombres personalizados ya usados para un ST (autocompletar Paso 1). */

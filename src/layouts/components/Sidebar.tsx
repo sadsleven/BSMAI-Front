@@ -32,9 +32,9 @@ import {
   Workflow,
   PieChart,
   LayoutDashboard,
-  LineChart,
-  PiggyBank,
   Settings,
+  FileSpreadsheet,
+  Landmark,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -69,7 +69,7 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
-  const { has } = usePermissions();
+  const { has, hasAny } = usePermissions();
 
   const handleLogout = async () => {
     await authApi.logout();
@@ -181,18 +181,6 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
           show: has(PERMISSIONS.REPORTS.EXECUTIVE_PANEL_LIST),
         },
         {
-          icon: LineChart,
-          label: 'Análisis de órdenes',
-          href: '/reports/orders-analytics',
-          show: has(PERMISSIONS.REPORTS.ORDERS_ANALYTICS_LIST),
-        },
-        {
-          icon: PiggyBank,
-          label: 'Cobranzas por aseguradora',
-          href: '/reports/insurer-collections',
-          show: has(PERMISSIONS.REPORTS.INSURER_COLLECTIONS_LIST),
-        },
-        {
           icon: Coins,
           label: 'Cuentas por cobrar',
           href: '/reports/receivables',
@@ -209,6 +197,12 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
           label: 'Impuestos retenidos',
           href: '/reports/taxes-retained',
           show: has(PERMISSIONS.REPORTS.TAXES_RETAINED_LIST),
+        },
+        {
+          icon: FileSpreadsheet,
+          label: 'Comprobantes ARC',
+          href: '/reports/arc',
+          show: has(PERMISSIONS.REPORTS.ARC_LIST),
         },
         {
           icon: BarChart3,
@@ -292,6 +286,16 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
           label: 'Cuentas bancarias',
           href: '/payment-accounts',
           show: has(PERMISSIONS.PAYMENT_ACCOUNTS.LIST),
+        },
+        {
+          icon: Landmark,
+          label: 'Bancos',
+          href: '/banks',
+          show: hasAny([
+            PERMISSIONS.BANKS.CREATE,
+            PERMISSIONS.BANKS.UPDATE,
+            PERMISSIONS.BANKS.TOGGLE_ACTIVE,
+          ]),
         },
         {
           icon: TrendingUp,

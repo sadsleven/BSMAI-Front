@@ -27,6 +27,7 @@ const PATH_LABELS: Record<string, string> = {
   'tax-units': 'Unidades tributarias',
   branches: 'Sucursales',
   'payment-accounts': 'Cuentas bancarias',
+  banks: 'Bancos',
   'accounts-payable': 'Cuentas por pagar',
   'accounts-receivable': 'Cuentas por cobrar',
   'taxes-payable': 'Retenciones por pagar',
@@ -45,9 +46,8 @@ const PATH_LABELS: Record<string, string> = {
   'orders-pipeline': 'Seguimiento de órdenes',
   'services-billed': 'Servicios facturados',
   'taxes-retained': 'Impuestos retenidos',
+  arc: 'Comprobantes ARC',
   'executive-panel': 'Panel ejecutivo',
-  'orders-analytics': 'Análisis de órdenes',
-  'insurer-collections': 'Cobranzas por aseguradora',
   config: 'Configuración',
   guide: 'Guía del sistema',
 };

@@ -51,6 +51,7 @@ import { BranchList } from './modules/branches/presentation/pages/BranchList';
 import { BranchCreate } from './modules/branches/presentation/pages/BranchCreate';
 import { BranchEdit } from './modules/branches/presentation/pages/BranchEdit';
 import { PaymentAccountList } from './modules/payment-accounts/presentation/pages/PaymentAccountList';
+import { BankList } from './modules/banks/presentation/pages/BankList';
 import { PaymentAccountCreate } from './modules/payment-accounts/presentation/pages/PaymentAccountCreate';
 import { PaymentAccountEdit } from './modules/payment-accounts/presentation/pages/PaymentAccountEdit';
 import { OrderList } from './modules/orders/presentation/pages/OrderList';
@@ -75,9 +76,8 @@ import { ReportDisbursements } from './modules/reports/presentation/pages/Report
 import { ReportOrdersPipeline } from './modules/reports/presentation/pages/ReportOrdersPipeline';
 import { ReportServicesBilled } from './modules/reports/presentation/pages/ReportServicesBilled';
 import { ReportTaxesRetained } from './modules/reports/presentation/pages/ReportTaxesRetained';
+import { ReportArc } from './modules/reports/presentation/pages/ReportArc';
 import { ReportExecutivePanel } from './modules/reports/presentation/pages/ReportExecutivePanel';
-import { ReportOrdersAnalytics } from './modules/reports/presentation/pages/ReportOrdersAnalytics';
-import { ReportInsurerCollections } from './modules/reports/presentation/pages/ReportInsurerCollections';
 import { ReportPaymentAccountInflows } from './modules/reports/presentation/pages/ReportPaymentAccountInflows';
 import { AppConfigPage } from './modules/app-config/presentation/pages/AppConfigPage';
 import { GuidePage } from './modules/guide/presentation/pages/GuidePage';
@@ -185,6 +185,20 @@ function App() {
             <Route path="create" element={<PaymentAccountCreate />} />
             <Route path="edit/:id" element={<PaymentAccountEdit />} />
           </Route>
+          <Route
+            path="banks"
+            element={
+              <RequirePermission
+                anyOf={[
+                  PERMISSIONS.BANKS.CREATE,
+                  PERMISSIONS.BANKS.UPDATE,
+                  PERMISSIONS.BANKS.TOGGLE_ACTIVE,
+                ]}
+              >
+                <BankList />
+              </RequirePermission>
+            }
+          />
           <Route path="orders">
             <Route index element={<OrderList />} />
             <Route path="create" element={<OrderCreate />} />
@@ -224,21 +238,14 @@ function App() {
                 </RequirePermission>
               }
             />
+            {/* Fusionados en el Panel ejecutivo; se conservan como redirect. */}
             <Route
               path="orders-analytics"
-              element={
-                <RequirePermission permission={PERMISSIONS.REPORTS.ORDERS_ANALYTICS_LIST}>
-                  <ReportOrdersAnalytics />
-                </RequirePermission>
-              }
+              element={<Navigate to="/reports/executive-panel" replace />}
             />
             <Route
               path="insurer-collections"
-              element={
-                <RequirePermission permission={PERMISSIONS.REPORTS.INSURER_COLLECTIONS_LIST}>
-                  <ReportInsurerCollections />
-                </RequirePermission>
-              }
+              element={<Navigate to="/reports/executive-panel" replace />}
             />
             <Route
               path="receivables"
@@ -261,6 +268,14 @@ function App() {
               element={
                 <RequirePermission permission={PERMISSIONS.REPORTS.TAXES_RETAINED_LIST}>
                   <ReportTaxesRetained />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="arc"
+              element={
+                <RequirePermission permission={PERMISSIONS.REPORTS.ARC_LIST}>
+                  <ReportArc />
                 </RequirePermission>
               }
             />

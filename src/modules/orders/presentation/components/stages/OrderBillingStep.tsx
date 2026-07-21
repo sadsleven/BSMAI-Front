@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Download, FileSpreadsheet, HandCoins, ListTree, Wallet } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowRight,
+  Download,
+  FileSpreadsheet,
+  HandCoins,
+  ListTree,
+  Wallet,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CurrencyAmountInput } from '@/components/ui/currency-amount-input';
 import { Input } from '@/components/ui/input';
@@ -77,6 +85,9 @@ export function OrderBillingStep({
 
   const [providers, setProviders] = useState<ProviderRow[]>([]);
   const [loadingSuggested, setLoadingSuggested] = useState(false);
+  // Errores de monto visibles sólo tras intentar finalizar; se auto-limpian
+  // al corregir el monto (derivados de `p.amount`, sin estado por fila).
+  const [amountErrorsVisible, setAmountErrorsVisible] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState(order.invoiceNumber ?? '');
   const [controlNumber, setControlNumber] = useState(order.controlNumber ?? '');
 
@@ -236,8 +247,18 @@ export function OrderBillingStep({
       notify.error('La orden no tiene proveedores asignados');
       return;
     }
-    if (providers.some((p) => p.amount === undefined || p.amount <= 0)) {
-      notify.error('Carga un monto > 0 para cada proveedor');
+    const invalidAmountProviders = providers.filter(
+      (p) => p.amount === undefined || p.amount <= 0,
+    );
+    if (invalidAmountProviders.length > 0) {
+      setAmountErrorsVisible(true);
+      notify.error(
+        invalidAmountProviders.length === 1
+          ? `Ingresa un monto a pagar mayor que cero para ${invalidAmountProviders[0].providerName}`
+          : `Ingresa un monto a pagar mayor que cero para: ${invalidAmountProviders
+              .map((p) => p.providerName)
+              .join(', ')}`,
+      );
       return;
     }
     if (!usdRate?.id) {
@@ -380,6 +401,9 @@ export function OrderBillingStep({
               const missing = p.breakdown
                 .filter((b) => b.amount === null)
                 .map((b) => b.stName);
+              const amountInvalid =
+                amountErrorsVisible &&
+                (p.amount === undefined || p.amount <= 0);
               return (
                 <div
                   key={p.key}
@@ -420,7 +444,14 @@ export function OrderBillingStep({
                         }
                         currencyPrefix="USD"
                         disabled={isFinalized}
+                        invalid={amountInvalid}
                       />
+                      {amountInvalid && (
+                        <p className="text-xs text-destructive flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" />
+                          Ingresa un monto mayor que cero
+                        </p>
+                      )}
                       <p className="text-[11px] text-muted-foreground">
                         Sugerido: {formatMoney(p.suggested)} USD
                       </p>

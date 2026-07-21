@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { toIsoWithOffset } from '@/lib/dates';
 
 export type DateTimePickerProps = {
   /** ISO 8601 datetime string. Treated as local time when no offset present. */
@@ -47,9 +48,15 @@ function pad(n: number): string {
 const HOURS = Array.from({ length: 24 }, (_, i) => pad(i));
 const MINUTE_STEPS = Array.from({ length: 12 }, (_, i) => pad(i * 5));
 
-/** Build local ISO string `YYYY-MM-DDTHH:mm:ss` (no TZ). Backend interprets as local. */
+/**
+ * ISO local CON offset (`2026-07-16T14:30:00-04:00`). Sin offset, Postgres
+ * interpreta el valor con la TZ de sesión del servidor y la hora queda
+ * corrida cuando el BE/BD corre en UTC.
+ */
 function toLocalIso(d: Date): string {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
+  const next = new Date(d);
+  next.setSeconds(0, 0);
+  return toIsoWithOffset(next);
 }
 
 /**
