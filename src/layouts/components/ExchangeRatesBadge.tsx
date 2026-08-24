@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { DollarSign, Euro } from 'lucide-react';
+import { DollarSign } from 'lucide-react';
 import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
 import type {
   Currency,
@@ -52,12 +52,14 @@ export function ExchangeRatesBadge() {
         Icon={DollarSign}
         title="Última tasa USD"
       />
-      <RatePill
-        currency="EUR"
-        rate={summary.EUR}
-        Icon={Euro}
-        title="Última tasa EUR"
-      />
+      {/* 
+        <RatePill
+          currency="EUR"
+          rate={summary.EUR}
+          Icon={Euro}
+          title="Última tasa EUR"
+        />
+      */}
     </div>
   );
 }

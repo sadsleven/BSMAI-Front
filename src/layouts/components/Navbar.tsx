@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Bell, LogOut, Menu, Plus, User as UserIcon } from 'lucide-react';
+import { LogOut, Menu, Plus, User as UserIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/modules/auth/domain/store/authStore';
 import { getFullName } from '@/modules/auth/domain/models/authUser';
@@ -93,14 +93,6 @@ export function Navbar({ onMenuClick }: NavbarProps) {
           </Button>
         )}
         <ExchangeRatesBadge />
-        <button
-          type="button"
-          className="relative w-10 h-10 rounded-full hover:bg-muted transition-colors flex items-center justify-center shrink-0"
-          title="Notificaciones"
-        >
-          <Bell className="w-5 h-5 text-muted-foreground" />
-          <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-brand-cyan" />
-        </button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
