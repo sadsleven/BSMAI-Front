@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { DollarSign, Euro } from 'lucide-react';
+import { DollarSign } from 'lucide-react';
 import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
 import type {
   Currency,
