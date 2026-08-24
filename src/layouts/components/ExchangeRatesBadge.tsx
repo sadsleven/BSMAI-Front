@@ -52,12 +52,14 @@ export function ExchangeRatesBadge() {
         Icon={DollarSign}
         title="Última tasa USD"
       />
-      <RatePill
-        currency="EUR"
-        rate={summary.EUR}
-        Icon={Euro}
-        title="Última tasa EUR"
-      />
+      {/* 
+        <RatePill
+          currency="EUR"
+          rate={summary.EUR}
+          Icon={Euro}
+          title="Última tasa EUR"
+        />
+      */}
     </div>
   );
 }

@@ -176,16 +176,16 @@ export function ServicePricesTable({
           ) : null}
 
           <div className="rounded-lg border overflow-hidden">
-            <table className="w-full text-sm">
+            <table className="w-full table-fixed text-sm">
               <thead className="bg-[oklch(0.985_0.003_250)]">
                 <tr className="text-left">
                   <th className="px-4 py-2 font-semibold text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
                     Tipo de Servicio
                   </th>
-                  <th className="px-4 py-2 font-semibold text-[11px] uppercase tracking-[0.06em] text-muted-foreground w-[180px]">
+                  <th className="px-4 py-2 font-semibold text-[11px] uppercase tracking-[0.06em] text-muted-foreground w-[190px]">
                     Precio USD
                   </th>
-                  <th className="px-2 py-2 w-10" />
+                  <th className="px-2 py-2 w-12" />
                 </tr>
               </thead>
               <tbody>
@@ -381,13 +381,16 @@ function ServiceTypeCombobox({
           type="button"
           role="combobox"
           aria-expanded={open}
+          title={currentName || undefined}
           className={cn(
             'flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-[color,box-shadow] outline-none',
             'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]',
             invalid && 'border-destructive',
           )}
         >
-          <span className={cn('truncate', !currentName && 'text-muted-foreground')}>
+          <span
+            className={cn('min-w-0 truncate', !currentName && 'text-muted-foreground')}
+          >
             {currentName || (loading ? 'Cargando…' : 'Selecciona un servicio')}
           </span>
           <ChevronsUpDown className="w-4 h-4 shrink-0 text-muted-foreground" />
