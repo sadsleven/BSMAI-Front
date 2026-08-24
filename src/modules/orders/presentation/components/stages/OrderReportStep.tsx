@@ -8,6 +8,7 @@ import { notify } from '@/lib/notifications/toast';
 import { getHttpErrorMessage } from '@/lib/api';
 import { FileDropzone } from '@/modules/files/presentation/components/FileDropzone';
 import {
+  ORDER_REPORT_ACCEPT,
   ORDER_REPORT_KIND,
   orderReportProviderKind,
 } from '@/modules/files/domain/models/file';
@@ -18,8 +19,6 @@ import {
   type ProviderType,
   type ReportProviderInput,
 } from '../../../domain/models/order';
-
-const ACCEPT = '.pdf,.png,.jpg,.jpeg,.webp';
 
 type ProviderSegment = {
   key: string;
@@ -161,7 +160,7 @@ export function OrderReportStep({
               ownerType="order"
               ownerId={order.id}
               kind={ORDER_REPORT_KIND}
-              accept={ACCEPT}
+              accept={ORDER_REPORT_ACCEPT}
             />
           </div>
         </div>
@@ -227,7 +226,7 @@ export function OrderReportStep({
                   ownerType="order"
                   ownerId={order.id}
                   kind={orderReportProviderKind(p.type, p.id)}
-                  accept={ACCEPT}
+                  accept={ORDER_REPORT_ACCEPT}
                   readOnly={!isProvider}
                   onChange={(files) =>
                     setFileCounts((prev) => ({ ...prev, [p.key]: files.length }))
