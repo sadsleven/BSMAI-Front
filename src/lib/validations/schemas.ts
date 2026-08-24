@@ -98,6 +98,7 @@ export const ACADEMIC_DEGREES = [
   'Br.',    // Bachiller
   'TSU',    // Técnico Superior Universitario
   'Lic.',   // Licenciado
+  'Ing.',   // Ingeniero
   'Esp.',   // Especialista
   'Mg.',    // Magíster
   'PhD',    // Doctor (PhD)
