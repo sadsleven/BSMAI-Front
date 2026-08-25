@@ -16,6 +16,7 @@ import {
 
 const MONEY_FIELDS = new Set([
   'priceAmount',
+  'priceBaseAmount',
   'casheaFirstInstallmentAmount',
   'doctorAmount',
 ]);

@@ -49,6 +49,11 @@ function buildDto(values: OrderValues): CreateOrderDto {
         ? values.serviceKey.trim()
         : undefined,
     isReimbursement: values.type === 'credit' ? !!values.isReimbursement : undefined,
+    // Número manual (orden vieja). Sin valor ⇒ el backend numera automáticamente.
+    customOrderNumber:
+      typeof values.customOrderNumber === 'number' && values.customOrderNumber > 0
+        ? values.customOrderNumber
+        : undefined,
     specialtyId: values.specialtyId,
     serviceTypes: (values.serviceTypes ?? []).map((r) => ({
       serviceTypeId: r.serviceTypeId,
@@ -69,6 +74,14 @@ function buildDto(values: OrderValues): CreateOrderDto {
     orderDate: values.orderDate,
     appointmentDate: values.appointmentDate,
     priceAmount: values.priceAmount,
+    // Motivo del ajuste: sólo cuando el monto difiere del base de catálogo (el
+    // BE recalcula el base y exige el motivo si hay diferencia).
+    priceAdjustmentNote:
+      typeof values.priceBaseAmount === 'number' &&
+      Math.round(values.priceBaseAmount * 100) !==
+        Math.round(values.priceAmount * 100)
+        ? (values.priceAdjustmentNote ?? '').trim()
+        : undefined,
     casheaFirstInstallmentAmount:
       values.type === 'cashea'
         ? values.casheaFirstInstallmentAmount ?? 0
@@ -145,6 +158,7 @@ export function OrderEdit() {
       orderDate: '',
       appointmentDate: '',
       priceAmount: 0,
+      priceAdjustmentNote: '',
       casheaFirstInstallmentAmount: 0,
       casheaInitialPercent: 0,
       useFixedRate: false,
@@ -206,6 +220,14 @@ export function OrderEdit() {
           // VE) y hasta el día siguiente para citas nocturnas. Formatear local.
           appointmentDate: dayjs(order.appointmentDate).format('YYYY-MM-DDTHH:mm'),
           priceAmount: Number(order.priceAmount),
+          priceBaseAmount:
+            order.priceBaseAmount != null
+              ? Number(order.priceBaseAmount)
+              : undefined,
+          // Fallback a la observación de la autorización: órdenes autorizadas
+          // antes del ajuste no tienen `priceAdjustmentNote`.
+          priceAdjustmentNote:
+            order.priceAdjustmentNote ?? order.amountAuthorizationNote ?? '',
           casheaFirstInstallmentAmount:
             order.casheaFirstInstallmentAmount != null
               ? Number(order.casheaFirstInstallmentAmount)

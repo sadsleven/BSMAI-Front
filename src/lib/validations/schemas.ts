@@ -969,6 +969,14 @@ export const orderSchema = z
       .optional()
       .or(z.literal('')),
     isReimbursement: z.boolean().optional(),
+    // Número de orden manual (órdenes históricas). El tope (< ORDER_NUMBER_START)
+    // lo conoce el backend; el form lo valida contra el valor consultado y el
+    // backend lo rechaza igual si no cuadra.
+    customOrderNumber: z
+      .number()
+      .int('El número de orden debe ser un entero')
+      .min(1, 'Debe ser mayor o igual a 1')
+      .optional(),
     specialtyId: z.string().uuid({ message: 'Especialidad requerida' }),
     serviceTypes: z
       .array(
@@ -1009,6 +1017,15 @@ export const orderSchema = z
       .number({ error: 'Monto requerido' })
       .positive('Debe ser > 0')
       .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' }),
+    // Monto base = suma de los precios de catálogo (baremo del seguro o
+    // Particular). FE-only: no viaja al BE, que lo recalcula. Sirve para
+    // detectar el ajuste (descuento/recargo) y exigir su motivo.
+    priceBaseAmount: z.number().optional(),
+    priceAdjustmentNote: z
+      .string()
+      .trim()
+      .max(500, 'Máximo 500 caracteres')
+      .optional(),
     casheaFirstInstallmentAmount: z
       .number()
       .min(0, 'No puede ser negativo')
@@ -1141,6 +1158,21 @@ export const orderSchema = z
           message: 'La inicial no puede igualar o superar el precio total',
         });
       }
+    }
+    // Ajuste de monto (descuento o recargo respecto del precio de catálogo):
+    // el motivo es obligatorio para dejar trazabilidad de quién y por qué.
+    if (
+      typeof val.priceBaseAmount === 'number' &&
+      typeof val.priceAmount === 'number' &&
+      Math.round(val.priceBaseAmount * 100) !==
+        Math.round(val.priceAmount * 100) &&
+      !(val.priceAdjustmentNote ?? '').trim()
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['priceAdjustmentNote'],
+        message: 'Indica el motivo del ajuste de monto',
+      });
     }
     if (val.useFixedRate) {
       if (val.type !== 'insurance') {

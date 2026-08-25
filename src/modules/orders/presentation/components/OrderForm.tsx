@@ -16,9 +16,17 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { DateTimePicker } from '@/components/ui/date-time-picker';
 import { Stepper, type StepDef } from '@/components/ui/stepper';
 import { Badge } from '@/components/ui/badge';
+import { Textarea } from '@/components/ui/textarea';
 import { ChipMultiSelect } from '@/components/ui/chip-multi-select';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { AlertTriangle, Building, ShieldCheck, Plus } from 'lucide-react';
+import {
+  AlertTriangle,
+  Building,
+  ShieldCheck,
+  Plus,
+  TrendingDown,
+  TrendingUp,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatMoney } from '@/lib/format/money';
 import { casheaBreakdownCents } from '@/lib/money/cashea';
@@ -50,6 +58,7 @@ import { SpecialtyCreateModal } from './SpecialtyCreateModal';
 import { PathologyCreateModal } from './PathologyCreateModal';
 import { AuthorizeAmountModal } from './AuthorizeAmountModal';
 import { patientGateway } from '@/modules/patients/infrastructure/patientGateway';
+import { orderGateway } from '../../infrastructure/orderGateway';
 import { insuranceGateway } from '@/modules/insurances/infrastructure/insuranceGateway';
 import type { PatientAvailableInsurance } from '@/modules/patients/domain/models/patient';
 import type { ServicePriceRow } from '@/lib/types/servicePrice';
@@ -207,6 +216,7 @@ export function OrderForm({
   const me = useAuthStore((s) => s.user);
   const { has } = usePermissions();
   const canEditAmount = has(PERMISSIONS.ORDERS.EDIT_AMOUNT);
+  const canCustomNumber = has(PERMISSIONS.ORDERS.CUSTOM_NUMBER);
   const canAttention = has(PERMISSIONS.ORDERS.STAGE_ATTENTION);
   const canReport = has(PERMISSIONS.ORDERS.STAGE_REPORT);
   const canBilling = has(PERMISSIONS.ORDERS.STAGE_BILLING);
@@ -247,7 +257,38 @@ export function OrderForm({
   const [pathologiesLoading, setPathologiesLoading] = useState(true);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [currentRate, setCurrentRate] = useState<ExchangeRate | null>(null);
+  // Piso de la numeración automática (ORDER_NUMBER_START). Los números manuales
+  // de órdenes viejas van por debajo; sin este dato no se ofrece el campo.
+  const [numberStart, setNumberStart] = useState<number | null>(null);
   void initialProvider;
+
+  useEffect(() => {
+    if (!canCustomNumber) return;
+    let cancelled = false;
+    orderGateway
+      .numberStart()
+      .then((n) => {
+        if (!cancelled) setNumberStart(n);
+      })
+      .catch(() => {
+        /* sin el piso no se ofrece el número manual */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canCustomNumber]);
+
+  // Orden histórica ya guardada: refleja su número en el campo manual para que
+  // se pueda corregir mientras siga en borrador (no marca el form como sucio).
+  const savedOrderNumber = savedOrder?.orderNumber;
+  useEffect(() => {
+    if (!numberStart || !savedOrderNumber) return;
+    const n = Number(savedOrderNumber);
+    if (Number.isFinite(n) && n > 0 && n < numberStart) {
+      setValue('customOrderNumber', n);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [numberStart, savedOrderNumber]);
 
   // Hidrata el ServiceProviderTable: map de proveedores ya elegidos en la orden.
   const initialProvidersMap = useMemo(() => {
@@ -563,6 +604,11 @@ export function OrderForm({
   }, [payments, currentRate, eurRatesById]);
 
   const priceAmount = useWatch({ control, name: 'priceAmount' }) as number | undefined;
+  // Monto base (FE-only): suma de precios de catálogo con la que se compara el
+  // monto guardado para detectar descuento/recargo.
+  const priceBaseAmount = useWatch({ control, name: 'priceBaseAmount' }) as
+    | number
+    | undefined;
 
   // Pagos en Paso 1: contado y cashea (cashea cobra la cuota inicial del titular).
   const showPayments = type === 'cash' || type === 'cashea';
@@ -779,6 +825,11 @@ export function OrderForm({
     unit: number | null;
     /** unit × qty, o null si no hay precio definido. */
     amount: number | null;
+    /**
+     * false mientras el catálogo de STs no resolvió la fila: el precio se
+     * desconoce (no es "sin precio") y el monto base no se puede calcular.
+     */
+    resolved: boolean;
   };
 
   const priceLines: PriceLine[] = useMemo(() => {
@@ -793,7 +844,15 @@ export function OrderForm({
       const st = serviceTypes.find((s) => s.id === id);
       const qty = qtyByST.get(id) ?? 1;
       const custom = cnByST.get(id) || '';
-      if (!st) return { id, name: custom || '—', qty, unit: null, amount: null };
+      if (!st)
+        return {
+          id,
+          name: custom || '—',
+          qty,
+          unit: null,
+          amount: null,
+          resolved: false,
+        };
       const raw = isInsuranceOrder
         ? ispByST.get(id)?.priceUsd
         : st.particularPriceUsd;
@@ -805,6 +864,7 @@ export function OrderForm({
         qty,
         unit,
         amount: unit !== null ? +(unit * qty).toFixed(2) : null,
+        resolved: true,
       };
     });
   }, [
@@ -821,6 +881,32 @@ export function OrderForm({
     [priceLines],
   );
   const hasMissingPrices = priceLines.some((l) => l.amount === null);
+  /**
+   * El monto base sólo es confiable cuando el catálogo de STs ya resolvió todas
+   * las filas; mientras carga, `computedPriceSum` sería 0 y cualquier monto
+   * guardado parecería un descuento.
+   */
+  const catalogReady = priceLines.length > 0 && priceLines.every((l) => l.resolved);
+  /**
+   * Base comparable: además de estar cargado, todos los STs deben tener precio
+   * de catálogo. Con algún "Sin precio definido" la diferencia no es un ajuste
+   * (el BE aplica la misma regla) y no se exige motivo.
+   */
+  const priceBaseKnown = catalogReady && !hasMissingPrices;
+  const serviceTypeIdsKey = serviceTypeIds.join(',');
+
+  /** Ajuste vigente: descuento (negativo) o recargo (positivo) sobre el base. */
+  const priceAdjustment = useMemo(() => {
+    if (!priceBaseKnown || typeof priceAmount !== 'number') return null;
+    const baseCents = Math.round(computedPriceSum * 100);
+    const diffCents = Math.round(priceAmount * 100) - baseCents;
+    if (diffCents === 0) return null;
+    return {
+      amount: diffCents / 100,
+      percent: baseCents > 0 ? (diffCents / baseCents) * 100 : null,
+      isDiscount: diffCents < 0,
+    };
+  }, [priceBaseKnown, priceAmount, computedPriceSum]);
 
   // Precio unitario por Tipo de Servicio para el selector de la tabla:
   // seguro → baremo del seguro elegido; particular → particularPriceUsd.
@@ -847,15 +933,49 @@ export function OrderForm({
   // Insurance: locked → siempre sincroniza con la suma calculada (ignora input manual).
   // Cash/credit/cashea: overwrite cuando cambian inputs — el usuario puede editar luego.
   const lastAppliedSumRef = useRef<number | null>(null);
-  // Monto bloqueado: seguro (siempre) o sin permiso orders.edit-amount.
-  const amountLocked = isInsuranceOrder || !canEditAmount;
+  // Monto bloqueado sólo sin permiso orders.edit-amount. Con el permiso, todo
+  // tipo de orden (seguro incluido) admite descuento o recargo justificado.
+  const amountLocked = !canEditAmount;
   // Monto ya autorizado por un validador — no auto-sincronizar (preserva el
   // monto autorizado en vez de pisarlo con la suma Particular).
   const hasAuthorization = !!savedOrder?.amountAuthorizedById;
   useEffect(() => {
-    if (priceLines.length === 0) return;
+    if (!catalogReady) return;
+    // Monto base: referencia FE-only del precio de catálogo (no viaja al BE,
+    // que lo recalcula). Sostiene el badge de ajuste y la validación del motivo.
+    const base = +computedPriceSum.toFixed(2);
+    const nextBase = priceBaseKnown ? base : undefined;
+    if (priceBaseAmount !== nextBase) {
+      setValue('priceBaseAmount', nextBase, { shouldDirty: false });
+    }
+    // Primera pasada con un monto ya ajustado (borrador guardado o restaurado):
+    // se respeta el ajuste — la referencia arranca en su base para que el
+    // auto-set no lo pise con la suma de catálogo.
+    if (
+      lastAppliedSumRef.current === null &&
+      typeof priceBaseAmount === 'number' &&
+      typeof priceAmount === 'number' &&
+      Math.round(priceBaseAmount * 100) !== Math.round(priceAmount * 100)
+    ) {
+      lastAppliedSumRef.current = priceBaseAmount;
+    }
     if (hasAuthorization) {
       lastAppliedSumRef.current = priceAmount ?? null;
+      // Monto autorizado sin motivo de ajuste (autorizaciones previas al ajuste)
+      // y campo de sólo lectura: se completa con la observación del validador
+      // para no bloquear el guardado. El BE ignora el motivo sin el permiso.
+      if (
+        amountLocked &&
+        priceBaseKnown &&
+        !(getValues('priceAdjustmentNote') ?? '').trim() &&
+        Math.round((priceAmount ?? 0) * 100) !== Math.round(base * 100)
+      ) {
+        setValue(
+          'priceAdjustmentNote',
+          savedOrder?.amountAuthorizationNote ?? 'Monto autorizado por un validador',
+          { shouldDirty: false },
+        );
+      }
       return;
     }
     const rounded = +computedPriceSum.toFixed(2);
@@ -880,7 +1000,7 @@ export function OrderForm({
     }
     lastAppliedSumRef.current = rounded;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [computedPriceSum, amountLocked, hasAuthorization, insuranceId, serviceTypeIds.join(',')]);
+  }, [computedPriceSum, catalogReady, priceBaseKnown, amountLocked, hasAuthorization, insuranceId, serviceTypeIdsKey]);
 
   const orderSteps = buildOrderSteps(
     !!savedOrder,
@@ -978,6 +1098,61 @@ export function OrderForm({
             </div>
             <FieldError message={errors.type?.message} />
           </div>
+
+          {canCustomNumber &&
+          numberStart != null &&
+          numberStart > 1 &&
+          (!savedOrder || savedOrder.status === 'draft') ? (
+            <Controller
+              control={control}
+              name="customOrderNumber"
+              render={({ field }) => {
+                const overFloor =
+                  typeof field.value === 'number' && field.value >= numberStart;
+                return (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="customOrderNumber" className="text-sm font-medium">
+                      N° de orden manual{' '}
+                      <span className="text-muted-foreground font-normal">
+                        (opcional)
+                      </span>
+                    </Label>
+                    <Input
+                      id="customOrderNumber"
+                      type="number"
+                      min={1}
+                      max={numberStart - 1}
+                      step={1}
+                      inputMode="numeric"
+                      placeholder={`Entre 1 y ${numberStart - 1}`}
+                      className="max-w-[220px]"
+                      value={field.value ?? ''}
+                      onChange={(e) => {
+                        const raw = e.target.value.trim();
+                        if (!raw) {
+                          field.onChange(undefined);
+                          return;
+                        }
+                        const n = Math.trunc(Number(raw));
+                        field.onChange(Number.isFinite(n) && n > 0 ? n : undefined);
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Solo para órdenes viejas que estás registrando ahora: debe ser
+                      menor a {numberStart} (desde ese número numera el sistema).
+                      Déjalo vacío para que el número se asigne automáticamente.
+                    </p>
+                    {overFloor ? (
+                      <FieldError
+                        message={`El número manual debe ser menor a ${numberStart}`}
+                      />
+                    ) : null}
+                    <FieldError message={errors.customOrderNumber?.message} />
+                  </div>
+                );
+              }}
+            />
+          ) : null}
 
           {type === 'credit' ? (
             <Controller
@@ -1436,11 +1611,13 @@ export function OrderForm({
       <FormSection
         title="Precio"
         description={
-          isInsuranceOrder
-            ? 'Precio fijo según los precios definidos del seguro para cada tipo de servicio.'
-            : canEditAmount
-              ? 'Suma de los precios "Particular" de cada tipo de servicio. Editable.'
-              : 'Suma de los precios "Particular" de cada tipo de servicio. No tienes permiso para editar el monto.'
+          canEditAmount
+            ? `Monto sugerido = suma de los precios ${
+                isInsuranceOrder ? 'del seguro' : '"Particular"'
+              } de cada tipo de servicio. Puedes editarlo para aplicar un descuento o un monto superior; el ajuste exige motivo y queda registrado.`
+            : `Suma de los precios ${
+                isInsuranceOrder ? 'del seguro' : '"Particular"'
+              } de cada tipo de servicio. No tienes permiso para editar el monto.`
         }
       >
         <FormGrid>
@@ -1449,9 +1626,7 @@ export function OrderForm({
             <Input readOnly value="USD" className="h-9 bg-muted/30" />
           </div>
           <div className="space-y-1.5">
-            <RequiredLabel>
-              Monto {isInsuranceOrder ? '(fijo)' : ''}
-            </RequiredLabel>
+            <RequiredLabel>Monto</RequiredLabel>
             <Controller
               control={control}
               name="priceAmount"
@@ -1460,7 +1635,7 @@ export function OrderForm({
                   value={typeof field.value === 'number' ? field.value : undefined}
                   onChange={(v) => field.onChange(v ?? 0)}
                   currencyPrefix="USD"
-                  readOnly
+                  readOnly={amountLocked}
                   className={cn(errors.priceAmount?.message && 'border-destructive')}
                 />
               )}
@@ -1469,7 +1644,93 @@ export function OrderForm({
           </div>
         </FormGrid>
 
-        {!isInsuranceOrder && !canEditAmount && savedOrder?.status === 'draft' ? (
+        {priceAdjustment ? (
+          <div className="mt-3 space-y-2.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold',
+                  priceAdjustment.isDiscount
+                    ? 'bg-success-soft text-success'
+                    : 'bg-warning-soft text-warning',
+                )}
+              >
+                {priceAdjustment.isDiscount ? (
+                  <TrendingDown className="w-3.5 h-3.5" />
+                ) : (
+                  <TrendingUp className="w-3.5 h-3.5" />
+                )}
+                {priceAdjustment.isDiscount ? 'Descuento' : 'Recargo'}{' '}
+                {formatMoney(Math.abs(priceAdjustment.amount))} USD
+                {priceAdjustment.percent !== null
+                  ? ` (${formatMoney(Math.abs(priceAdjustment.percent))}%)`
+                  : ''}
+              </span>
+              <span className="text-[11px] text-muted-foreground">
+                Monto base de catálogo: {formatMoney(computedPriceSum)} USD
+              </span>
+            </div>
+            <div className="space-y-1.5 max-w-xl">
+              <RequiredLabel required>Motivo del ajuste</RequiredLabel>
+              <Controller
+                control={control}
+                name="priceAdjustmentNote"
+                render={({ field }) => (
+                  <Textarea
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    maxLength={500}
+                    rows={2}
+                    readOnly={amountLocked}
+                    placeholder="Motivo del descuento o del monto superior (convenio, promoción, servicio adicional, etc.)"
+                    className={cn(
+                      errors.priceAdjustmentNote?.message && 'border-destructive',
+                    )}
+                  />
+                )}
+              />
+              <FieldError message={errors.priceAdjustmentNote?.message} />
+              <p className="text-[11px] text-muted-foreground leading-tight">
+                Queda registrado con tu usuario y la fecha, y en el historial de la
+                orden.
+              </p>
+            </div>
+          </div>
+        ) : null}
+
+        {savedOrder?.priceAdjustmentNote && !savedOrder?.amountAuthorizedById ? (
+          <div className="mt-3 rounded-md border border-dashed bg-muted/30 px-3 py-2 text-xs flex items-start gap-2">
+            {Number(savedOrder.priceAmount) <
+            Number(savedOrder.priceBaseAmount ?? savedOrder.priceAmount) ? (
+              <TrendingDown className="w-3.5 h-3.5 mt-0.5 shrink-0 text-muted-foreground" />
+            ) : (
+              <TrendingUp className="w-3.5 h-3.5 mt-0.5 shrink-0 text-muted-foreground" />
+            )}
+            <div className="space-y-0.5">
+              <div>
+                Ajuste de monto registrado por{' '}
+                <span className="font-semibold">
+                  {savedOrder.priceAdjustedBy
+                    ? orderUserDisplayName(savedOrder.priceAdjustedBy)
+                    : 'un usuario'}
+                </span>
+                {savedOrder.priceAdjustedAt
+                  ? ` el ${new Date(savedOrder.priceAdjustedAt).toLocaleString('es-VE')}`
+                  : ''}
+                {savedOrder.priceBaseAmount != null
+                  ? ` · base ${formatMoney(Number(savedOrder.priceBaseAmount))} USD`
+                  : ''}
+                .
+              </div>
+              <div className="text-muted-foreground">
+                Motivo: {savedOrder.priceAdjustmentNote}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {!canEditAmount && savedOrder?.status === 'draft' ? (
           <div className="mt-3">
             <Button
               type="button"

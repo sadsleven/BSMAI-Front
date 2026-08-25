@@ -72,6 +72,7 @@ export const COMMON_LABELS: FieldLabelMap = {
   orderDate: 'Fecha de la orden',
   appointmentDate: 'Fecha de atención',
   priceAmount: 'Monto',
+  priceAdjustmentNote: 'Motivo del ajuste de monto',
   casheaInitialPercent: 'Inicial (%)',
   casheaFirstInstallmentAmount: 'Monto de la inicial',
   // Order payments

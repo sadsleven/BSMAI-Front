@@ -132,6 +132,22 @@ export interface Order {
   appointmentDate: string;
   priceAmount: string | number;
   /**
+   * Monto base = suma de los precios de catálogo (baremo del seguro para
+   * órdenes de seguro; Particular para el resto), snapshot al guardar. El
+   * ajuste es derivado: `priceAmount − priceBaseAmount` (negativo descuento,
+   * positivo recargo). Null en órdenes previas a la migración de ajuste.
+   */
+  priceBaseAmount?: string | number | null;
+  /** Trazabilidad del ajuste de monto (Paso 1): motivo, autor y fecha. */
+  priceAdjustmentNote?: string | null;
+  priceAdjustedById?: string | null;
+  priceAdjustedAt?: string | null;
+  priceAdjustedBy?: {
+    id: string;
+    firstName?: string | null;
+    lastName?: string | null;
+  } | null;
+  /**
    * Snapshot Cashea al crear la orden. Sólo presentes cuando `type='cashea'`.
    * La inicial no genera comisión: comisión = total × commissionRate;
    * financiamiento = (total − inicial) × financingRate.
@@ -263,11 +279,23 @@ export interface CreateOrderDto {
   serviceKey?: string;
   isReimbursement?: boolean;
   specialtyId: string;
+  /**
+   * Número de orden manual (órdenes viejas que se registran ahora). Debe ser
+   * menor a `ORDER_NUMBER_START` del backend (`GET /orders/config/number-start`)
+   * y requiere el permiso `orders.custom-number`. Sin él, numeración automática.
+   */
+  customOrderNumber?: number;
   serviceTypes: OrderServiceTypeRowInput[];
   pathologyIds?: string[];
   orderDate: string;
   appointmentDate: string;
   priceAmount: number;
+  /**
+   * Motivo del ajuste de monto. Obligatorio cuando `priceAmount` difiere de la
+   * suma de precios de catálogo (el BE la recalcula y rechaza el ajuste sin
+   * motivo).
+   */
+  priceAdjustmentNote?: string;
   /** Monto de la primera cuota (inicial) Cashea, USD. Requerido si type='cashea'. */
   casheaFirstInstallmentAmount?: number;
   useFixedRate?: boolean;
@@ -428,6 +456,9 @@ export const ORDER_LOG_FIELD_LABEL: Record<string, string> = {
   orderDate: 'Fecha de orden',
   appointmentDate: 'Fecha de atención',
   priceAmount: 'Monto',
+  priceBaseAmount: 'Monto base (catálogo)',
+  priceAdjustmentNote: 'Motivo del ajuste de monto',
+  orderNumber: 'Número de orden',
   casheaFirstInstallmentAmount: 'Inicial Cashea',
   useFixedRate: 'Tasa fija',
   fixedExchangeRateId: 'Tasa de la orden',

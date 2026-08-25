@@ -78,6 +78,16 @@ export function OrderDetailBody({
     return acc;
   }, []);
 
+  // Ajuste de monto del Paso 1: priceAmount − priceBaseAmount (null si no hay
+  // base snapshot o si el monto coincide con el catálogo).
+  const priceAdjustmentUsd = (() => {
+    if (order.priceBaseAmount == null) return null;
+    const diffCents =
+      Math.round(Number(order.priceAmount) * 100) -
+      Math.round(Number(order.priceBaseAmount) * 100);
+    return diffCents === 0 ? null : diffCents / 100;
+  })();
+
   return (
     <div className="divide-y">
       <DetailSection title="General">
@@ -217,6 +227,39 @@ export function OrderDetailBody({
 
       <DetailSection title="Monto">
         <DetailRow label="Precio" value={`${formatMoney(order.priceAmount)} USD`} mono />
+        {priceAdjustmentUsd !== null && (
+          <>
+            <DetailRow
+              label="Monto base (catálogo)"
+              value={`${formatMoney(Number(order.priceBaseAmount))} USD`}
+              mono
+            />
+            <DetailRow
+              label={priceAdjustmentUsd < 0 ? 'Descuento' : 'Recargo'}
+              value={
+                <DetailBadge tone={priceAdjustmentUsd < 0 ? 'success' : 'warning'}>
+                  {`${priceAdjustmentUsd < 0 ? '−' : '+'}${formatMoney(
+                    Math.abs(priceAdjustmentUsd),
+                  )} USD`}
+                </DetailBadge>
+              }
+            />
+            <DetailRow
+              label="Motivo del ajuste"
+              value={order.priceAdjustmentNote ?? null}
+            />
+            <DetailRow
+              label="Ajuste aplicado por"
+              value={
+                order.priceAdjustedBy
+                  ? `${orderUserDisplayName(order.priceAdjustedBy)}${
+                      order.priceAdjustedAt ? ` · ${fmtDate(order.priceAdjustedAt)}` : ''
+                    }`
+                  : null
+              }
+            />
+          </>
+        )}
         {order?.doctorAmount != null && (
           <DetailRow
             label="Monto al proveedor"

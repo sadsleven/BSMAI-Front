@@ -183,12 +183,15 @@ export function GuidePage() {
                 <p>
                   Carga sucursal, tipo de orden, titular y paciente, especialidad,
                   patologías, tipos de servicio con proveedor (doctor o centro)
-                  por fila, fechas y monto. El monto se prellena de los precios
-                  Particular o del seguro según el tipo de orden.
+                  por fila, fechas y monto. El monto se prellena con los precios
+                  Particular o del seguro según el tipo de orden, y puedes
+                  editarlo para aplicar un descuento o un monto superior: al
+                  diferir del precio de catálogo se exige el motivo y queda
+                  registrado con tu usuario y la fecha.
                 </p>
                 <Note>
                   Si no tienes el permiso <code>orders.edit-amount</code>, el
-                  monto queda forzado a la suma Particular. Puedes pedir
+                  monto queda forzado a la suma de catálogo. Puedes pedir
                   autorización a un validador desde el botón "Solicitar
                   autorización de monto".
                 </Note>

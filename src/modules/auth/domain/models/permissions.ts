@@ -68,6 +68,7 @@ export const PERMISSIONS = {
     STAGE_REPORT: 'orders.stage-report',
     STAGE_BILLING: 'orders.stage-billing',
     EDIT_AMOUNT: 'orders.edit-amount',
+    CUSTOM_NUMBER: 'orders.custom-number',
     SET_PROVIDER_AMOUNT: 'orders.set-provider-amount',
   },
   ACCOUNTS_PAYABLE: {

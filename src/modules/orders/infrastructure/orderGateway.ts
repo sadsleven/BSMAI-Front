@@ -52,6 +52,14 @@ export const orderGateway = {
     const { data } = await api.get<OrderChangeLog[]>(`/orders/${id}/history`);
     return data;
   },
+  /**
+   * Piso de la numeración automática (`ORDER_NUMBER_START`). Los números
+   * manuales de órdenes históricas deben ser menores a este valor.
+   */
+  async numberStart(): Promise<number> {
+    const { data } = await api.get<{ start: number }>('/orders/config/number-start');
+    return Number(data?.start) || 1;
+  },
   /** Nombres personalizados ya usados para un ST (autocompletar Paso 1). */
   async customNameSuggestions(serviceTypeId: string): Promise<string[]> {
     const { data } = await api.get<string[]>(
