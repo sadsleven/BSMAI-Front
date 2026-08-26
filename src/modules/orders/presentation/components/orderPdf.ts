@@ -10,7 +10,7 @@ import {
 import {
   orderReferenceLabel,
   providerInternalNumber,
-  resolveCreationRateBs,
+  resolveInvoiceRateBs,
   type OrderProviderGroup,
 } from './orderExcel';
 import { formatMoney } from '@/lib/format/money';
@@ -100,7 +100,7 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
     : holder;
 
   // Conversión a Bs vía tasa más reciente vigente al crear la orden
-  const rateBs = await resolveCreationRateBs(order);
+  const rateBs = await resolveInvoiceRateBs(order);
   const priceFx = Number(order.priceAmount) || 0;
   const priceBs = rateBs > 0 ? priceFx * rateBs : priceFx;
   const currencySymbol = '$';

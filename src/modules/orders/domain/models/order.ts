@@ -27,6 +27,13 @@ export interface OrderPayment {
   referenceNumber?: string | null;
   bankCode?: string | null;
   exchangeRateId?: string | null;
+  /** Tasa snapshot del pago (USD/Bs para pagos en Bs, EUR/Bs para efectivo euros). */
+  exchangeRate?: {
+    id: string;
+    currency: 'USD' | 'EUR';
+    amountBs: string | number;
+    effectiveDate?: string;
+  } | null;
   accountNumber?: string | null;
   amountCurrency: PaymentCurrency;
   amountValue: number | string;

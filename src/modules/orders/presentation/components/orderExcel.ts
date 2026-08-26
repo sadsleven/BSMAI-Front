@@ -65,16 +65,63 @@ async function loadLogoBuffer(): Promise<ArrayBuffer | null> {
 }
 
 /**
- * Tasa USD/Bs para la factura: la más reciente vigente al momento de CREAR la
- * orden, indiferente de la tasa al facturar/cobrar/pagar proveedores. Órdenes
- * con tasa fija usan su snapshot. Fallback: tasa de facturación legada, sino 0
- * (los montos quedan sin convertir, comportamiento previo).
+ * Tasa USD/Bs con la que MÁS dinero entró en los pagos del Paso 1: agrupa los
+ * pagos en Bs por su tasa snapshot y devuelve la del grupo que más pagó
+ * (comparando el equivalente en USD, que es lo que mide cuánto se pagó de
+ * verdad). Empate → la tasa con fecha efectiva más reciente.
+ *
+ * Los pagos en USD no llevan tasa y los de EUR llevan EUR/Bs: ninguno participa.
+ * Devuelve 0 cuando la orden no tiene pagos en Bs (seguro, crédito).
  */
-export async function resolveCreationRateBs(order: Order): Promise<number> {
+function dominantPaymentRateBs(order: Order): number {
+  const totals = new Map<
+    string,
+    { usd: number; rate: number; effectiveDate: string }
+  >();
+  for (const p of order.payments ?? []) {
+    if (p.amountCurrency !== 'BS') continue;
+    const r = p.exchangeRate;
+    if (!r || r.currency !== 'USD') continue;
+    const rate = Number(r.amountBs) || 0;
+    const amountBs = Number(p.amountValue) || 0;
+    if (rate <= 0 || amountBs <= 0) continue;
+    const acc = totals.get(r.id) ?? {
+      usd: 0,
+      rate,
+      effectiveDate: r.effectiveDate ?? '',
+    };
+    acc.usd += amountBs / rate;
+    totals.set(r.id, acc);
+  }
+  let best: { usd: number; rate: number; effectiveDate: string } | null = null;
+  for (const t of totals.values()) {
+    if (
+      !best ||
+      t.usd > best.usd + 0.005 ||
+      (Math.abs(t.usd - best.usd) <= 0.005 && t.effectiveDate > best.effectiveDate)
+    ) {
+      best = t;
+    }
+  }
+  return best?.rate ?? 0;
+}
+
+/**
+ * Tasa USD/Bs de la FACTURA (Paso 4) — alimenta el campo "Tasa de cambio BCV" y
+ * todos los montos en Bs del documento. Precedencia:
+ *  1. Orden con tasa fija (seguro no indexado): su snapshot.
+ *  2. Tasa del pago dominante del Paso 1 ({@link dominantPaymentRateBs}): la
+ *     factura queda a la tasa a la que realmente se cobró.
+ *  3. Tasa vigente al CREAR la orden (órdenes sin pagos: seguro, crédito).
+ *  4. Tasa de facturación snapshot; sino 0 (montos sin convertir).
+ */
+export async function resolveInvoiceRateBs(order: Order): Promise<number> {
   if (order.useFixedRate && order.fixedExchangeRate) {
     const fixed = Number(order.fixedExchangeRate.amountBs) || 0;
     if (fixed > 0) return fixed;
   }
+  const paid = dominantPaymentRateBs(order);
+  if (paid > 0) return paid;
   const at = order.createdAt ?? order.orderDate;
   try {
     const { data } = await exchangeRateGateway.list({
@@ -224,7 +271,7 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
     order.type === 'cash' ? 'CONTADO' : 'CREDITO';
 
   // Conversión a Bs vía tasa más reciente vigente al crear la orden
-  const rateBs = await resolveCreationRateBs(order);
+  const rateBs = await resolveInvoiceRateBs(order);
   const priceFx = Number(order.priceAmount) || 0;
   const priceBs = rateBs > 0 ? priceFx * rateBs : priceFx;
   const currencySymbol = '$';

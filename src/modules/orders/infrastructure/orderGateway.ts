@@ -120,6 +120,11 @@ export const orderGateway = {
     );
     return data;
   },
+  /** Cambia el N° de una orden ya creada: renumera base + órdenes internas. */
+  async changeNumber(id: string, number: number): Promise<Order> {
+    const { data } = await api.patch<Order>(`/orders/${id}/number`, { number });
+    return data;
+  },
   // ----- Cancelación (conserva el número de la orden) -----
   async cancel(id: string, reason: string): Promise<Order> {
     const { data } = await api.patch<Order>(`/orders/${id}/cancel`, { reason });

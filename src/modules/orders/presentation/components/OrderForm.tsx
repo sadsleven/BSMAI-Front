@@ -29,6 +29,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { notify } from '@/lib/notifications/toast';
 import { formatMoney } from '@/lib/format/money';
 import { casheaBreakdownCents } from '@/lib/money/cashea';
 import { useAuthStore } from '@/modules/auth/domain/store/authStore';
@@ -836,6 +837,10 @@ export function OrderForm({
     return Math.max(1, keys.size);
   }, [orderServiceTypeRows]);
 
+  // Números que consume la orden: en una orden ya creada mandan sus órdenes
+  // internas reales (el formulario puede estar en sólo lectura).
+  const numberBlockCount = savedOrder?.internalOrders?.length || providerCount;
+
   // Chequeo de disponibilidad del bloque (debounce 350ms). El backend re-valida
   // al guardar: esto es sólo feedback en vivo.
   const savedOrderId = savedOrder?.id;
@@ -846,7 +851,7 @@ export function OrderForm({
     const t = setTimeout(() => {
       setNumberChecking(true);
       orderGateway
-        .numberAvailability({ number: n, count: providerCount, orderId: savedOrderId })
+        .numberAvailability({ number: n, count: numberBlockCount, orderId: savedOrderId })
         .then((res) => !cancelled && setNumberCheck(res))
         .catch(() => !cancelled && setNumberCheck(null))
         .finally(() => !cancelled && setNumberChecking(false));
@@ -855,14 +860,14 @@ export function OrderForm({
       cancelled = true;
       clearTimeout(t);
     };
-  }, [orderNumberValue, providerCount, savedOrderId]);
+  }, [orderNumberValue, numberBlockCount, savedOrderId]);
 
   // Verdadero/falso sólo si la respuesta corresponde al número y a la cantidad
   // de proveedores actuales; `null` mientras no hay veredicto.
   const numberAvailable =
     numberCheck &&
     numberCheck.number === orderNumberValue &&
-    numberCheck.count === providerCount
+    numberCheck.count === numberBlockCount
       ? numberCheck.available
       : null;
   useEffect(() => {
@@ -870,7 +875,7 @@ export function OrderForm({
   }, [numberAvailable, onOrderNumberOkChange]);
   const orderNumberBlock =
     typeof orderNumberValue === 'number' && orderNumberValue > 0
-      ? Array.from({ length: providerCount }, (_, i) => orderNumberValue + i)
+      ? Array.from({ length: numberBlockCount }, (_, i) => orderNumberValue + i)
       : [];
   // Cantidad por ST (sólo > 1 si el ST permite cantidad). Default 1.
   const qtyByST = useMemo(() => {
@@ -1091,6 +1096,122 @@ export function OrderForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [computedPriceSum, catalogReady, priceBaseKnown, amountLocked, hasAuthorization, insuranceId, serviceTypeIdsKey]);
 
+  // ---- N° de orden (Paso 1, editable también después de creada) -------------
+  // Se puede corregir en cualquier estado del flujo: el backend renumera la
+  // orden completa (base + una orden interna por proveedor). Sólo lo bloquean
+  // el permiso, el candado del Paso 1 (no creador) y las órdenes canceladas.
+  const orderNumberLocked = !canCustomNumber || step1ReadOnly || isCancelled;
+  const savedNumber = savedOrder ? Number(savedOrder.orderNumber) : null;
+  const orderNumberDirty =
+    !!savedOrder &&
+    typeof orderNumberValue === 'number' &&
+    savedNumber !== null &&
+    Number.isFinite(savedNumber) &&
+    orderNumberValue !== savedNumber;
+  const [savingOrderNumber, setSavingOrderNumber] = useState(false);
+
+  const saveOrderNumber = async () => {
+    if (!savedOrder || typeof orderNumberValue !== 'number') return;
+    setSavingOrderNumber(true);
+    try {
+      await orderGateway.changeNumber(savedOrder.id, orderNumberValue);
+      notify.success(`N° de orden actualizado a ${orderNumberValue}`);
+      await onOrderRefresh?.();
+    } catch (e) {
+      notify.fromError(e, 'No se pudo cambiar el número de orden.');
+    } finally {
+      setSavingOrderNumber(false);
+    }
+  };
+
+  const orderNumberField = (
+    <Controller
+      control={control}
+      name="customOrderNumber"
+      render={({ field }) => (
+        <div className="space-y-1.5">
+          <Label htmlFor="customOrderNumber" className="text-sm font-medium">
+            N° de orden
+            {!canCustomNumber ? (
+              <span className="text-muted-foreground font-normal">
+                {' '}
+                (lo asigna el sistema)
+              </span>
+            ) : null}
+          </Label>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Input
+              id="customOrderNumber"
+              type="number"
+              min={1}
+              step={1}
+              inputMode="numeric"
+              disabled={orderNumberLocked}
+              placeholder="Número de la orden"
+              className="max-w-[180px]"
+              value={field.value ?? ''}
+              onChange={(e) => {
+                const raw = e.target.value.trim();
+                if (!raw) {
+                  field.onChange(undefined);
+                  return;
+                }
+                const n = Math.trunc(Number(raw));
+                field.onChange(Number.isFinite(n) && n > 0 ? n : undefined);
+              }}
+            />
+            {numberChecking ? (
+              <span className="text-xs text-muted-foreground">
+                Verificando disponibilidad…
+              </span>
+            ) : numberAvailable === true ? (
+              <span className="text-xs text-success font-medium">
+                {numberBlockCount > 1
+                  ? `Disponible (${orderNumberBlock[0]}–${orderNumberBlock[orderNumberBlock.length - 1]})`
+                  : 'Disponible'}
+              </span>
+            ) : numberAvailable === false ? (
+              <>
+                <span className="text-xs text-destructive font-medium">
+                  Ya está en uso: {numberCheck?.taken.join(', ')}
+                </span>
+                {!orderNumberLocked && numberCheck?.nextFree ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => field.onChange(numberCheck.nextFree)}
+                  >
+                    Usar {numberCheck.nextFree}
+                  </Button>
+                ) : null}
+              </>
+            ) : null}
+            {orderNumberDirty && !orderNumberLocked ? (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void saveOrderNumber()}
+                disabled={savingOrderNumber || numberAvailable === false}
+              >
+                {savingOrderNumber ? 'Guardando…' : 'Guardar número'}
+              </Button>
+            ) : null}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {numberBlockCount > 1
+              ? `La orden tiene ${numberBlockCount} proveedores: ocupa ${numberBlockCount} números consecutivos (${orderNumberBlock.join(' · ')}), uno por orden interna del Paso 2.`
+              : 'Puedes usar cualquier número libre. Por defecto se propone el siguiente disponible (el mayor + 1).'}
+            {savedOrder
+              ? ' Al guardar, la orden y sus órdenes internas se renumeran.'
+              : ''}
+          </p>
+          <FieldError message={errors.customOrderNumber?.message} />
+        </div>
+      )}
+    />
+  );
+
   const orderSteps = buildOrderSteps(
     !!savedOrder,
     { attention: canAttention, report: canReport, billing: canBilling },
@@ -1129,6 +1250,16 @@ export function OrderForm({
           order={savedOrder}
           onSaved={() => onOrderRefresh?.()}
         />
+      ) : null}
+
+      {renderStep1 && savedOrder ? (
+        <FormSection
+          title="N° de orden"
+          description="Número de la orden y de sus órdenes internas. Se puede corregir en cualquier estado."
+          className="mb-6"
+        >
+          {orderNumberField}
+        </FormSection>
       ) : null}
 
       {!renderStep1 ? null : (
@@ -1195,80 +1326,7 @@ export function OrderForm({
             <FieldError message={errors.type?.message} />
           </div>
 
-          {!savedOrder || savedOrder.status === 'draft' ? (
-            <Controller
-              control={control}
-              name="customOrderNumber"
-              render={({ field }) => (
-                <div className="space-y-1.5">
-                  <Label htmlFor="customOrderNumber" className="text-sm font-medium">
-                    N° de orden
-                    {!canCustomNumber ? (
-                      <span className="text-muted-foreground font-normal">
-                        {' '}
-                        (lo asigna el sistema)
-                      </span>
-                    ) : null}
-                  </Label>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Input
-                      id="customOrderNumber"
-                      type="number"
-                      min={1}
-                      step={1}
-                      inputMode="numeric"
-                      disabled={!canCustomNumber}
-                      placeholder="Número de la orden"
-                      className="max-w-[180px]"
-                      value={field.value ?? ''}
-                      onChange={(e) => {
-                        const raw = e.target.value.trim();
-                        if (!raw) {
-                          field.onChange(undefined);
-                          return;
-                        }
-                        const n = Math.trunc(Number(raw));
-                        field.onChange(Number.isFinite(n) && n > 0 ? n : undefined);
-                      }}
-                    />
-                    {numberChecking ? (
-                      <span className="text-xs text-muted-foreground">
-                        Verificando disponibilidad…
-                      </span>
-                    ) : numberAvailable === true ? (
-                      <span className="text-xs text-success font-medium">
-                        {providerCount > 1
-                          ? `Disponible (${orderNumberBlock[0]}–${orderNumberBlock[orderNumberBlock.length - 1]})`
-                          : 'Disponible'}
-                      </span>
-                    ) : numberAvailable === false ? (
-                      <>
-                        <span className="text-xs text-destructive font-medium">
-                          Ya está en uso: {numberCheck?.taken.join(', ')}
-                        </span>
-                        {canCustomNumber && numberCheck?.nextFree ? (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => field.onChange(numberCheck.nextFree)}
-                          >
-                            Usar {numberCheck.nextFree}
-                          </Button>
-                        ) : null}
-                      </>
-                    ) : null}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {providerCount > 1
-                      ? `La orden tiene ${providerCount} proveedores: ocupa ${providerCount} números consecutivos (${orderNumberBlock.join(' · ')}), uno por orden interna del Paso 2.`
-                      : 'Puedes usar cualquier número libre. Por defecto se propone el siguiente disponible.'}
-                  </p>
-                  <FieldError message={errors.customOrderNumber?.message} />
-                </div>
-              )}
-            />
-          ) : null}
+          {!savedOrder ? orderNumberField : null}
 
           {type === 'credit' ? (
             <Controller
