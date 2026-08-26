@@ -614,7 +614,7 @@ export function OrderList() {
                             </Link>
                           )}
                         </Can>
-                        {!isDeleted && order.status !== 'finalized' ? (
+                        {!isDeleted ? (
                           <Can permission={PERMISSIONS.ORDERS.CANCEL}>
                             <Button
                               variant="ghost"

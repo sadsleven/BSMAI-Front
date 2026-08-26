@@ -1262,7 +1262,7 @@ export function OrderForm({
                   <p className="text-xs text-muted-foreground">
                     {providerCount > 1
                       ? `La orden tiene ${providerCount} proveedores: ocupa ${providerCount} números consecutivos (${orderNumberBlock.join(' · ')}), uno por orden interna del Paso 2.`
-                      : 'Puedes usar cualquier número libre. Por defecto se propone el siguiente disponible (el mayor + 1).'}
+                      : 'Puedes usar cualquier número libre. Por defecto se propone el siguiente disponible.'}
                   </p>
                   <FieldError message={errors.customOrderNumber?.message} />
                 </div>
@@ -2111,6 +2111,7 @@ export function OrderForm({
                   }
                   errors={paymentsErrors}
                   allowedTypes={INCOMING_PAYMENT_TYPES}
+                  remaining={{ amount: diff, currency: 'USD' }}
                 />
               );
             }}
@@ -2148,19 +2149,6 @@ export function OrderForm({
                   </Badge>
                 )}
               </div>
-              {Math.abs(diff) >= 0.01 ? (
-                <div className="text-xs text-muted-foreground space-y-0.5">
-                  {currentRate ? (
-                    <div>
-                      {diff > 0 ? 'Faltan' : 'Excede'}{' '}
-                      <span className="font-mono">
-                        Bs{' '}
-                        {formatMoney(Math.abs(diff) * Number(currentRate.amountBs))}
-                      </span>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
             </div>
           </div>
 

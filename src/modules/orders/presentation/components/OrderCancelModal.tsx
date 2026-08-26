@@ -118,6 +118,14 @@ export function OrderCancelModal({
         </AlertDialogHeader>
 
         <div className="px-6 py-4 space-y-4">
+          {!cancelled && order.status === 'finalized' ? (
+            <div className="rounded-lg border border-warning/40 bg-warning-soft px-3 py-2.5 text-xs text-warning flex items-start gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              Esta orden ya está facturada. Al cancelarla deja de contar en
+              cuentas por cobrar, cuentas por pagar y reportes. La factura ya
+              emitida no se anula sola.
+            </div>
+          ) : null}
           {cancelled ? (
             order.cancelReason ? (
               <div className="rounded-lg border bg-muted/40 px-3 py-2.5 space-y-0.5">

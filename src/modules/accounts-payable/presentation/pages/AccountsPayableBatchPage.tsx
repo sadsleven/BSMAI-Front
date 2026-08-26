@@ -1113,6 +1113,10 @@ function BatchDetail({ id }: { id: string }) {
                           onRemovePayment={removePaymentAt}
                           usePaymentAccount={false}
                           recipientMethods={recipientMethods}
+                          remaining={{
+                            amount: Math.round((netBs - cumulativeBs) * 100) / 100,
+                            currency: 'BS',
+                          }}
                         />
                       )}
                     />

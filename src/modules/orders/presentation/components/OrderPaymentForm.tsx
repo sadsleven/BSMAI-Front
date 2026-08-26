@@ -171,6 +171,15 @@ export type OrderPaymentFormProps = {
    * convertir montos de pagos que referencian tasas no vigentes.
    */
   onRatesLoaded?: (rates: ExchangeRate[]) => void;
+  /**
+   * Lo que falta para cuadrar, en su moneda natural: `USD` en órdenes (Paso 1),
+   * `BS` en lotes de cuentas por pagar. Positivo = falta, negativo = excede.
+   * Con esto, cada fila en Bs (pago móvil, transferencia, punto, efectivo Bs)
+   * muestra bajo el Monto el valor EXACTO en Bs que cuadra la fila, calculado
+   * con la tasa de esa misma fila — así el usuario no convierte a mano y no
+   * quedan diferencias de redondeo. Al hacer clic se copia al campo.
+   */
+  remaining?: { amount: number; currency: 'USD' | 'BS' } | null;
 };
 
 /** `effectiveDate` es `timestamptz`: se muestra en hora de Venezuela. */
@@ -236,6 +245,7 @@ export function OrderPaymentForm({
   hideExchangeRate = false,
   rateSelectable = false,
   onRatesLoaded,
+  remaining = null,
 }: OrderPaymentFormProps) {
   const [banks, setBanks] = useState<Bank[]>([]);
   const [eurRate, setEurRate] = useState<ExchangeRate | null>(null);
@@ -432,6 +442,27 @@ export function OrderPaymentForm({
                 null
               : null;
             const rowRate = selectedRowRate ?? (isEur ? eurRate : usdRate);
+            // Monto en Bs que dejaría la operación cuadrada para esta fila:
+            // lo ya tipeado + lo que falta (convertido con la tasa de la fila si
+            // el faltante viene en USD). Sólo filas en Bs.
+            const rowIsBs = isBs || isCardLike;
+            const balancedBs = (() => {
+              if (!remaining || !rowIsBs) return null;
+              const pending = Number(remaining.amount);
+              if (!Number.isFinite(pending) || Math.abs(pending) < 0.005) return null;
+              let pendingBs = pending;
+              if (remaining.currency === 'USD') {
+                const bs = Number(rowRate?.amountBs ?? 0);
+                if (!bs || bs <= 0) return null;
+                pendingBs = pending * bs;
+              }
+              const target =
+                Math.round((Number(p.amountValue || 0) + pendingBs) * 100) / 100;
+              if (target <= 0) return null;
+              return Math.abs(target - Number(p.amountValue || 0)) < 0.01
+                ? null
+                : target;
+            })();
             const rowRateOptions = isEur ? ratesByCurrency.EUR : ratesByCurrency.USD;
             const rowCurrentRateId = isEur ? currentEurRateId : currentUsdRateId;
             // Cuentas registradas del beneficiario que aplican a esta fila.
@@ -724,6 +755,24 @@ export function OrderPaymentForm({
                     />
                     {err.amountValue ? (
                       <p className="text-xs text-destructive">{err.amountValue}</p>
+                    ) : null}
+                    {balancedBs != null ? (
+                      disabled ? (
+                        <p className="text-xs text-muted-foreground">
+                          Para cuadrar:{' '}
+                          <span className="font-mono">Bs {formatMoney(balancedBs)}</span>
+                        </p>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => update(i, { amountValue: balancedBs })}
+                          className="text-xs text-brand-blue hover:underline text-left"
+                          title="Usar este monto para cuadrar"
+                        >
+                          Para cuadrar:{' '}
+                          <span className="font-mono">Bs {formatMoney(balancedBs)}</span>
+                        </button>
+                      )
                     ) : null}
                   </div>
                 </div>
