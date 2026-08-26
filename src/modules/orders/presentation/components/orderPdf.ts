@@ -4,6 +4,7 @@ import { saveAs } from 'file-saver';
 import type { Order } from '../../domain/models/order';
 import {
   holderDisplayName,
+  orderInvoiceDate,
   orderServiceKeyDisplay,
 } from '../../domain/models/order';
 import {
@@ -173,7 +174,10 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
     '',
     '',
     { content: 'Fecha de Emisión:', colSpan: 2, styles: { halign: 'right' } },
-    { content: fmtDate(order.orderDate), styles: { halign: 'center', fontSize: 9 } },
+    {
+      content: fmtDate(orderInvoiceDate(order)),
+      styles: { halign: 'center', fontSize: 9 },
+    },
   ]);
 
   // R4-R7 — Contratante. Seguro → datos del seguro; resto → titular.

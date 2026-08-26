@@ -33,7 +33,17 @@ import { formatCreatedDateTime } from '@/lib/dates';
 import { formatMoney } from '@/lib/format/money';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
-import { Plus, Trash2, Eye, Undo2, ListChecks, FileText, FileEdit } from 'lucide-react';
+import {
+  Plus,
+  Trash2,
+  Eye,
+  Undo2,
+  ListChecks,
+  FileText,
+  FileEdit,
+  Ban,
+  RotateCcw,
+} from 'lucide-react';
 import { useOrderStore } from '../../domain/store/orderStore';
 import { orderGateway } from '../../infrastructure/orderGateway';
 import {
@@ -43,6 +53,7 @@ import {
   type OrderStatus,
   type OrderType,
   holderDisplayName,
+  isOrderCancelled,
   orderInternalNumbers,
   orderUserDisplayName,
 } from '../../domain/models/order';
@@ -54,6 +65,7 @@ import { useAuthStore } from '@/modules/auth/domain/store/authStore';
 import { getUserBranches } from '@/lib/auth/branches';
 import { cn } from '@/lib/utils';
 import { lastAccessibleStep } from '../../domain/wizardStep';
+import { OrderCancelModal } from '../components/OrderCancelModal';
 
 type SortBy = 'orderNumber' | 'orderDate' | 'appointmentDate' | 'priceAmount' | 'createdAt' | 'updatedAt';
 type DeletionFilter = 'active' | 'deleted' | 'all';
@@ -195,6 +207,7 @@ export function OrderList() {
   const [deleteTarget, setDeleteTarget] = useState<Order | null>(null);
   const [hardConfirmStep, setHardConfirmStep] = useState(0);
   const [restoreTarget, setRestoreTarget] = useState<Order | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<Order | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
   const handleSoftDelete = async () => {
@@ -483,6 +496,7 @@ export function OrderList() {
             ) : (
               orders.map((order) => {
                 const isDeleted = !!order.deletedAt;
+                const isCancelled = isOrderCancelled(order);
                 return (
                   <TableRow key={order.id} className="hover:bg-[oklch(0.985_0.003_250)]">
                     <TableCell className="py-3.5 px-4 font-mono text-sm">
@@ -569,23 +583,64 @@ export function OrderList() {
                           </Link>
                         </Can>
                         <Can permission={PERMISSIONS.ORDERS.UPDATE}>
-                          <Link
-                            to={`/orders/edit/${order.id}?step=${lastAccessibleStep(order, {
-                              attention: has(PERMISSIONS.ORDERS.STAGE_ATTENTION),
-                              report: has(PERMISSIONS.ORDERS.STAGE_REPORT),
-                              billing: has(PERMISSIONS.ORDERS.STAGE_BILLING),
-                            })}`}
-                          >
+                          {isCancelled ? (
+                            // Orden cancelada: el flujo queda congelado hasta
+                            // reactivarla (el BE también lo bloquea).
                             <Button
                               variant="ghost"
                               size="icon"
-                              title="Continuar flujo (atención / informe / facturación)"
+                              title="Orden cancelada: reactívala para continuar el flujo"
                               className="w-8 h-8"
+                              disabled
                             >
                               <ListChecks className="w-4 h-4" />
                             </Button>
-                          </Link>
+                          ) : (
+                            <Link
+                              to={`/orders/edit/${order.id}?step=${lastAccessibleStep(order, {
+                                attention: has(PERMISSIONS.ORDERS.STAGE_ATTENTION),
+                                report: has(PERMISSIONS.ORDERS.STAGE_REPORT),
+                                billing: has(PERMISSIONS.ORDERS.STAGE_BILLING),
+                              })}`}
+                            >
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                title="Continuar flujo (atención / informe / facturación)"
+                                className="w-8 h-8"
+                              >
+                                <ListChecks className="w-4 h-4" />
+                              </Button>
+                            </Link>
+                          )}
                         </Can>
+                        {!isDeleted && order.status !== 'finalized' ? (
+                          <Can permission={PERMISSIONS.ORDERS.CANCEL}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className={cn(
+                                'w-8 h-8',
+                                isCancelled
+                                  ? 'text-success hover:bg-success-soft hover:text-success'
+                                  : 'text-destructive hover:bg-destructive-soft hover:text-destructive',
+                              )}
+                              title={
+                                isCancelled
+                                  ? 'Reactivar orden (revertir cancelación)'
+                                  : 'Cancelar orden (conserva el número)'
+                              }
+                              onClick={() => setCancelTarget(order)}
+                              disabled={actionLoading}
+                            >
+                              {isCancelled ? (
+                                <RotateCcw className="w-4 h-4" />
+                              ) : (
+                                <Ban className="w-4 h-4" />
+                              )}
+                            </Button>
+                          </Can>
+                        ) : null}
                         {isDeleted ? (
                           <Can permission={PERMISSIONS.ORDERS.RESTORE}>
                             <Button
@@ -644,6 +699,19 @@ export function OrderList() {
         />
         </div>
       </div>
+
+      <OrderCancelModal
+        key={cancelTarget?.id ?? 'none'}
+        open={!!cancelTarget}
+        onOpenChange={(o) => {
+          if (!o) setCancelTarget(null);
+        }}
+        order={cancelTarget}
+        onDone={() => {
+          setCancelTarget(null);
+          void fetch();
+        }}
+      />
 
       <ConfirmDialog
         open={!!restoreTarget}

@@ -272,8 +272,18 @@ export function OrderEdit() {
     step1OkRef.current = ok;
   }, []);
 
+  // N° de orden libre (bloque completo, uno por proveedor).
+  const numberOkRef = useRef(true);
+  const handleNumberOk = useCallback((ok: boolean) => {
+    numberOkRef.current = ok;
+  }, []);
+
   // Solo el creador (o Super Admin) puede modificar el Paso 1. Los demás pasos
   // siguen disponibles según sus permisos. Espejo del guard BE.
+  // Orden cancelada: el flujo queda congelado (espejo del guard BE). Se
+  // reactiva desde el listado de órdenes.
+  const isCancelled = initialOrder?.status === 'cancelled';
+
   const step1Locked =
     !!initialOrder &&
     !!me &&
@@ -282,6 +292,12 @@ export function OrderEdit() {
 
   const onSubmit = async (values: OrderValues) => {
     if (!id || step1Locked) return;
+    if (!numberOkRef.current) {
+      notify.error(
+        'El N° de orden elegido ya está en uso. Usa uno libre antes de guardar.',
+      );
+      return;
+    }
     if (values.type === 'cash' && !step1OkRef.current) {
       notify.error(
         'La orden de contado debe estar cuadrada (pagos = total) para poder crearla y continuar al Paso 2.',
@@ -385,6 +401,7 @@ export function OrderEdit() {
               await fetchOrder();
             }}
             onStep1PaymentOkChange={handleStep1Ok}
+            onOrderNumberOkChange={handleNumberOk}
           />
 
           <div className="flex items-center justify-between gap-3 pt-2 flex-wrap">
@@ -394,12 +411,13 @@ export function OrderEdit() {
             <div className="flex items-center gap-2 flex-wrap">
               {currentStep === 'register' &&
               initialOrder?.status === 'draft' &&
+              !isCancelled &&
               !step1Locked ? (
                 <Button type="submit" disabled={methods.formState.isSubmitting}>
                   {methods.formState.isSubmitting ? 'Guardando…' : 'Guardar cambios'}
                 </Button>
               ) : null}
-              {currentStep === 'register' && initialOrder && canAttention ? (
+              {currentStep === 'register' && initialOrder && canAttention && !isCancelled ? (
                 <Button
                   type="button"
                   variant={initialOrder.status === 'draft' ? 'outline' : 'default'}

@@ -3,6 +3,7 @@ import { saveAs } from 'file-saver';
 import type { Order, OrderServiceTypeRow } from '../../domain/models/order';
 import {
   holderDisplayName,
+  orderInvoiceDate,
   orderServiceKeyDisplay,
 } from '../../domain/models/order';
 import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
@@ -237,7 +238,7 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
   r3.getCell(4).value = 'Fecha de Emisión:';
   r3.getCell(4).font = DEFAULT_FONT;
   r3.getCell(4).alignment = { horizontal: 'right', vertical: 'middle' };
-  r3.getCell(5).value = fmtDate(order.orderDate);
+  r3.getCell(5).value = fmtDate(orderInvoiceDate(order));
   r3.getCell(5).font = SMALL_FONT;
   r3.getCell(5).alignment = { horizontal: 'center', vertical: 'middle' };
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Trash2, Plus, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,6 +16,7 @@ import { bankGateway } from '@/modules/banks/infrastructure/bankGateway';
 import type { Bank } from '@/modules/banks/domain/models/bank';
 import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchangeRate';
 import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
+import { useRatesByCurrency } from '@/modules/exchange-rates/presentation/hooks/useUsdRates';
 import type { OrderPaymentValues } from '@/lib/validations/schemas';
 import {
   PAYMENT_TYPE_LABEL,
@@ -159,7 +160,29 @@ export type OrderPaymentFormProps = {
    * en Bs fijos sin conversión (retenciones al SENIAT).
    */
   hideExchangeRate?: boolean;
+  /**
+   * Convierte "Tasa de cambio" en un selector por fila: cada pago guarda la
+   * tasa a la que efectivamente se pagó (Bs → tasa USD/Bs; EUR → tasa EUR/Bs).
+   * Con `false` (default) el campo queda de solo lectura con la tasa vigente.
+   */
+  rateSelectable?: boolean;
+  /**
+   * Notifica las tasas cargadas por el selector para que el padre pueda
+   * convertir montos de pagos que referencian tasas no vigentes.
+   */
+  onRatesLoaded?: (rates: ExchangeRate[]) => void;
 };
+
+/** `effectiveDate` es `timestamptz`: se muestra en hora de Venezuela. */
+function rateDateLabel(effectiveDate: string): string {
+  const d = new Date(effectiveDate);
+  if (Number.isNaN(d.getTime())) return effectiveDate.slice(0, 10);
+  return d.toLocaleDateString('es-VE', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+}
 
 function defaultsForType(
   type: OrderPaymentType,
@@ -211,6 +234,8 @@ export function OrderPaymentForm({
   recipientMethods,
   allowedTypes = ALL_TYPES,
   hideExchangeRate = false,
+  rateSelectable = false,
+  onRatesLoaded,
 }: OrderPaymentFormProps) {
   const [banks, setBanks] = useState<Bank[]>([]);
   const [eurRate, setEurRate] = useState<ExchangeRate | null>(null);
@@ -269,6 +294,76 @@ export function OrderPaymentForm({
     if (dirty) onChange(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usdRate?.id, eurRate?.id]);
+
+  // ---- Selector de tasa por fila -------------------------------------------
+  // Cada pago guarda la tasa a la que se pagó: Bs → USD/Bs, EUR → EUR/Bs.
+  const ratesEnabled = rateSelectable && !hideExchangeRate;
+  const { rates: usdRates, currentRateId: currentUsdRateId } =
+    useRatesByCurrency('USD', ratesEnabled);
+  const { rates: eurRates, currentRateId: currentEurRateId } =
+    useRatesByCurrency('EUR', ratesEnabled);
+
+  // Tasas referenciadas por pagos ya guardados que no están en las listas
+  // (viejas o deshabilitadas): se cargan por id para no perder la selección.
+  const [extraRatesById, setExtraRatesById] = useState<Record<string, ExchangeRate>>({});
+  const attemptedRateIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!ratesEnabled) return;
+    const known = new Set([
+      ...usdRates.map((r) => r.id),
+      ...eurRates.map((r) => r.id),
+      ...Object.keys(extraRatesById),
+    ]);
+    const missing = Array.from(
+      new Set(
+        payments
+          .map((p) => (p.exchangeRateId ?? '').trim())
+          .filter(
+            (id) => id && !known.has(id) && !attemptedRateIds.current.has(id),
+          ),
+      ),
+    );
+    if (missing.length === 0) return;
+    missing.forEach((id) => attemptedRateIds.current.add(id));
+    let cancelled = false;
+    Promise.all(
+      missing.map((id) => exchangeRateGateway.getById(id).catch(() => null)),
+    ).then((loaded) => {
+      if (cancelled) return;
+      const found = loaded.filter((r): r is ExchangeRate => !!r);
+      if (!found.length) return;
+      setExtraRatesById((prev) => {
+        const next = { ...prev };
+        for (const r of found) next[r.id] = r;
+        return next;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ratesEnabled, payments, usdRates, eurRates]);
+
+  const ratesByCurrency = useMemo(() => {
+    const extras = Object.values(extraRatesById);
+    const merge = (base: ExchangeRate[], currency: 'USD' | 'EUR') => {
+      const ids = new Set(base.map((r) => r.id));
+      return [
+        ...base,
+        ...extras.filter((r) => r.currency === currency && !ids.has(r.id)),
+      ];
+    };
+    return { USD: merge(usdRates, 'USD'), EUR: merge(eurRates, 'EUR') };
+  }, [usdRates, eurRates, extraRatesById]);
+
+  // El padre necesita las tasas cargadas para convertir montos de pagos que
+  // referencian una tasa que no es la vigente.
+  useEffect(() => {
+    if (!onRatesLoaded) return;
+    const all = [...ratesByCurrency.USD, ...ratesByCurrency.EUR];
+    if (all.length) onRatesLoaded(all);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ratesByCurrency]);
 
   const todayIso = localTodayIso();
 
@@ -331,7 +426,14 @@ export function OrderPaymentForm({
             const typeLocked = !!lock?.type;
             const bankLocked = !!lock?.bankCode;
             const accountLocked = !!lock?.accountNumber;
-            const rowRate = isEur ? eurRate : usdRate;
+            const selectedRowRate = (p.exchangeRateId ?? '').trim()
+              ? ratesByCurrency.USD.find((r) => r.id === p.exchangeRateId) ??
+                ratesByCurrency.EUR.find((r) => r.id === p.exchangeRateId) ??
+                null
+              : null;
+            const rowRate = selectedRowRate ?? (isEur ? eurRate : usdRate);
+            const rowRateOptions = isEur ? ratesByCurrency.EUR : ratesByCurrency.USD;
+            const rowCurrentRateId = isEur ? currentEurRateId : currentUsdRateId;
             // Cuentas registradas del beneficiario que aplican a esta fila.
             const recipientPickable =
               !!recipientMethods && !usePaymentAccount && (isMobileOrTransfer || isOther);
@@ -392,15 +494,47 @@ export function OrderPaymentForm({
                   {!isUsd && !isOther && !isTransferUsd && !hideExchangeRate ? (
                     <div className="space-y-1">
                       <Label className="text-xs">Tasa de cambio</Label>
-                      <Input
-                        readOnly
-                        value={
-                          rowRate
-                            ? `1 ${rowRate.currency} = ${formatMoney(rowRate.amountBs)} Bs.`
-                            : '—'
-                        }
-                        className="h-9 bg-muted/30"
-                      />
+                      {rateSelectable ? (
+                        <Select
+                          value={p.exchangeRateId || ''}
+                          onValueChange={(v) => update(i, { exchangeRateId: v })}
+                          disabled={disabled || rowRateOptions.length === 0}
+                        >
+                          <SelectTrigger
+                            className={cn(
+                              'h-9',
+                              err.exchangeRateId && 'border-destructive',
+                            )}
+                          >
+                            <SelectValue
+                              placeholder={
+                                rowRateOptions.length === 0
+                                  ? 'Sin tasas disponibles'
+                                  : 'Selecciona la tasa'
+                              }
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {rowRateOptions.map((r) => (
+                              <SelectItem key={r.id} value={r.id}>
+                                1 {r.currency} = {formatMoney(r.amountBs)} Bs. ·{' '}
+                                {rateDateLabel(r.effectiveDate)}
+                                {r.id === rowCurrentRateId ? ' · vigente' : ''}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input
+                          readOnly
+                          value={
+                            rowRate
+                              ? `1 ${rowRate.currency} = ${formatMoney(rowRate.amountBs)} Bs.`
+                              : '—'
+                          }
+                          className="h-9 bg-muted/30"
+                        />
+                      )}
                       {err.exchangeRateId ? (
                         <p className="text-xs text-destructive flex items-center gap-1">
                           <AlertTriangle className="w-3 h-3" />
@@ -716,9 +850,29 @@ export function OrderPaymentForm({
 }
 
 /**
+ * Tasa USD/Bs con la que se convierte un pago en Bs: la elegida en el propio
+ * pago (snapshot de la tasa a la que se pagó) y, si no tiene, la de referencia
+ * del contexto (tasa vigente / de facturación / del lote).
+ */
+function usdBsForPayment(
+  p: OrderPaymentValues,
+  usdRate: ExchangeRate | null | undefined,
+  rateLookup: (id: string) => ExchangeRate | null,
+): number {
+  const rateId = (p.exchangeRateId || '').trim();
+  const own = rateId ? rateLookup(rateId) : null;
+  if (own && own.currency === 'USD') {
+    const bs = Number(own.amountBs);
+    if (Number.isFinite(bs) && bs > 0) return bs;
+  }
+  const fallback = Number(usdRate?.amountBs ?? 0);
+  return Number.isFinite(fallback) && fallback > 0 ? fallback : 0;
+}
+
+/**
  * Convierte un pago a USD.
  * - USD → directo.
- * - BS  → amount / usdRate.amountBs.
+ * - BS  → amount / tasa USD/Bs del pago (o la de referencia si no tiene).
  * - EUR → (amount × eurRate.amountBs) / usdRate.amountBs; eurRate viene del
  *         snapshot del propio pago (exchangeRateId → rateLookup).
  *
@@ -733,10 +887,14 @@ export function paymentInUsd(
   if (!Number.isFinite(amount) || amount <= 0) return 0;
   if (p.amountCurrency === 'USD') return amount;
 
+  if (p.amountCurrency === 'BS') {
+    const usdBs = usdBsForPayment(p, usdRate, rateLookup);
+    if (!usdBs) return 0;
+    return amount / usdBs;
+  }
+
   const usdBs = Number(usdRate?.amountBs ?? 0);
   if (!usdBs || usdBs <= 0) return 0;
-
-  if (p.amountCurrency === 'BS') return amount / usdBs;
 
   // EUR
   const rateId = (p.exchangeRateId || '').trim();
@@ -764,8 +922,8 @@ export function paymentInBs(
   if (p.amountCurrency === 'BS') return amount;
 
   if (p.amountCurrency === 'USD') {
-    const usdBs = Number(usdRate?.amountBs ?? 0);
-    if (!usdBs || usdBs <= 0) return 0;
+    const usdBs = usdBsForPayment(p, usdRate, rateLookup);
+    if (!usdBs) return 0;
     return amount * usdBs;
   }
 

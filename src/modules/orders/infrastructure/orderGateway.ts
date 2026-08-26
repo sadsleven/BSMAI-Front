@@ -6,6 +6,7 @@ import type {
   CreateOrderDto,
   Order,
   OrderChangeLog,
+  OrderNumberAvailability,
   OrderPayment,
   OrderPaymentInput,
   OrdersQuery,
@@ -102,6 +103,31 @@ export const orderGateway = {
   },
   async removePayment(orderId: string, paymentId: string): Promise<void> {
     await api.delete(`/orders/${orderId}/payments/${paymentId}`);
+  },
+  /**
+   * Disponibilidad de números de orden (Paso 1). Sin `number` devuelve sólo la
+   * sugerencia (mayor en uso + 1). Con `number` + `count` (proveedores de la
+   * orden) dice si el bloque consecutivo está libre y cuál es el próximo libre.
+   */
+  async numberAvailability(params: {
+    number?: number;
+    count?: number;
+    orderId?: string;
+  }): Promise<OrderNumberAvailability> {
+    const { data } = await api.get<OrderNumberAvailability>(
+      '/orders/numbers/availability',
+      { params },
+    );
+    return data;
+  },
+  // ----- Cancelación (conserva el número de la orden) -----
+  async cancel(id: string, reason: string): Promise<Order> {
+    const { data } = await api.patch<Order>(`/orders/${id}/cancel`, { reason });
+    return data;
+  },
+  async uncancel(id: string): Promise<Order> {
+    const { data } = await api.patch<Order>(`/orders/${id}/uncancel`);
+    return data;
   },
   // ----- Paso 1: autorización de monto por validador -----
   async authorizeAmount(id: string, dto: AuthorizeOrderAmountDto): Promise<Order> {

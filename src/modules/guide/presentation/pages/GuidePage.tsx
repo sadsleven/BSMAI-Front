@@ -175,11 +175,11 @@ export function GuidePage() {
             <SectionHeader id="orders" icon={ClipboardList} title="Órdenes — flujo de 4 pasos" />
             <p className="text-sm text-muted-foreground">
               Cada orden recorre 4 pasos canónicos. Solo se puede editar la
-              información base en borrador; los pasos posteriores tienen
+              información base mientras la orden no se haya atendido; los pasos posteriores tienen
               transiciones controladas.
             </p>
             <div className="space-y-4 pl-1">
-              <Step n={1} title="Creación de orden (estado: borrador)">
+              <Step n={1} title="Creación de orden (estado: orden creada)">
                 <p>
                   Carga sucursal, tipo de orden, titular y paciente, especialidad,
                   patologías, tipos de servicio con proveedor (doctor o centro)
@@ -549,7 +549,7 @@ export function GuidePage() {
               </Card>
               <Card title="Seguimiento de órdenes">
                 <p>
-                  Distribución de órdenes por etapa del flujo (borrador, en
+                  Distribución de órdenes por etapa del flujo (orden creada, en
                   proceso, atendida, informe emitido, finalizada). Detecta
                   cuellos de botella operativos.
                 </p>

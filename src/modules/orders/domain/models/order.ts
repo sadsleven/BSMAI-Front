@@ -213,6 +213,23 @@ export interface Order {
   } | null;
   invoiceNumber?: string | null;
   controlNumber?: string | null;
+  /** Fecha impresa en la factura (Paso 4). Sin valor → cae a `orderDate`. */
+  invoiceDate?: string | null;
+  /**
+   * Cancelación (reversible): la orden conserva su número y contenido pero
+   * queda fuera del flujo. `cancelledAt` no nulo ⇔ `status='cancelled'`.
+   * `statusBeforeCancel` es el estado al que vuelve si se reactiva.
+   */
+  cancelledAt?: string | null;
+  cancelReason?: string | null;
+  cancelledById?: string | null;
+  cancelledBy?: {
+    id: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    email?: string | null;
+  } | null;
+  statusBeforeCancel?: OrderStatus | null;
   createdAt?: string;
   updatedAt?: string;
   deletedAt?: string | null;
@@ -254,6 +271,8 @@ export interface BillingOrderDto {
   billingExchangeRateId: string;
   invoiceNumber: string;
   controlNumber: string;
+  /** `YYYY-MM-DD`. Sin enviar, el BE usa la fecha de la orden. */
+  invoiceDate?: string;
 }
 
 export interface OrderServiceTypeRowInput {
@@ -281,7 +300,7 @@ export interface CreateOrderDto {
   specialtyId: string;
   /**
    * Número de orden manual (órdenes viejas que se registran ahora). Debe ser
-   * menor a `ORDER_NUMBER_START` del backend (`GET /orders/config/number-start`)
+   * cualquier entero libre (el backend valida el bloque completo)
    * y requiere el permiso `orders.custom-number`. Sin él, numeración automática.
    */
   customOrderNumber?: number;
@@ -343,7 +362,7 @@ export interface PaginatedResponse<T> {
 }
 
 export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
-  draft: 'Borrador',
+  draft: 'Orden creada',
   in_progress: 'En proceso',
   attended: 'Atendida',
   report_issued: 'Informe emitido',
@@ -363,6 +382,42 @@ export const ORDER_TYPE_LABEL: Record<OrderType, string> = {
  * crédito marcadas como reembolso muestran "R"; el resto usa `serviceKey`
  * (que sólo persisten las órdenes de seguro). Vacío si no aplica.
  */
+/**
+ * Fecha a mostrar en la factura: la capturada en el Paso 4, y si no hay, la
+ * fecha de la orden (Paso 1). Devuelve `YYYY-MM-DD`.
+ */
+export function orderInvoiceDate(order: {
+  invoiceDate?: string | null;
+  orderDate: string;
+}): string {
+  const d = (order.invoiceDate ?? '').slice(0, 10);
+  return d || order.orderDate;
+}
+
+/**
+ * Respuesta de `GET /orders/numbers/availability`. `count` = proveedores
+ * distintos de la orden (cada uno consume un número consecutivo, su orden
+ * interna del Paso 2), así que la disponibilidad es del BLOQUE
+ * `[number, number + count - 1]`.
+ */
+export interface OrderNumberAvailability {
+  count: number;
+  /** Número por defecto del Paso 1: el mayor en uso + 1. */
+  suggestion: number;
+  number: number | null;
+  /** `null` cuando no se consultó un número concreto. */
+  available: boolean | null;
+  /** Números del bloque ya ocupados. */
+  taken: number[];
+  /** Primer número ≥ el pedido cuyo bloque completo está libre. */
+  nextFree: number;
+}
+
+/** Orden cancelada: fuera del flujo (no se atiende, informa ni factura). */
+export function isOrderCancelled(order: Pick<Order, 'status'>): boolean {
+  return order.status === 'cancelled';
+}
+
 export function orderServiceKeyDisplay(order: {
   type?: OrderType;
   serviceKey?: string | null;
@@ -409,7 +464,9 @@ export type OrderChangeAction =
   | 'payment_update'
   | 'payment_remove'
   | 'soft_delete'
-  | 'restore';
+  | 'restore'
+  | 'cancel'
+  | 'uncancel';
 
 /** Fila del historial de cambios de la orden (mapea OrderChangeLog del BE). */
 export interface OrderChangeLog {
@@ -440,6 +497,8 @@ export const ORDER_LOG_ACTION_LABEL: Record<OrderChangeAction, string> = {
   payment_remove: 'Pago eliminado',
   soft_delete: 'Movida a la papelera',
   restore: 'Restaurada',
+  cancel: 'Orden cancelada',
+  uncancel: 'Cancelación revertida',
 };
 
 export const ORDER_LOG_FIELD_LABEL: Record<string, string> = {
@@ -466,9 +525,12 @@ export const ORDER_LOG_FIELD_LABEL: Record<string, string> = {
   pathologies: 'Patologías',
   payments: 'Pagos',
   attended: 'Atendido',
+  status: 'Estado',
+  cancelReason: 'Motivo de la cancelación',
   doctorAmount: 'Monto a proveedores',
   invoiceNumber: 'N° de factura',
   controlNumber: 'N° de control',
+  invoiceDate: 'Fecha de factura',
   payment: 'Pago',
 };
 

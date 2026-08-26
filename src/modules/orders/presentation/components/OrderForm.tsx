@@ -21,6 +21,7 @@ import { ChipMultiSelect } from '@/components/ui/chip-multi-select';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   AlertTriangle,
+  Ban,
   Building,
   ShieldCheck,
   Plus,
@@ -38,7 +39,7 @@ import {
   getUserBranches,
   setLastBranchId,
 } from '@/lib/auth/branches';
-import type { OrderType } from '../../domain/models/order';
+import type { OrderNumberAvailability, OrderType } from '../../domain/models/order';
 import { ORDER_TYPE_LABEL, orderUserDisplayName } from '../../domain/models/order';
 import type { OrderValues } from '@/lib/validations/schemas';
 import type { Patient } from '@/modules/patients/domain/models/patient';
@@ -87,6 +88,10 @@ function buildOrderSteps(
   const isAttendedOrLater =
     status === 'attended' || status === 'report_issued' || status === 'finalized';
   const isReportedOrLater = status === 'report_issued' || status === 'finalized';
+  // Orden cancelada: sólo se puede ver el Paso 1; los pasos 2-4 quedan
+  // bloqueados hasta reactivarla (el BE rechaza las transiciones).
+  const cancelled = status === 'cancelled';
+  const cancelledReason = 'La orden está cancelada. Reactívala para continuar.';
   return [
     {
       id: 'register',
@@ -98,22 +103,34 @@ function buildOrderSteps(
       id: 'attention',
       label: '2. Atención del paciente',
       description: 'Descargar e imprimir órdenes internas',
-      available: savedOrderId && perms.attention,
-      lockedReason: !perms.attention ? NO_STAGE_PERM : 'Guarda la orden primero',
+      available: savedOrderId && perms.attention && !cancelled,
+      lockedReason: cancelled
+        ? cancelledReason
+        : !perms.attention
+          ? NO_STAGE_PERM
+          : 'Guarda la orden primero',
     },
     {
       id: 'report',
       label: '3. Informe médico y estudios',
       description: 'Estudios y observaciones',
-      available: savedOrderId && isAttendedOrLater && perms.report,
-      lockedReason: !perms.report ? NO_STAGE_PERM : 'Confirma las órdenes internas primero',
+      available: savedOrderId && isAttendedOrLater && perms.report && !cancelled,
+      lockedReason: cancelled
+        ? cancelledReason
+        : !perms.report
+          ? NO_STAGE_PERM
+          : 'Confirma las órdenes internas primero',
     },
     {
       id: 'billing',
       label: '4. Facturación y liquidación',
       description: 'Cierre, factura y liquidación',
-      available: savedOrderId && isReportedOrLater && perms.billing,
-      lockedReason: !perms.billing ? NO_STAGE_PERM : 'Emite el informe primero',
+      available: savedOrderId && isReportedOrLater && perms.billing && !cancelled,
+      lockedReason: cancelled
+        ? cancelledReason
+        : !perms.billing
+          ? NO_STAGE_PERM
+          : 'Emite el informe primero',
     },
   ];
 }
@@ -195,6 +212,12 @@ export type OrderFormProps = {
    */
   onStep1PaymentOkChange?: (ok: boolean) => void;
   /**
+   * Reporta si el N° de orden elegido en el Paso 1 está libre (bloque
+   * consecutivo completo, uno por proveedor). La página padre frena el submit
+   * sin pegar al backend; el backend lo valida igual.
+   */
+  onOrderNumberOkChange?: (ok: boolean) => void;
+  /**
    * Paso 1 de sólo lectura porque el usuario actual NO es quien creó la orden
    * (sólo el creador — o Super Admin — puede modificarlo). Los pasos 2-4 no se
    * ven afectados.
@@ -211,6 +234,7 @@ export function OrderForm({
   onStepChange,
   onOrderRefresh,
   onStep1PaymentOkChange,
+  onOrderNumberOkChange,
   step1ReadOnly = false,
 }: OrderFormProps) {
   const me = useAuthStore((s) => s.user);
@@ -225,6 +249,8 @@ export function OrderForm({
   const canEditPatient = has(PERMISSIONS.PATIENTS.UPDATE);
   // Orden finalizada → Paso 1 de sólo lectura (igual que Paso 2 y 4).
   const isFinalized = savedOrder?.status === 'finalized';
+  // Orden cancelada → todo el flujo congelado hasta reactivarla.
+  const isCancelled = savedOrder?.status === 'cancelled';
   const { control, setValue, getValues, formState } = useFormContext<OrderValues>();
   const errors = formState.errors as Record<string, { message?: string } | undefined>;
 
@@ -257,38 +283,51 @@ export function OrderForm({
   const [pathologiesLoading, setPathologiesLoading] = useState(true);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [currentRate, setCurrentRate] = useState<ExchangeRate | null>(null);
-  // Piso de la numeración automática (ORDER_NUMBER_START). Los números manuales
-  // de órdenes viejas van por debajo; sin este dato no se ofrece el campo.
-  const [numberStart, setNumberStart] = useState<number | null>(null);
+  // N° de orden del Paso 1: cualquier número libre. Por defecto el backend
+  // propone el mayor en uso + 1; con K proveedores la orden ocupa K números
+  // consecutivos (uno por orden interna del Paso 2), así que la disponibilidad
+  // se consulta por BLOQUE.
+  const [numberCheck, setNumberCheck] = useState<OrderNumberAvailability | null>(
+    null,
+  );
+  const [numberChecking, setNumberChecking] = useState(false);
   void initialProvider;
 
+  const orderNumberValue = useWatch({ control, name: 'customOrderNumber' }) as
+    | number
+    | undefined;
+
+  // Prefill: orden guardada → su propio número; orden nueva → la sugerencia del
+  // backend. Una sola vez (no pisa lo que el usuario tipea).
+  const savedOrderNumber = savedOrder?.orderNumber;
+  const numberPrefilled = useRef(false);
   useEffect(() => {
-    if (!canCustomNumber) return;
+    if (numberPrefilled.current) return;
+    if (savedOrderNumber) {
+      const n = Number(savedOrderNumber);
+      if (Number.isFinite(n) && n > 0) {
+        numberPrefilled.current = true;
+        setValue('customOrderNumber', n);
+      }
+      return;
+    }
+    if (savedOrder) return;
     let cancelled = false;
     orderGateway
-      .numberStart()
-      .then((n) => {
-        if (!cancelled) setNumberStart(n);
+      .numberAvailability({})
+      .then((res) => {
+        if (cancelled) return;
+        numberPrefilled.current = true;
+        setValue('customOrderNumber', res.suggestion);
       })
       .catch(() => {
-        /* sin el piso no se ofrece el número manual */
+        /* sin sugerencia el backend numera automáticamente */
       });
     return () => {
       cancelled = true;
     };
-  }, [canCustomNumber]);
-
-  // Orden histórica ya guardada: refleja su número en el campo manual para que
-  // se pueda corregir mientras siga en borrador (no marca el form como sucio).
-  const savedOrderNumber = savedOrder?.orderNumber;
-  useEffect(() => {
-    if (!numberStart || !savedOrderNumber) return;
-    const n = Number(savedOrderNumber);
-    if (Number.isFinite(n) && n > 0 && n < numberStart) {
-      setValue('customOrderNumber', n);
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [numberStart, savedOrderNumber]);
+  }, [savedOrder, savedOrderNumber]);
 
   // Hidrata el ServiceProviderTable: map de proveedores ya elegidos en la orden.
   const initialProvidersMap = useMemo(() => {
@@ -358,31 +397,35 @@ export function OrderForm({
       .catch(() => setUsdRates([]));
   }, []);
 
-  // Cache EUR rates por id (necesarias para convertir cash_eur → USD).
-  const [eurRatesById, setEurRatesById] = useState<Record<string, ExchangeRate>>({});
+  // Cache de tasas por id: EUR de los pagos cash_eur + la tasa USD/Bs que se
+  // eligió en cada pago en Bs (puede no ser la vigente).
+  const [ratesById, setRatesById] = useState<Record<string, ExchangeRate>>({});
   const lookupRate = (id: string): ExchangeRate | null =>
-    eurRatesById[id] ??
+    ratesById[id] ??
+    usdRates.find((r) => r.id === id) ??
     (currentRate && currentRate.id === id ? currentRate : null);
 
   // Pagos ya existentes (borrador reanudado / orden en edición) pueden referir
-  // una tasa EUR que ya no es la vigente: se cargan por id para que
+  // una tasa que ya no es la vigente: se cargan por id para que
   // `paymentInUsd` no las cuente como $0 y bloquee el cuadre. `attempted`
   // evita re-fetch infinito de ids muertos (tasa borrada).
-  const attemptedEurRateIds = useRef<Set<string>>(new Set());
+  const attemptedRateIds = useRef<Set<string>>(new Set());
   useEffect(() => {
     const missing = Array.from(
       new Set(
         (payments ?? [])
-          .filter((p) => p.amountCurrency === 'EUR')
           .map((p) => (p.exchangeRateId ?? '').trim())
           .filter(
             (id) =>
-              id && !eurRatesById[id] && !attemptedEurRateIds.current.has(id),
+              id &&
+              !ratesById[id] &&
+              !usdRates.some((r) => r.id === id) &&
+              !attemptedRateIds.current.has(id),
           ),
       ),
     );
     if (missing.length === 0) return;
-    missing.forEach((id) => attemptedEurRateIds.current.add(id));
+    missing.forEach((id) => attemptedRateIds.current.add(id));
     let cancelled = false;
     Promise.all(
       missing.map((id) => exchangeRateGateway.getById(id).catch(() => null)),
@@ -390,7 +433,7 @@ export function OrderForm({
       if (cancelled) return;
       const found = rates.filter((r): r is ExchangeRate => !!r);
       if (found.length) {
-        setEurRatesById((prev) => {
+        setRatesById((prev) => {
           const next = { ...prev };
           for (const r of found) next[r.id] = r;
           return next;
@@ -400,7 +443,7 @@ export function OrderForm({
     return () => {
       cancelled = true;
     };
-  }, [payments, eurRatesById]);
+  }, [payments, ratesById, usdRates]);
 
   // Holder/patient sync
   const onHolderChange = (next: Patient | null) => {
@@ -601,7 +644,7 @@ export function OrderForm({
       (acc, p) => acc + paymentInUsd(p, currentRate, lookupRate),
       0,
     );
-  }, [payments, currentRate, eurRatesById]);
+  }, [payments, currentRate, ratesById]);
 
   const priceAmount = useWatch({ control, name: 'priceAmount' }) as number | undefined;
   // Monto base (FE-only): suma de precios de catálogo con la que se compara el
@@ -783,6 +826,52 @@ export function OrderForm({
     customName?: string | null;
   }>;
   const serviceTypeIds = orderServiceTypeRows.map((r) => r.serviceTypeId).filter(Boolean);
+  // Proveedores distintos = órdenes internas = números que consume la orden.
+  const providerCount = useMemo(() => {
+    const keys = new Set<string>();
+    for (const r of orderServiceTypeRows) {
+      const id = r.providerType === 'doctor' ? r.doctorId : r.careCenterId;
+      if (id) keys.add(`${r.providerType}:${id}`);
+    }
+    return Math.max(1, keys.size);
+  }, [orderServiceTypeRows]);
+
+  // Chequeo de disponibilidad del bloque (debounce 350ms). El backend re-valida
+  // al guardar: esto es sólo feedback en vivo.
+  const savedOrderId = savedOrder?.id;
+  useEffect(() => {
+    const n = typeof orderNumberValue === 'number' ? orderNumberValue : NaN;
+    if (!Number.isFinite(n) || n < 1) return;
+    let cancelled = false;
+    const t = setTimeout(() => {
+      setNumberChecking(true);
+      orderGateway
+        .numberAvailability({ number: n, count: providerCount, orderId: savedOrderId })
+        .then((res) => !cancelled && setNumberCheck(res))
+        .catch(() => !cancelled && setNumberCheck(null))
+        .finally(() => !cancelled && setNumberChecking(false));
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [orderNumberValue, providerCount, savedOrderId]);
+
+  // Verdadero/falso sólo si la respuesta corresponde al número y a la cantidad
+  // de proveedores actuales; `null` mientras no hay veredicto.
+  const numberAvailable =
+    numberCheck &&
+    numberCheck.number === orderNumberValue &&
+    numberCheck.count === providerCount
+      ? numberCheck.available
+      : null;
+  useEffect(() => {
+    onOrderNumberOkChange?.(numberAvailable !== false);
+  }, [numberAvailable, onOrderNumberOkChange]);
+  const orderNumberBlock =
+    typeof orderNumberValue === 'number' && orderNumberValue > 0
+      ? Array.from({ length: providerCount }, (_, i) => orderNumberValue + i)
+      : [];
   // Cantidad por ST (sólo > 1 si el ST permite cantidad). Default 1.
   const qtyByST = useMemo(() => {
     const m = new Map<string, number>();
@@ -1044,10 +1133,17 @@ export function OrderForm({
 
       {!renderStep1 ? null : (
       <fieldset
-        disabled={isFinalized || step1ReadOnly}
+        disabled={isFinalized || isCancelled || step1ReadOnly}
         className="space-y-6 border-0 p-0 m-0 min-w-0"
       >
-      {isFinalized ? (
+      {isCancelled ? (
+        <div className="rounded-md border border-destructive/40 bg-destructive-soft px-3 py-2 text-xs text-destructive flex items-start gap-2">
+          <Ban className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+          La orden está cancelada
+          {savedOrder?.cancelReason ? `: ${savedOrder.cancelReason}` : ''}. Reactívala
+          desde el listado de órdenes para continuar el flujo.
+        </div>
+      ) : isFinalized ? (
         <div className="rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground flex items-start gap-2">
           <ShieldCheck className="w-3.5 h-3.5 mt-0.5 shrink-0" />
           La orden está finalizada. Los datos del Paso 1 son de sólo lectura.
@@ -1099,33 +1195,31 @@ export function OrderForm({
             <FieldError message={errors.type?.message} />
           </div>
 
-          {canCustomNumber &&
-          numberStart != null &&
-          numberStart > 1 &&
-          (!savedOrder || savedOrder.status === 'draft') ? (
+          {!savedOrder || savedOrder.status === 'draft' ? (
             <Controller
               control={control}
               name="customOrderNumber"
-              render={({ field }) => {
-                const overFloor =
-                  typeof field.value === 'number' && field.value >= numberStart;
-                return (
-                  <div className="space-y-1.5">
-                    <Label htmlFor="customOrderNumber" className="text-sm font-medium">
-                      N° de orden manual{' '}
+              render={({ field }) => (
+                <div className="space-y-1.5">
+                  <Label htmlFor="customOrderNumber" className="text-sm font-medium">
+                    N° de orden
+                    {!canCustomNumber ? (
                       <span className="text-muted-foreground font-normal">
-                        (opcional)
+                        {' '}
+                        (lo asigna el sistema)
                       </span>
-                    </Label>
+                    ) : null}
+                  </Label>
+                  <div className="flex items-center gap-2 flex-wrap">
                     <Input
                       id="customOrderNumber"
                       type="number"
                       min={1}
-                      max={numberStart - 1}
                       step={1}
                       inputMode="numeric"
-                      placeholder={`Entre 1 y ${numberStart - 1}`}
-                      className="max-w-[220px]"
+                      disabled={!canCustomNumber}
+                      placeholder="Número de la orden"
+                      className="max-w-[180px]"
                       value={field.value ?? ''}
                       onChange={(e) => {
                         const raw = e.target.value.trim();
@@ -1137,20 +1231,42 @@ export function OrderForm({
                         field.onChange(Number.isFinite(n) && n > 0 ? n : undefined);
                       }}
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Solo para órdenes viejas que estás registrando ahora: debe ser
-                      menor a {numberStart} (desde ese número numera el sistema).
-                      Déjalo vacío para que el número se asigne automáticamente.
-                    </p>
-                    {overFloor ? (
-                      <FieldError
-                        message={`El número manual debe ser menor a ${numberStart}`}
-                      />
+                    {numberChecking ? (
+                      <span className="text-xs text-muted-foreground">
+                        Verificando disponibilidad…
+                      </span>
+                    ) : numberAvailable === true ? (
+                      <span className="text-xs text-success font-medium">
+                        {providerCount > 1
+                          ? `Disponible (${orderNumberBlock[0]}–${orderNumberBlock[orderNumberBlock.length - 1]})`
+                          : 'Disponible'}
+                      </span>
+                    ) : numberAvailable === false ? (
+                      <>
+                        <span className="text-xs text-destructive font-medium">
+                          Ya está en uso: {numberCheck?.taken.join(', ')}
+                        </span>
+                        {canCustomNumber && numberCheck?.nextFree ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => field.onChange(numberCheck.nextFree)}
+                          >
+                            Usar {numberCheck.nextFree}
+                          </Button>
+                        ) : null}
+                      </>
                     ) : null}
-                    <FieldError message={errors.customOrderNumber?.message} />
                   </div>
-                );
-              }}
+                  <p className="text-xs text-muted-foreground">
+                    {providerCount > 1
+                      ? `La orden tiene ${providerCount} proveedores: ocupa ${providerCount} números consecutivos (${orderNumberBlock.join(' · ')}), uno por orden interna del Paso 2.`
+                      : 'Puedes usar cualquier número libre. Por defecto se propone el siguiente disponible (el mayor + 1).'}
+                  </p>
+                  <FieldError message={errors.customOrderNumber?.message} />
+                </div>
+              )}
             />
           ) : null}
 
@@ -1979,9 +2095,19 @@ export function OrderForm({
                   onChange={(next) => field.onChange(next)}
                   usdRate={currentRate}
                   onEurRateLoaded={(r) =>
-                    setEurRatesById((prev) =>
+                    setRatesById((prev) =>
                       prev[r.id] ? prev : { ...prev, [r.id]: r },
                     )
+                  }
+                  rateSelectable
+                  onRatesLoaded={(rates) =>
+                    setRatesById((prev) => {
+                      const missing = rates.filter((r) => !prev[r.id]);
+                      if (!missing.length) return prev;
+                      const next = { ...prev };
+                      for (const r of missing) next[r.id] = r;
+                      return next;
+                    })
                   }
                   errors={paymentsErrors}
                   allowedTypes={INCOMING_PAYMENT_TYPES}

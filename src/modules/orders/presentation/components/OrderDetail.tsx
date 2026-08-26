@@ -267,6 +267,9 @@ export function OrderDetailBody({
             mono
           />
         )}
+        {order.invoiceDate && (
+          <DetailRow label="Fecha de factura" value={fmtDay(order.invoiceDate)} />
+        )}
         {order.billingExchangeRate && (
           <DetailRow
             label="Tasa facturación"
@@ -351,6 +354,34 @@ export function OrderDetailBody({
               </li>
             ))}
           </ul>
+        </DetailSection>
+      )}
+
+      {order.status === 'cancelled' && (
+        <DetailSection title="Cancelación">
+          <DetailRow
+            label="Cancelada"
+            value={
+              <DetailBadge tone="destructive">
+                {order.cancelledAt ? fmtDate(order.cancelledAt) : 'Sí'}
+              </DetailBadge>
+            }
+          />
+          <DetailRow label="Motivo" value={order.cancelReason ?? null} />
+          <DetailRow
+            label="Cancelada por"
+            value={
+              order.cancelledBy ? orderUserDisplayName(order.cancelledBy) : null
+            }
+          />
+          <DetailRow
+            label="Estado al reactivar"
+            value={
+              order.statusBeforeCancel
+                ? ORDER_STATUS_LABEL[order.statusBeforeCancel]
+                : null
+            }
+          />
         </DetailSection>
       )}
 

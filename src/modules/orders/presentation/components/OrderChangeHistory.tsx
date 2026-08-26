@@ -8,9 +8,11 @@ import {
   ORDER_LOG_ACTION_LABEL,
   ORDER_LOG_FIELD_LABEL,
   ORDER_LOG_ID_FIELDS,
+  ORDER_STATUS_LABEL,
   ORDER_TYPE_LABEL,
   orderUserDisplayName,
   type OrderChangeLog,
+  type OrderStatus,
   type OrderType,
 } from '../../domain/models/order';
 
@@ -33,6 +35,8 @@ function formatValue(field: string, value: unknown): string {
   if (BOOL_FIELDS.has(field)) return value ? 'Sí' : 'No';
   if (MONEY_FIELDS.has(field)) return `${formatMoney(value as number)} USD`;
   if (field === 'type') return ORDER_TYPE_LABEL[value as OrderType] ?? String(value);
+  if (field === 'status')
+    return ORDER_STATUS_LABEL[value as OrderStatus] ?? String(value);
   if (field === 'insuranceSource')
     return INSURANCE_SOURCE_LABEL[String(value)] ?? String(value);
   if (field === 'orderDate') return formatDateOnly(String(value));

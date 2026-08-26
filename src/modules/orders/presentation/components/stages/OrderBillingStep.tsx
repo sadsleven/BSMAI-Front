@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { CurrencyAmountInput } from '@/components/ui/currency-amount-input';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import {
   Accordion,
   AccordionContent,
@@ -36,6 +37,7 @@ import { doctorGateway } from '@/modules/doctors/infrastructure/doctorGateway';
 import { careCenterGateway } from '@/modules/care-centers/infrastructure/careCenterGateway';
 import type { ServicePriceRow } from '@/lib/types/servicePrice';
 import type { Order } from '../../../domain/models/order';
+import { orderInvoiceDate } from '../../../domain/models/order';
 
 /**
  * Paso 4 — Facturación y liquidación (USD-only).
@@ -90,6 +92,8 @@ export function OrderBillingStep({
   const [amountErrorsVisible, setAmountErrorsVisible] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState(order.invoiceNumber ?? '');
   const [controlNumber, setControlNumber] = useState(order.controlNumber ?? '');
+  // Fecha impresa en la factura. Por defecto la fecha de la orden (Paso 1).
+  const [invoiceDate, setInvoiceDate] = useState<string>(orderInvoiceDate(order));
 
   useEffect(() => {
     let cancelled = false;
@@ -277,6 +281,10 @@ export function OrderBillingStep({
       notify.error('Ingresa el número de control');
       return;
     }
+    if (!invoiceDate) {
+      notify.error('Selecciona la fecha de la factura');
+      return;
+    }
     setSaving(true);
     try {
       await orderGateway.billing(order.id, {
@@ -289,6 +297,7 @@ export function OrderBillingStep({
         billingExchangeRateId: usdRate.id,
         invoiceNumber: invoiceNumber.trim(),
         controlNumber: controlNumber.trim(),
+        invoiceDate,
       });
       notify.success('Orden finalizada');
       onSaved();
@@ -302,8 +311,10 @@ export function OrderBillingStep({
   const handleDownloadFactura = async (fmt: 'xlsx' | 'pdf') => {
     setDownloadingFact(fmt);
     try {
-      if (fmt === 'xlsx') await downloadFacturacionXlsx(order);
-      else await downloadFacturacionPdf(order);
+      // La fecha elegida manda aunque la orden todavía no esté finalizada.
+      const doc: Order = { ...order, invoiceDate: invoiceDate || order.invoiceDate };
+      if (fmt === 'xlsx') await downloadFacturacionXlsx(doc);
+      else await downloadFacturacionPdf(doc);
     } catch (err) {
       notify.error(getHttpErrorMessage(err, 'No se pudo generar la factura'));
     } finally {
@@ -377,6 +388,22 @@ export function OrderBillingStep({
               placeholder="Ej. 00012345"
               onChange={(e) => setControlNumber(e.target.value)}
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="invoiceDate">
+              Fecha de la factura <span className="text-destructive">*</span>
+            </Label>
+            <DatePicker
+              id="invoiceDate"
+              value={invoiceDate || undefined}
+              onChange={(v) => setInvoiceDate(v ?? '')}
+              disabled={isFinalized}
+              invalid={!invoiceDate}
+            />
+            <p className="text-xs text-muted-foreground">
+              Es la fecha que se imprime en la factura. Por defecto es la fecha
+              de la orden.
+            </p>
           </div>
         </div>
       </FormSection>
@@ -647,7 +674,8 @@ export function OrderBillingStep({
                   !usdRate?.id ||
                   exceedsCap ||
                   !invoiceNumber.trim() ||
-                  !controlNumber.trim()
+                  !controlNumber.trim() ||
+                  !invoiceDate
                 }
               >
                 {saving

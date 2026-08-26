@@ -660,12 +660,9 @@ function BatchDetail({ id }: { id: string }) {
         referenceNumber: p.referenceNumber || undefined,
         bankCode: p.bankCode || undefined,
         accountNumber: p.accountNumber || undefined,
-        // Pagos no-EUR se convierten con la tasa de pago elegida; EUR mantiene
-        // su tasa EUR/Bs snapshot.
-        exchangeRateId:
-          p.amountCurrency === 'EUR'
-            ? p.exchangeRateId || undefined
-            : paymentRate?.id || p.exchangeRateId || undefined,
+        // La tasa elegida en la fila manda (es la tasa a la que se pagó ese
+        // pago). Sin tasa propia (pagos en USD) cae a la tasa de pago del lote.
+        exchangeRateId: p.exchangeRateId || paymentRate?.id || undefined,
         amountCurrency: p.amountCurrency,
         amountValue: p.amountValue,
       }));
@@ -1099,6 +1096,16 @@ function BatchDetail({ id }: { id: string }) {
                               prev[r.id] ? prev : { ...prev, [r.id]: r },
                             )
                           }
+                          rateSelectable
+                          onRatesLoaded={(rates) =>
+                            setEurRatesById((prev) => {
+                              const missing = rates.filter((r) => !prev[r.id]);
+                              if (!missing.length) return prev;
+                              const next = { ...prev };
+                              for (const r of missing) next[r.id] = r;
+                              return next;
+                            })
+                          }
                           errors={buildPaymentErrors(
                             (formState.errors as { payments?: unknown }).payments,
                           )}
@@ -1142,9 +1149,10 @@ function BatchDetail({ id }: { id: string }) {
                           label="Tasa de pago (USD/Bs)"
                         />
                         <p className="text-[11px] text-muted-foreground mt-1">
-                          Si el pago se hizo otro día, elige la tasa de ese día.
-                          Convierte los pagos en USD a Bs. El neto del lote se
-                          mantiene a la tasa de facturación
+                          Tasa por defecto de los pagos nuevos y de los pagos en
+                          divisas. Cada pago en Bs o EUR lleva su propia tasa en
+                          la fila. El neto del lote se mantiene a la tasa de
+                          facturación
                           {usdRate
                             ? ` (1 USD = ${formatMoney(usdRate.amountBs)} Bs.)`
                             : ''}

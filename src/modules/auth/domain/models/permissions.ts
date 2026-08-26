@@ -61,6 +61,7 @@ export const PERMISSIONS = {
     LIST: 'orders.list',
     CREATE: 'orders.create',
     UPDATE: 'orders.update',
+    CANCEL: 'orders.cancel',
     SOFT_DELETE: 'orders.soft-delete',
     HARD_DELETE: 'orders.hard-delete',
     RESTORE: 'orders.restore',

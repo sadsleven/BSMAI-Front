@@ -226,6 +226,13 @@ export function OrderCreate() {
     step1OkRef.current = ok;
   }, []);
 
+  // N° de orden libre (bloque completo, uno por proveedor). El backend valida
+  // igual; esto evita el viaje con un número ya tomado.
+  const numberOkRef = useRef(true);
+  const handleNumberOk = useCallback((ok: boolean) => {
+    numberOkRef.current = ok;
+  }, []);
+
   // Guardar como borrador: persiste los valores crudos (sin validar) para poder
   // salir y retomar. No bloquea por campos incompletos.
   const saveDraft = async () => {
@@ -278,6 +285,12 @@ export function OrderCreate() {
   };
 
   const onSubmit = async (values: OrderValues) => {
+    if (!numberOkRef.current) {
+      notify.error(
+        'El N° de orden elegido ya está en uso. Usa uno libre antes de crear la orden.',
+      );
+      return;
+    }
     if (values.type === 'cash' && !step1OkRef.current) {
       notify.error(
         'La orden de contado debe estar cuadrada (pagos = total) para poder crearla y continuar al Paso 2.',
@@ -344,6 +357,7 @@ export function OrderCreate() {
             initialHolder={initialHolder}
             initialPatient={initialPatient}
             onStep1PaymentOkChange={handleStep1Ok}
+            onOrderNumberOkChange={handleNumberOk}
           />
 
           <div className="flex items-center justify-between gap-3 pt-2 flex-wrap">
