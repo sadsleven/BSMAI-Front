@@ -181,9 +181,13 @@ export function GuidePage() {
             <div className="space-y-4 pl-1">
               <Step n={1} title="Creación de orden (estado: orden creada)">
                 <p>
-                  Carga sucursal, tipo de orden, titular y paciente, especialidad,
-                  patologías, tipos de servicio con proveedor (doctor o centro)
-                  por fila, fechas y monto. El monto se prellena con los precios
+                  Carga sucursal, tipo de orden, titular y paciente, patologías,
+                  tipos de servicio con su especialidad y su proveedor (doctor o
+                  centro) por fila, fechas y monto. Una misma orden puede
+                  combinar especialidades: por ejemplo laboratorio en un centro y
+                  rayos X en otro. Cada proveedor distinto genera su propia orden
+                  interna en el Paso 2, con su número y con la especialidad de
+                  sus servicios. El monto se prellena con los precios
                   Particular o del seguro según el tipo de orden, y puedes
                   editarlo para aplicar un descuento o un monto superior: al
                   diferir del precio de catálogo se exige el motivo y queda
@@ -212,9 +216,13 @@ export function GuidePage() {
               <Step n={4} title="Facturación y liquidación (estado: finalizada)">
                 <p>
                   Define cuánto cobra cada proveedor (doctor / centro) en USD,
-                  captura la tasa USD/Bs del momento (snapshot
-                  <code>billingExchangeRateId</code>) y finaliza. Una vez
-                  finalizada la orden es inmutable salvo soft-delete.
+                  elige la tasa USD/Bs con la que se emite la factura (snapshot{' '}
+                  <code>billingExchangeRateId</code>) y finaliza. La tasa viene
+                  precargada con aquella con la que más se pagó en bolívares y,
+                  si no hubo pagos en Bs, con la más reciente vigente; en
+                  órdenes de seguro no indexado es además la que fija en
+                  bolívares la cuenta por cobrar. Una vez finalizada la orden es
+                  inmutable salvo soft-delete.
                 </p>
                 <Note tone="success">
                   Tras finalizar aparecen las sub-secciones "Orden por pagar"

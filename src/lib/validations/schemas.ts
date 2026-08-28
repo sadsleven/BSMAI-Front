@@ -2,6 +2,8 @@ import { z } from 'zod';
 import {
   cedulaSchema,
   optionalRifSchema,
+  PATIENT_CEDULA_REGEX,
+  patientCedulaSchema,
   phoneNumberSchema,
   phonesArraySchema,
   rifSchema,
@@ -243,11 +245,11 @@ export const patientSchema = z
   })
   .superRefine((val, ctx) => {
     if (val.personType === 'natural') {
-      if (val.cedula && !/^[VE]-\d{1,2}\.\d{3}\.\d{3}$/.test(val.cedula)) {
+      if (val.cedula && !PATIENT_CEDULA_REGEX.test(val.cedula)) {
         ctx.addIssue({
           code: 'custom',
           path: ['cedula'],
-          message: 'Formato inválido. Ej: V-12.345.678',
+          message: 'Formato inválido. Ej: V-12.345.678 o M-12.345.678 (menores)',
         });
       }
       const NAME_RE = /^[A-Za-zÁÉÍÓÚáéíóúÑñ\s]+$/;
@@ -297,7 +299,7 @@ export const patientSchema = z
 export type PatientValues = z.infer<typeof patientSchema>;
 
 // Re-export VE schemas for convenience
-export { cedulaSchema, rifSchema, phonesArraySchema };
+export { cedulaSchema, patientCedulaSchema, rifSchema, phonesArraySchema };
 
 export const specialtySchema = z.object({
   name: z
@@ -977,12 +979,15 @@ export const orderSchema = z
       .int('El número de orden debe ser un entero')
       .min(1, 'Debe ser mayor o igual a 1')
       .optional(),
-    specialtyId: z.string().uuid({ message: 'Especialidad requerida' }),
     serviceTypes: z
       .array(
         z.object({
           serviceTypeId: z.string().uuid({ message: 'Tipo de servicio requerido' }),
           providerType: z.enum(PROVIDER_TYPES, { error: 'Proveedor requerido' }),
+          // Especialidad por fila: una orden puede combinar varias (ej.
+          // laboratorio en un centro + rayos X en otro). El backend deriva la
+          // principal de la orden desde la primera fila.
+          specialtyId: z.string().uuid({ message: 'Especialidad requerida' }),
           doctorId: z.string().uuid().optional().or(z.literal('')),
           careCenterId: z.string().uuid().optional().or(z.literal('')),
           quantity: z
@@ -1038,8 +1043,9 @@ export const orderSchema = z
       .min(0, 'No puede ser negativo')
       .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' })
       .optional(),
+    // Derivado del flag `isIndexed` del seguro. La tasa fija en sí se elige en
+    // el Paso 4 (Facturación), junto con la tasa de la factura.
     useFixedRate: z.boolean().optional(),
-    fixedExchangeRateId: z.string().uuid().optional().or(z.literal('')),
     payments: z.array(orderPaymentSchema).max(50).optional(),
   })
   .superRefine((val, ctx) => {
@@ -1180,13 +1186,6 @@ export const orderSchema = z
           code: 'custom',
           path: ['useFixedRate'],
           message: 'La tasa fija solo aplica a órdenes tipo seguro',
-        });
-      }
-      if (!val.fixedExchangeRateId) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['fixedExchangeRateId'],
-          message: 'Selecciona la tasa de la orden',
         });
       }
     }

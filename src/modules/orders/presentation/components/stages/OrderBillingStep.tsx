@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -27,9 +27,14 @@ import { notify } from '@/lib/notifications/toast';
 import { getHttpErrorMessage } from '@/lib/api';
 import { formatMoney } from '@/lib/format/money';
 import { orderGateway } from '../../../infrastructure/orderGateway';
-import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
+import { useRatesByCurrency } from '@/modules/exchange-rates/presentation/hooks/useUsdRates';
+import { UsdRateSelect } from '@/modules/exchange-rates/presentation/components/UsdRateSelect';
 import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchangeRate';
-import { downloadFacturacionXlsx, providerInternalNumber } from '../orderExcel';
+import {
+  dominantPaymentRate,
+  downloadFacturacionXlsx,
+  providerInternalNumber,
+} from '../orderExcel';
 import { downloadFacturacionPdf } from '../orderPdf';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
@@ -45,7 +50,9 @@ import { orderInvoiceDate } from '../../../domain/models/order';
  * - Factura única con todos los STs.
  * - Asigna `doctorAmount` USD por proveedor (bruto); cap ≤ priceAmount.
  * - Retención SENIAT NO se calcula aquí; se genera al registrar el pago AP.
- * - `billingExchangeRateId` snapshot tasa USD/Bs al facturar.
+ * - Tasa USD/Bs de la factura **seleccionable**: se imprime en el documento,
+ *   convierte los brutos de CxP/retenciones y, en seguros no indexados, fija en
+ *   bolívares la cuenta por cobrar (viaja como `billingExchangeRateId`).
  */
 type ProviderRow = {
   key: string;
@@ -81,7 +88,15 @@ export function OrderBillingStep({
   const priceAmount = Number(order.priceAmount);
   const isFinalized = order.status === 'finalized';
 
-  const [usdRate, setUsdRate] = useState<ExchangeRate | null>(null);
+  // Tasa de la factura: seleccionable. Por defecto la tasa con la que más se
+  // pagó en bolívares (contado/cashea) y, si no hubo pagos en Bs, la más
+  // reciente vigente. En seguros no indexados esta misma tasa es la que fija en
+  // bolívares la cuenta por cobrar (el campo que antes vivía en el Paso 1).
+  const { rates: usdRates, currentRateId } = useRatesByCurrency('USD');
+  // `null` = sin elección explícita todavía; el id efectivo se deriva abajo.
+  const [pickedRateId, setPickedRateId] = useState<string | null>(
+    order.invoiceExchangeRateId ?? null,
+  );
   const [saving, setSaving] = useState(false);
   const [downloadingFact, setDownloadingFact] = useState<null | 'xlsx' | 'pdf'>(null);
 
@@ -221,21 +236,46 @@ export function OrderBillingStep({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order.id]);
 
-  useEffect(() => {
-    if (usdRate) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const rate = await exchangeRateGateway.getCurrent('USD');
-        if (!cancelled) setUsdRate(rate);
-      } catch {
-        // sin tasa actual
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [usdRate]);
+  /**
+   * Tasa dominante en bolívares de los pagos del Paso 1 (contado/cashea). Null
+   * cuando la orden no se pagó en Bs (seguro, crédito).
+   */
+  const dominantRate = useMemo(() => dominantPaymentRate(order), [order]);
+
+  /**
+   * Opciones del selector: las tasas USD activas + las que la orden ya
+   * referencia (pago viejo, tasa fija, facturación previa) aunque estén
+   * deshabilitadas, para que la seleccionada siempre se muestre.
+   */
+  const rateOptions = useMemo<ExchangeRate[]>(() => {
+    const byId = new Map(usdRates.map((r) => [r.id, r]));
+    const extras = [
+      order.invoiceExchangeRate,
+      order.fixedExchangeRate,
+      order.billingExchangeRate,
+      ...(order.payments ?? []).map((p) => p.exchangeRate),
+    ];
+    for (const e of extras) {
+      if (!e || e.currency !== 'USD' || byId.has(e.id)) continue;
+      byId.set(e.id, {
+        id: e.id,
+        currency: 'USD',
+        amountBs: String(e.amountBs),
+        effectiveDate: e.effectiveDate ?? '',
+        isActive: true,
+      });
+    }
+    return [...byId.values()].sort((a, b) =>
+      a.effectiveDate < b.effectiveDate ? 1 : -1,
+    );
+  }, [usdRates, order]);
+
+  // Tasa efectiva: la elegida (o la ya guardada) y, en su defecto, la dominante
+  // de los pagos en bolívares; si la orden no se pagó en Bs, la más reciente.
+  const invoiceRateId = pickedRateId ?? dominantRate?.id ?? currentRateId ?? '';
+
+  const invoiceRate = rateOptions.find((r) => r.id === invoiceRateId) ?? null;
+  const invoiceRateBs = invoiceRate ? Number(invoiceRate.amountBs) || 0 : 0;
 
   const totalUsd = providers.reduce((s, p) => s + (p.amount ?? 0), 0);
   const totalSuggested = providers.reduce((s, p) => s + p.suggested, 0);
@@ -265,8 +305,8 @@ export function OrderBillingStep({
       );
       return;
     }
-    if (!usdRate?.id) {
-      notify.error('No hay tasa USD activa para registrar la facturación');
+    if (!invoiceRateId) {
+      notify.error('Selecciona la tasa de cambio de la factura');
       return;
     }
     if (exceedsCap) {
@@ -294,7 +334,7 @@ export function OrderBillingStep({
           careCenterId: p.providerType === 'care_center' ? p.providerId : undefined,
           amount: p.amount!,
         })),
-        billingExchangeRateId: usdRate.id,
+        billingExchangeRateId: invoiceRateId,
         invoiceNumber: invoiceNumber.trim(),
         controlNumber: controlNumber.trim(),
         invoiceDate,
@@ -311,8 +351,23 @@ export function OrderBillingStep({
   const handleDownloadFactura = async (fmt: 'xlsx' | 'pdf') => {
     setDownloadingFact(fmt);
     try {
-      // La fecha elegida manda aunque la orden todavía no esté finalizada.
-      const doc: Order = { ...order, invoiceDate: invoiceDate || order.invoiceDate };
+      // La fecha y la tasa elegidas mandan aunque la orden todavía no esté
+      // finalizada: la descarga previa muestra la factura tal como quedará.
+      const doc: Order = {
+        ...order,
+        invoiceDate: invoiceDate || order.invoiceDate,
+        ...(invoiceRate
+          ? {
+              invoiceExchangeRateId: invoiceRate.id,
+              invoiceExchangeRate: {
+                id: invoiceRate.id,
+                currency: invoiceRate.currency,
+                amountBs: invoiceRate.amountBs,
+                effectiveDate: invoiceRate.effectiveDate,
+              },
+            }
+          : {}),
+      };
       if (fmt === 'xlsx') await downloadFacturacionXlsx(doc);
       else await downloadFacturacionPdf(doc);
     } catch (err) {
@@ -404,6 +459,40 @@ export function OrderBillingStep({
               Es la fecha que se imprime en la factura. Por defecto es la fecha
               de la orden.
             </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label>
+              Tasa de cambio de la factura{' '}
+              <span className="text-destructive">*</span>
+            </Label>
+            <UsdRateSelect
+              rates={rateOptions}
+              selectedId={invoiceRateId}
+              currentRateId={currentRateId}
+              onSelect={setPickedRateId}
+              disabled={isFinalized}
+              lockNote={
+                isFinalized
+                  ? 'La orden ya está facturada: la tasa quedó fija.'
+                  : undefined
+              }
+              label="Tasa USD/Bs de la factura"
+            />
+            <p className="text-xs text-muted-foreground">
+              {order.useFixedRate
+                ? 'Con esta tasa se imprime la factura y queda fija en bolívares la cuenta por cobrar del seguro no indexado.'
+                : dominantRate
+                  ? 'Por defecto, la tasa con la que más se pagó en bolívares.'
+                  : 'Por defecto, la tasa más reciente vigente.'}
+            </p>
+            {invoiceRateBs > 0 && priceAmount > 0 && (
+              <p className="text-xs text-muted-foreground">
+                Total de la factura:{' '}
+                <span className="font-mono font-semibold text-foreground">
+                  {formatMoney(priceAmount * invoiceRateBs)} Bs
+                </span>
+              </p>
+            )}
           </div>
         </div>
       </FormSection>
@@ -552,9 +641,10 @@ export function OrderBillingStep({
               );
             })}
 
-            {!usdRate && (
+            {!invoiceRateId && (
               <p className="text-xs italic text-muted-foreground">
-                Sin tasa USD activa: cargar una en /exchange-rates antes de finalizar.
+                Selecciona la tasa de cambio de la factura antes de finalizar. Si
+                no hay tasas cargadas, agrégalas en Tasas de cambio.
               </p>
             )}
 
@@ -671,7 +761,7 @@ export function OrderBillingStep({
                 disabled={
                   saving ||
                   isFinalized ||
-                  !usdRate?.id ||
+                  !invoiceRateId ||
                   exceedsCap ||
                   !invoiceNumber.trim() ||
                   !controlNumber.trim() ||

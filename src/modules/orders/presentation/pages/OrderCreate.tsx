@@ -34,7 +34,6 @@ const DEFAULT_VALUES: OrderValues = {
   insuranceSource: '',
   serviceKey: '',
   isReimbursement: false,
-  specialtyId: '',
   serviceTypes: [],
   pathologyIds: [],
   orderDate: localTodayIso(),
@@ -44,7 +43,6 @@ const DEFAULT_VALUES: OrderValues = {
   casheaFirstInstallmentAmount: 0,
   casheaInitialPercent: 0,
   useFixedRate: false,
-  fixedExchangeRateId: '',
   payments: [],
 };
 
@@ -70,10 +68,10 @@ function buildDto(values: OrderValues): CreateOrderDto {
       typeof values.customOrderNumber === 'number' && values.customOrderNumber > 0
         ? values.customOrderNumber
         : undefined,
-    specialtyId: values.specialtyId,
     serviceTypes: (values.serviceTypes ?? []).map((r) => ({
       serviceTypeId: r.serviceTypeId,
       providerType: r.providerType,
+      specialtyId: r.specialtyId,
       doctorId: r.providerType === 'doctor' ? r.doctorId || undefined : undefined,
       careCenterId:
         r.providerType === 'care_center' ? r.careCenterId || undefined : undefined,
@@ -101,10 +99,6 @@ function buildDto(values: OrderValues): CreateOrderDto {
     casheaFirstInstallmentAmount:
       values.type === 'cashea'
         ? values.casheaFirstInstallmentAmount ?? 0
-        : undefined,
-    fixedExchangeRateId:
-      values.type === 'insurance' && values.useFixedRate && values.fixedExchangeRateId
-        ? values.fixedExchangeRateId
         : undefined,
     // Pagos sólo aplican a contado/cashea; un cambio de tipo tardío no debe
     // arrastrar filas fantasma al backend.
@@ -172,6 +166,14 @@ export function OrderCreate() {
               (payload.casheaFirstInstallmentAmount / payload.priceAmount) *
                 10000,
             ) / 100;
+        }
+        // Borradores guardados con la especialidad única de la orden: cada fila
+        // hereda esa especialidad (ahora vive por fila).
+        const legacySpecialtyId = (payload as { specialtyId?: string }).specialtyId;
+        if (legacySpecialtyId && Array.isArray(payload.serviceTypes)) {
+          payload.serviceTypes = payload.serviceTypes.map((r) =>
+            r.specialtyId ? r : { ...r, specialtyId: legacySpecialtyId },
+          );
         }
         methods.reset({ ...DEFAULT_VALUES, ...payload });
         const holderId = payload.holderId;

@@ -8,6 +8,7 @@ import {
   orderServiceKeyDisplay,
 } from '../../domain/models/order';
 import {
+  groupSpecialtyLabel,
   orderReferenceLabel,
   providerInternalNumber,
   resolveInvoiceRateBs,
@@ -471,7 +472,8 @@ export async function downloadOrdenInternaPdfForProvider(
     },
     { content: 'Especialidad:', styles: { fontSize: 10 } },
     {
-      content: (order.specialty?.name ?? '').toUpperCase(),
+      // Especialidad de ESTE proveedor (no la principal de la orden).
+      content: groupSpecialtyLabel(group),
       styles: { halign: 'center', valign: 'middle', fontSize: 9 },
     },
   ]);

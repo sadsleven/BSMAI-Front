@@ -54,10 +54,10 @@ function buildDto(values: OrderValues): CreateOrderDto {
       typeof values.customOrderNumber === 'number' && values.customOrderNumber > 0
         ? values.customOrderNumber
         : undefined,
-    specialtyId: values.specialtyId,
     serviceTypes: (values.serviceTypes ?? []).map((r) => ({
       serviceTypeId: r.serviceTypeId,
       providerType: r.providerType,
+      specialtyId: r.specialtyId,
       doctorId: r.providerType === 'doctor' ? r.doctorId || undefined : undefined,
       careCenterId:
         r.providerType === 'care_center' ? r.careCenterId || undefined : undefined,
@@ -85,10 +85,6 @@ function buildDto(values: OrderValues): CreateOrderDto {
     casheaFirstInstallmentAmount:
       values.type === 'cashea'
         ? values.casheaFirstInstallmentAmount ?? 0
-        : undefined,
-    fixedExchangeRateId:
-      values.type === 'insurance' && values.useFixedRate && values.fixedExchangeRateId
-        ? values.fixedExchangeRateId
         : undefined,
     payments: (values.payments ?? []).map<OrderPaymentInput>((p) => ({
       type: p.type,
@@ -152,7 +148,6 @@ export function OrderEdit() {
       insuranceSource: '',
       serviceKey: '',
       isReimbursement: false,
-      specialtyId: '',
       serviceTypes: [],
       pathologyIds: [],
       orderDate: '',
@@ -162,7 +157,6 @@ export function OrderEdit() {
       casheaFirstInstallmentAmount: 0,
       casheaInitialPercent: 0,
       useFixedRate: false,
-      fixedExchangeRateId: '',
       payments: [],
     },
   });
@@ -204,10 +198,13 @@ export function OrderEdit() {
           insuranceSource: order.insuranceSource ?? '',
           serviceKey: order.serviceKey ?? '',
           isReimbursement: !!order.isReimbursement,
-          specialtyId: order.specialtyId,
           serviceTypes: (order.orderServiceTypes ?? []).map((row) => ({
             serviceTypeId: row.serviceTypeId,
             providerType: row.providerType,
+            // Fallback a la principal de la orden: órdenes creadas antes de la
+            // especialidad por fila (el backfill ya la copió, pero el payload
+            // de un borrador viejo puede no traerla).
+            specialtyId: row.specialtyId ?? order.specialtyId,
             doctorId: row.doctorId ?? '',
             careCenterId: row.careCenterId ?? '',
             quantity: row.quantity ?? undefined,
@@ -244,7 +241,6 @@ export function OrderEdit() {
                 ) / 100
               : 0,
           useFixedRate: !!order.useFixedRate,
-          fixedExchangeRateId: order.fixedExchangeRateId ?? '',
           payments: (order.payments ?? []).map((pay) => ({
             id: pay.id,
             type: pay.type,

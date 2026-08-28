@@ -6,12 +6,22 @@ import { z } from 'zod';
  */
 
 export const CEDULA_REGEX = /^[VE]-\d{1,2}\.\d{3}\.\d{3}$/;
+/**
+ * Cédula de paciente: admite el prefijo `M` (menores de edad) además de `V`/`E`.
+ * `V-20.233.123` y `M-20.233.123` son cédulas distintas y pueden coexistir.
+ */
+export const PATIENT_CEDULA_REGEX = /^[VEM]-\d{1,2}\.\d{3}\.\d{3}$/;
 export const RIF_REGEX = /^[JGVE]-\d{7,8}-\d$/;
 export const PHONE_REGEX = /^\d{11}$/;
 
 export const cedulaSchema = z
   .string({ message: 'La cédula es requerida' })
   .regex(CEDULA_REGEX, 'Formato inválido. Ej: V-12.345.678');
+
+/** Cédula de paciente (acepta menores con prefijo `M`). */
+export const patientCedulaSchema = z
+  .string({ message: 'La cédula es requerida' })
+  .regex(PATIENT_CEDULA_REGEX, 'Formato inválido. Ej: V-12.345.678 o M-12.345.678');
 
 export const rifSchema = z
   .string({ message: 'El RIF es requerido' })
@@ -45,11 +55,15 @@ export type PhoneItemValue = z.infer<typeof phoneItemSchema>;
 /**
  * Formatea cédula a `V-XX.XXX.XXX` (acepta 7-8 dígitos).
  * Acepta input parcial; devuelve la mejor representación posible.
+ * `allowMinor` habilita el prefijo `M` (menores de edad, sólo pacientes).
  */
-export function formatCedula(input: string): string {
+export function formatCedula(
+  input: string,
+  opts?: { allowMinor?: boolean },
+): string {
   if (!input) return '';
   const upper = input.toUpperCase();
-  const prefixMatch = upper.match(/^([VE])/);
+  const prefixMatch = upper.match(opts?.allowMinor ? /^([VEM])/ : /^([VE])/);
   const prefix = prefixMatch ? prefixMatch[1] : 'V';
   const digits = upper.replace(/[^0-9]/g, '').slice(0, 8);
   if (!digits) return prefix === upper.trim() || upper.startsWith(prefix) ? `${prefix}-` : '';

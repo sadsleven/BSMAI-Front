@@ -117,6 +117,12 @@ export function OrderAttendStep({
                       <span className="text-xs text-muted-foreground font-normal shrink-0">
                         ({g.providerType === 'doctor' ? 'Doctor' : 'Centro'})
                       </span>
+                      {/* Especialidad de esta orden interna (la orden puede combinar varias). */}
+                      {g.specialtyNames.length > 0 ? (
+                        <Badge variant="outline" className="shrink-0 font-normal">
+                          {g.specialtyNames.join(' / ')}
+                        </Badge>
+                      ) : null}
                       {isDownloaded ? (
                         <Badge
                           variant="default"

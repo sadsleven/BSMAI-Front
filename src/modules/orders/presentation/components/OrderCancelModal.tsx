@@ -111,7 +111,7 @@ export function OrderCancelModal({
               <AlertDialogDescription className="text-sm text-muted-foreground">
                 {cancelled
                   ? `La orden volverá al estado "${ORDER_STATUS_LABEL[restoredStatus]}" y podrás continuar su flujo.`
-                  : 'La orden conserva su número y su contenido, pero queda fuera del flujo: no se podrá editar, atender, informar ni facturar hasta que la reactives. Puedes revertir esta acción.'}
+                  : 'La orden conserva su número y su contenido, pero queda fuera del flujo: no se podrá editar, atender, informar ni facturar hasta que la reactives. Su N° queda disponible para reutilizarlo en otra orden. Puedes revertir esta acción.'}
               </AlertDialogDescription>
             </div>
           </div>
@@ -127,14 +127,22 @@ export function OrderCancelModal({
             </div>
           ) : null}
           {cancelled ? (
-            order.cancelReason ? (
-              <div className="rounded-lg border bg-muted/40 px-3 py-2.5 space-y-0.5">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                  Motivo de la cancelación
-                </p>
-                <p className="text-sm">{order.cancelReason}</p>
+            <>
+              {order.cancelReason ? (
+                <div className="rounded-lg border bg-muted/40 px-3 py-2.5 space-y-0.5">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                    Motivo de la cancelación
+                  </p>
+                  <p className="text-sm">{order.cancelReason}</p>
+                </div>
+              ) : null}
+              <div className="rounded-lg border border-warning/40 bg-warning-soft px-3 py-2.5 text-xs text-warning flex items-start gap-2">
+                <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                Mientras estuvo cancelada, el N° {order.orderNumber} quedó
+                disponible para otras órdenes. Si alguna ya lo tomó, cámbiale el
+                número a esa orden antes de reactivar esta.
               </div>
-            ) : null
+            </>
           ) : (
             <div className="space-y-1.5">
               <Label htmlFor="cancelReason" className="text-sm font-medium">

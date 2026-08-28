@@ -78,6 +78,16 @@ export function OrderDetailBody({
     return acc;
   }, []);
 
+  // Especialidades presentes en la orden (una por fila ST, sin repetir). En
+  // órdenes previas a la especialidad por fila cae a la principal de la orden.
+  const orderSpecialtyNames = Array.from(
+    new Set(
+      (order.orderServiceTypes ?? [])
+        .map((row) => row.specialty?.name ?? order.specialty?.name ?? '')
+        .filter(Boolean),
+    ),
+  );
+
   // Ajuste de monto del Paso 1: priceAmount − priceBaseAmount (null si no hay
   // base snapshot o si el monto coincide con el catálogo).
   const priceAdjustmentUsd = (() => {
@@ -185,7 +195,11 @@ export function OrderDetailBody({
             )
           }
         />
-        <DetailRow label="Especialidad" value={order.specialty?.name} />
+        {/* La especialidad vive por fila ST: se listan todas las de la orden. */}
+        <DetailRow
+          label={orderSpecialtyNames.length > 1 ? 'Especialidades' : 'Especialidad'}
+          value={orderSpecialtyNames.join(' · ') || order.specialty?.name}
+        />
         <DetailRow
           label="Tipos de servicio"
           value={
@@ -208,6 +222,7 @@ export function OrderDetailBody({
                       {row.providerType === 'doctor'
                         ? holderDisplayName(row.doctor ?? undefined)
                         : (row.careCenter?.businessName ?? '—')}
+                      {row.specialty?.name ? ` · ${row.specialty.name}` : ''}
                     </span>
                   </li>
                 ))}
@@ -270,12 +285,20 @@ export function OrderDetailBody({
         {order.invoiceDate && (
           <DetailRow label="Fecha de factura" value={fmtDay(order.invoiceDate)} />
         )}
-        {order.billingExchangeRate && (
+        {order.invoiceExchangeRate ? (
           <DetailRow
-            label="Tasa facturación"
-            value={`1 ${order.billingExchangeRate.currency} = ${formatMoney(order.billingExchangeRate.amountBs)} Bs.`}
+            label="Tasa de la factura"
+            value={`1 ${order.invoiceExchangeRate.currency} = ${formatMoney(order.invoiceExchangeRate.amountBs)} Bs.`}
             mono
           />
+        ) : (
+          order.billingExchangeRate && (
+            <DetailRow
+              label="Tasa facturación"
+              value={`1 ${order.billingExchangeRate.currency} = ${formatMoney(order.billingExchangeRate.amountBs)} Bs.`}
+              mono
+            />
+          )
         )}
       </DetailSection>
 

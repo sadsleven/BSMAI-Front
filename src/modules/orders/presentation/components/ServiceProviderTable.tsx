@@ -14,15 +14,26 @@ import { FormSwitch } from '@/components/ui/form-switch';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { formatMoney } from '@/lib/format/money';
-import { ProviderSearchSelect, type ProviderSelectValue } from './ProviderSearchSelect';
+import {
+  ProviderSearchSelect,
+  providerSpecialties,
+  type ProviderSelectValue,
+} from './ProviderSearchSelect';
 import { orderGateway } from '@/modules/orders/infrastructure/orderGateway';
 import type { ServiceType } from '@/modules/service-types/domain/models/serviceType';
 import type { Doctor } from '@/modules/doctors/domain/models/doctor';
 import type { CareCenter } from '@/modules/care-centers/domain/models/careCenter';
+import type { Specialty } from '@/modules/specialties/domain/models/specialty';
 
 export type ServiceProviderRowValue = {
   serviceTypeId: string;
   providerType: 'doctor' | 'care_center';
+  /**
+   * Especialidad de esta fila. Una orden puede combinar especialidades (ej.
+   * laboratorio en un centro + rayos X en otro): la orden interna del Paso 2
+   * imprime la de las filas de su proveedor.
+   */
+  specialtyId?: string;
   doctorId?: string;
   careCenterId?: string;
   quantity?: number;
@@ -35,6 +46,7 @@ export type ServiceProviderRowValue = {
 export type ServiceProviderRowErrors = {
   serviceTypeId?: string;
   providerType?: string;
+  specialtyId?: string;
   doctorId?: string;
   careCenterId?: string;
   quantity?: string;
@@ -45,6 +57,15 @@ export type ServiceProviderTableProps = {
   value: ServiceProviderRowValue[];
   onChange: (next: ServiceProviderRowValue[]) => void;
   serviceTypes: ServiceType[];
+  /** Especialidades activas para el selector por fila. */
+  specialties: Specialty[];
+  /** Muestra el botón "+ Crear" junto al selector de especialidad. */
+  canCreateSpecialty?: boolean;
+  /**
+   * Pide al padre abrir el modal de alta de especialidad para esa fila (el
+   * padre la asigna a la fila `rowIndex` al crearla).
+   */
+  onRequestCreateSpecialty?: (rowIndex: number) => void;
   /** Errores Zod por fila. */
   errors?: Array<ServiceProviderRowErrors | undefined>;
   /** Hidrata el chip de proveedor en modo edición. Map key `${type}:${id}`. */
@@ -77,6 +98,9 @@ export function ServiceProviderTable({
   value,
   onChange,
   serviceTypes,
+  specialties,
+  canCreateSpecialty,
+  onRequestCreateSpecialty,
   errors,
   initialProviders,
   disabled,
@@ -157,7 +181,14 @@ export function ServiceProviderTable({
   const addRow = () => {
     onChange([
       ...value,
-      { serviceTypeId: '', providerType: 'doctor', quantity: 1 },
+      {
+        serviceTypeId: '',
+        providerType: 'doctor',
+        quantity: 1,
+        // Lo normal es que toda la orden sea de una especialidad: la fila nueva
+        // hereda la de la anterior y sólo se cambia cuando de verdad difiere.
+        specialtyId: value[value.length - 1]?.specialtyId,
+      },
     ]);
   };
 
@@ -175,19 +206,48 @@ export function ServiceProviderTable({
       updateRow(idx, { doctorId: undefined, careCenterId: undefined });
       return;
     }
+    // Prefill de especialidad: si la fila aún no tiene y el proveedor sólo
+    // presta una, se asume esa (menos tipeo, cero ambigüedad).
+    const own = providerSpecialties(pv) ?? [];
+    const inferred =
+      !value[idx]?.specialtyId && own.length === 1 ? own[0].id : undefined;
     if (pv.providerType === 'doctor') {
       updateRow(idx, {
         providerType: 'doctor',
         doctorId: pv.doctor.id,
         careCenterId: undefined,
+        ...(inferred ? { specialtyId: inferred } : {}),
       });
     } else {
       updateRow(idx, {
         providerType: 'care_center',
         careCenterId: pv.careCenter.id,
         doctorId: undefined,
+        ...(inferred ? { specialtyId: inferred } : {}),
       });
     }
+  };
+
+  /**
+   * Cambia la especialidad de la fila. Si el proveedor ya elegido no tiene esa
+   * especialidad se limpia (el backend rechaza el par proveedor↔especialidad
+   * incoherente y el buscador filtra por especialidad).
+   */
+  const setRowSpecialty = (idx: number, specialtyId: string) => {
+    const current = providerCache[idx] ?? null;
+    const keeps =
+      !!current &&
+      (providerSpecialties(current) ?? []).some((s) => s.id === specialtyId);
+    if (!keeps) {
+      setProviderCache((prev) => prev.map((x, i) => (i === idx ? null : x)));
+      updateRow(idx, {
+        specialtyId,
+        doctorId: undefined,
+        careCenterId: undefined,
+      });
+      return;
+    }
+    updateRow(idx, { specialtyId });
   };
 
   const setRowProviderType = (idx: number, pt: 'doctor' | 'care_center') => {
@@ -208,17 +268,30 @@ export function ServiceProviderTable({
     return set.size;
   }, [value]);
 
+  const distinctSpecialties = useMemo(
+    () => new Set(value.map((r) => r.specialtyId).filter(Boolean)).size,
+    [value],
+  );
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
-          Cada Tipo de Servicio tiene su propio proveedor. Cambiar uno no afecta a los demás.
+          Cada Tipo de Servicio tiene su propia especialidad y su propio proveedor.
+          Cambiar uno no afecta a los demás.
         </p>
-        {distinctProviders > 0 && (
-          <Badge variant="outline" className="text-[10px] shrink-0">
-            {distinctProviders} proveedor{distinctProviders === 1 ? '' : 'es'}
-          </Badge>
-        )}
+        <div className="flex shrink-0 items-center gap-1.5">
+          {distinctSpecialties > 1 && (
+            <Badge variant="outline" className="text-[10px]">
+              {distinctSpecialties} especialidades
+            </Badge>
+          )}
+          {distinctProviders > 0 && (
+            <Badge variant="outline" className="text-[10px]">
+              {distinctProviders} proveedor{distinctProviders === 1 ? '' : 'es'}
+            </Badge>
+          )}
+        </div>
       </div>
 
       {value.length === 0 ? (
@@ -245,7 +318,7 @@ export function ServiceProviderTable({
                     <label className="block text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                       Tipo de Servicio
                     </label>
-                    <ServiceTypeSelect
+                    <SearchableSelect
                       value={row.serviceTypeId || ''}
                       options={available.map((s) => ({ id: s.id, label: optionLabel(s) }))}
                       onChange={(v) => {
@@ -304,8 +377,49 @@ export function ServiceProviderTable({
                   </button>
                 </div>
 
-                {/* Fila 2: proveedor (tipo + buscador) + cantidad — envuelve en pantallas chicas */}
+                {/* Fila 2: especialidad + proveedor (tipo + buscador) + cantidad — envuelve en pantallas chicas */}
                 <div className="flex flex-wrap items-end gap-3">
+                  <div className="min-w-[190px] flex-1 space-y-1">
+                    <label className="block text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      Especialidad <span className="text-destructive">*</span>
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <div className="min-w-0 flex-1">
+                        <SearchableSelect
+                          value={row.specialtyId ?? ''}
+                          options={specialties.map((s) => ({
+                            id: s.id,
+                            label: s.name,
+                          }))}
+                          onChange={(id) => setRowSpecialty(idx, id)}
+                          disabled={disabled}
+                          invalid={!!rowError?.specialtyId}
+                          placeholder="Selecciona especialidad"
+                          searchPlaceholder="Buscar especialidad…"
+                          emptyLabel="Sin especialidades disponibles."
+                        />
+                      </div>
+                      {canCreateSpecialty && onRequestCreateSpecialty ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-9 shrink-0 px-2"
+                          disabled={disabled}
+                          onClick={() => onRequestCreateSpecialty(idx)}
+                          title="Crear especialidad"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </Button>
+                      ) : null}
+                    </div>
+                    {rowError?.specialtyId && (
+                      <p className="text-xs text-destructive flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" />
+                        {rowError.specialtyId}
+                      </p>
+                    )}
+                  </div>
                   <div className="space-y-1">
                     <label className="block text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                       Proveedor
@@ -337,6 +451,8 @@ export function ServiceProviderTable({
                       disabled={disabled}
                       hideLabel
                       compact
+                      // Sólo proveedores con la especialidad de ESTA fila.
+                      specialtyId={row.specialtyId || undefined}
                       error={rowError?.doctorId ?? rowError?.careCenterId}
                     />
                   </div>
@@ -399,22 +515,29 @@ export function ServiceProviderTable({
 }
 
 /**
- * Selector de Tipo de Servicio con buscador (combobox single-select).
+ * Selector single-select con buscador (combobox). Lo usan la columna Tipo de
+ * Servicio y la de Especialidad de cada fila.
  * Mismo patrón que `ProviderSearchSelect`/`ChipMultiSelect`: trigger + dropdown
  * en portal anclado (evita recorte dentro del overflow de la tabla) + filtro local.
  */
-function ServiceTypeSelect({
+function SearchableSelect({
   value,
   options,
   onChange,
   disabled,
   invalid,
+  placeholder = 'Selecciona un servicio',
+  searchPlaceholder = 'Buscar servicio…',
+  emptyLabel = 'Sin más servicios disponibles.',
 }: {
   value: string;
   options: Array<{ id: string; label: string }>;
   onChange: (id: string) => void;
   disabled?: boolean;
   invalid?: boolean;
+  placeholder?: string;
+  searchPlaceholder?: string;
+  emptyLabel?: string;
 }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -514,7 +637,7 @@ function ServiceTypeSelect({
               !selectedLabel && 'text-muted-foreground',
             )}
           >
-            {selectedLabel || 'Selecciona un servicio'}
+            {selectedLabel || placeholder}
           </span>
           <ChevronDown
             className={cn(
@@ -536,7 +659,7 @@ function ServiceTypeSelect({
                 <Input
                   type="search"
                   autoFocus
-                  placeholder="Buscar servicio…"
+                  placeholder={searchPlaceholder}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   className="h-8 pl-9"
@@ -548,9 +671,7 @@ function ServiceTypeSelect({
               >
                 {filtered.length === 0 ? (
                   <div className="px-3 py-2 text-sm text-muted-foreground">
-                    {options.length === 0
-                      ? 'Sin más servicios disponibles.'
-                      : 'Sin resultados.'}
+                    {options.length === 0 ? emptyLabel : 'Sin resultados.'}
                   </div>
                 ) : (
                   <ul>
@@ -604,7 +725,7 @@ function ServiceTypeSelect({
  * Selector del "Nombre para esta orden" de un ST. Combobox que reutiliza los
  * nombres ya usados para ese ST (sugerencias) y permite dar de alta uno nuevo
  * escribiéndolo (opción "Usar «…»" o Enter). Mismo patrón de portal anclado que
- * `ServiceTypeSelect` para evitar recortes dentro del overflow de la tabla.
+ * `SearchableSelect` para evitar recortes dentro del overflow de la tabla.
  */
 function CustomNameSelect({
   value,

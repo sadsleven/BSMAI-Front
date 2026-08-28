@@ -10,16 +10,19 @@ export type CedulaInputProps = Omit<
   value: string;
   onChange: (value: string) => void;
   invalid?: boolean;
+  /** Habilita el prefijo `M` (menores de edad). Sólo pacientes. */
+  allowMinor?: boolean;
 };
 
 /**
  * Input de cédula venezolana con auto-formato `V-XX.XXX.XXX`.
- * Acepta `V` o `E` como prefijo. Limita a 8 dígitos numéricos.
+ * Acepta `V` o `E` como prefijo (y `M` con `allowMinor`, para menores de edad).
+ * Limita a 8 dígitos numéricos.
  */
 export const CedulaInput = React.forwardRef<HTMLInputElement, CedulaInputProps>(
-  ({ value, onChange, invalid, className, placeholder, ...rest }, ref) => {
+  ({ value, onChange, invalid, allowMinor, className, placeholder, ...rest }, ref) => {
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      onChange(formatCedula(e.target.value));
+      onChange(formatCedula(e.target.value, { allowMinor }));
     };
     return (
       <Input
@@ -30,7 +33,7 @@ export const CedulaInput = React.forwardRef<HTMLInputElement, CedulaInputProps>(
         spellCheck={false}
         value={value}
         onChange={handleChange}
-        placeholder={placeholder ?? 'V-12.345.678'}
+        placeholder={placeholder ?? (allowMinor ? 'V-12.345.678 / M-12.345.678' : 'V-12.345.678')}
         className={cn(
           'h-9 uppercase tracking-wide font-mono',
           invalid && 'border-destructive focus-visible:ring-destructive/30',

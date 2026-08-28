@@ -276,6 +276,8 @@ export function OrderForm({
   const [editPatientOpen, setEditPatientOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<'holder' | 'patient' | null>(null);
   const [createSpecialtyOpen, setCreateSpecialtyOpen] = useState(false);
+  // Fila de servicio que pidió crear la especialidad: al crearla se le asigna.
+  const [createSpecialtyRow, setCreateSpecialtyRow] = useState<number | null>(null);
   const [createPathologyOpen, setCreatePathologyOpen] = useState(false);
   const [authorizeOpen, setAuthorizeOpen] = useState(false);
   const [confirmTypeChange, setConfirmTypeChange] = useState<OrderType | null>(null);
@@ -590,22 +592,6 @@ export function OrderForm({
     return !!opt?.insurance.isIndexed;
   }, [type, currentInsuranceId, availableInsurances]);
 
-  const orderDateVal = useWatch({ control, name: 'orderDate' }) as
-    | string
-    | undefined;
-  // Tasa "del día de la orden": la más reciente con fecha efectiva ≤ orderDate
-  // (usdRates viene ordenado por effectiveDate DESC). Si la orden es anterior a
-  // toda tasa cargada, cae en la más antigua disponible.
-  const rateForOrderDate = useMemo(() => {
-    if (usdRates.length === 0) return null;
-    if (!orderDateVal) return usdRates[0];
-    const target = new Date(`${orderDateVal}T23:59:59`);
-    return (
-      usdRates.find((r) => new Date(r.effectiveDate) <= target) ??
-      usdRates[usdRates.length - 1]
-    );
-  }, [usdRates, orderDateVal]);
-
   const branchSelect = (() => {
     if (userBranches.length === 0) {
       return (
@@ -662,10 +648,6 @@ export function OrderForm({
   const useFixedRateVal = useWatch({ control, name: 'useFixedRate' }) as
     | boolean
     | undefined;
-  const fixedExchangeRateIdVal = useWatch({
-    control,
-    name: 'fixedExchangeRateId',
-  }) as string | '' | undefined;
   useEffect(() => {
     // Mientras no sepamos el flag `isIndexed` del seguro (la lista de seguros
     // del titular aún carga), NO toques los valores reseteados: evita borrar la
@@ -679,22 +661,15 @@ export function OrderForm({
       return;
     }
     // `useFixedRate` se deriva del flag `isIndexed` del seguro (no es un checkbox).
+    // La tasa fija en sí ya no se elige aquí: se selecciona en el Paso 4 junto
+    // con la tasa de la factura.
     if (!selectedInsuranceIndexed) {
       if (useFixedRateVal)
         setValue('useFixedRate', false, { shouldDirty: true, shouldValidate: true });
-      if (fixedExchangeRateIdVal)
-        setValue('fixedExchangeRateId', '', { shouldDirty: true });
       return;
     }
     if (!useFixedRateVal)
       setValue('useFixedRate', true, { shouldDirty: true, shouldValidate: true });
-    // Auto-seleccionar la tasa del día de la orden si falta (preserva la elegida).
-    if (!fixedExchangeRateIdVal && rateForOrderDate) {
-      setValue('fixedExchangeRateId', rateForOrderDate.id, {
-        shouldDirty: true,
-        shouldValidate: true,
-      });
-    }
   }, [
     type,
     currentInsuranceId,
@@ -702,17 +677,8 @@ export function OrderForm({
     availableInsurances,
     selectedInsuranceIndexed,
     useFixedRateVal,
-    fixedExchangeRateIdVal,
-    rateForOrderDate,
     setValue,
   ]);
-  const fixedRateObj = useMemo(
-    () =>
-      fixedExchangeRateIdVal
-        ? usdRates.find((r) => r.id === fixedExchangeRateIdVal) ?? null
-        : null,
-    [fixedExchangeRateIdVal, usdRates],
-  );
 
   // Cashea: tasas snapshot si la orden ya tiene snapshot, sino la config global
   // cargada on-demand. La inicial se ingresa como % del total (0 ≤ pct < 100);
@@ -873,6 +839,14 @@ export function OrderForm({
   useEffect(() => {
     onOrderNumberOkChange?.(numberAvailable !== false);
   }, [numberAvailable, onOrderNumberOkChange]);
+  // Números del bloque que están libres SÓLO porque su orden fue cancelada:
+  // se pueden usar, pero esa orden ya los tiene impresos.
+  const numberFromCancelled =
+    numberCheck &&
+    numberCheck.number === orderNumberValue &&
+    numberCheck.count === numberBlockCount
+      ? (numberCheck.cancelled ?? [])
+      : [];
   const orderNumberBlock =
     typeof orderNumberValue === 'number' && orderNumberValue > 0
       ? Array.from({ length: numberBlockCount }, (_, i) => orderNumberValue + i)
@@ -1165,11 +1139,20 @@ export function OrderForm({
                 Verificando disponibilidad…
               </span>
             ) : numberAvailable === true ? (
-              <span className="text-xs text-success font-medium">
-                {numberBlockCount > 1
-                  ? `Disponible (${orderNumberBlock[0]}–${orderNumberBlock[orderNumberBlock.length - 1]})`
-                  : 'Disponible'}
-              </span>
+              <>
+                <span className="text-xs text-success font-medium">
+                  {numberBlockCount > 1
+                    ? `Disponible (${orderNumberBlock[0]}–${orderNumberBlock[orderNumberBlock.length - 1]})`
+                    : 'Disponible'}
+                </span>
+                {numberFromCancelled.length ? (
+                  <span className="text-xs text-warning">
+                    {numberFromCancelled.length === 1
+                      ? `El N° ${numberFromCancelled[0]} quedó libre al cancelarse su orden`
+                      : `Liberados al cancelarse sus órdenes: ${numberFromCancelled.join(', ')}`}
+                  </span>
+                ) : null}
+              </>
             ) : numberAvailable === false ? (
               <>
                 <span className="text-xs text-destructive font-medium">
@@ -1525,61 +1508,12 @@ export function OrderForm({
 
               <div className="space-y-2 pt-3 border-t border-dashed">
                 {!currentInsuranceId ? null : selectedInsuranceIndexed ? (
-                  <div className="space-y-1.5">
-                    <RequiredLabel required>Tasa de la orden (USD/Bs)</RequiredLabel>
-                    <p className="text-[11px] text-muted-foreground">
-                      Seguro <strong>no indexado</strong>: la cuenta por cobrar queda
-                      fija en bolívares a la tasa del día de la orden. Los cobros se
-                      descuentan en Bs sin importar la tasa del día del pago.
-                    </p>
-                    <Controller
-                      control={control}
-                      name="fixedExchangeRateId"
-                      render={({ field }) => (
-                        <Select
-                          value={(field.value as string) || ''}
-                          onValueChange={(v) =>
-                            field.onChange(v === '__none__' ? '' : v)
-                          }
-                          disabled={usdRates.length === 0}
-                        >
-                          <SelectTrigger
-                            className={cn(
-                              'h-9',
-                              errors.fixedExchangeRateId?.message &&
-                                'border-destructive',
-                            )}
-                          >
-                            <SelectValue
-                              placeholder={
-                                usdRates.length === 0
-                                  ? 'No hay tasas USD cargadas'
-                                  : 'Selecciona tasa USD/Bs'
-                              }
-                            />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {usdRates.map((r) => (
-                              <SelectItem key={r.id} value={r.id}>
-                                {`Bs. ${formatMoney(r.amountBs)} · ${new Date(
-                                  r.effectiveDate,
-                                ).toLocaleDateString('es-VE')}`}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
-                    <FieldError message={errors.fixedExchangeRateId?.message} />
-                    {fixedRateObj && priceAmount ? (
-                      <p className="text-[11px] text-muted-foreground">
-                        Total a cobrar al seguro:{' '}
-                        <span className="font-mono font-semibold text-foreground">
-                          {formatMoney(priceAmount * Number(fixedRateObj.amountBs))}{' '}
-                          Bs
-                        </span>
-                      </p>
-                    ) : null}
+                  <div className="rounded-md border border-dashed bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
+                    Seguro <strong>no indexado</strong>: la cuenta por cobrar queda
+                    fija en bolívares. La tasa se elige en el{' '}
+                    <strong>Paso 4 — Facturación</strong>, junto con la de la
+                    factura, y los cobros se descuentan en Bs sin importar la tasa
+                    del día del pago.
                   </div>
                 ) : (
                   <div className="rounded-md border border-dashed bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
@@ -1595,53 +1529,10 @@ export function OrderForm({
 
       <FormSection
         title="Servicio y proveedores"
-        description="Especialidad, patologías y el proveedor que atiende cada tipo de servicio."
+        description="Patologías y, por cada tipo de servicio, su especialidad y el proveedor que lo atiende."
         allowOverflow
       >
         <FormGrid>
-          <div className="space-y-1.5">
-            <RequiredLabel required>Especialidad</RequiredLabel>
-            <div className="flex items-center gap-2">
-              <div className="min-w-0 flex-1">
-                <Controller
-                  control={control}
-                  name="specialtyId"
-                  render={({ field }) => (
-                    <Select
-                      value={field.value || ''}
-                      onValueChange={(v) => field.onChange(v)}
-                    >
-                      <SelectTrigger
-                        className={cn('h-9', errors.specialtyId?.message && 'border-destructive')}
-                      >
-                        <SelectValue placeholder="Selecciona especialidad" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {specialties.map((s) => (
-                          <SelectItem key={s.id} value={s.id}>
-                            {s.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-              </div>
-              {canCreateSpecialty ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-9 shrink-0"
-                  onClick={() => setCreateSpecialtyOpen(true)}
-                >
-                  <Plus className="w-4 h-4 mr-1" /> Crear
-                </Button>
-              ) : null}
-            </div>
-            <FieldError message={errors.specialtyId?.message} />
-          </div>
-
           <div className="space-y-1.5 sm:col-span-2">
             <Controller
               control={control}
@@ -1698,6 +1589,7 @@ export function OrderForm({
                 | {
                     serviceTypeId?: { message?: string };
                     providerType?: { message?: string };
+                    specialtyId?: { message?: string };
                     doctorId?: { message?: string };
                     careCenterId?: { message?: string };
                     quantity?: { message?: string };
@@ -1708,6 +1600,7 @@ export function OrderForm({
             )?.map?.((e) => ({
               serviceTypeId: e?.serviceTypeId?.message,
               providerType: e?.providerType?.message,
+              specialtyId: e?.specialtyId?.message,
               doctorId: e?.doctorId?.message,
               careCenterId: e?.careCenterId?.message,
               quantity: e?.quantity?.message,
@@ -1718,6 +1611,7 @@ export function OrderForm({
                 value={(field.value ?? []) as Array<{
                   serviceTypeId: string;
                   providerType: 'doctor' | 'care_center';
+                  specialtyId?: string;
                   doctorId?: string;
                   careCenterId?: string;
                   quantity?: number;
@@ -1726,6 +1620,12 @@ export function OrderForm({
                 }>}
                 onChange={field.onChange}
                 serviceTypes={serviceTypes}
+                specialties={specialties}
+                canCreateSpecialty={canCreateSpecialty}
+                onRequestCreateSpecialty={(rowIndex) => {
+                  setCreateSpecialtyRow(rowIndex);
+                  setCreateSpecialtyOpen(true);
+                }}
                 errors={rowErrors}
                 initialProviders={initialProvidersMap}
                 priceByServiceTypeId={stPriceMap}
@@ -2270,15 +2170,29 @@ export function OrderForm({
 
       <SpecialtyCreateModal
         open={createSpecialtyOpen}
-        onOpenChange={setCreateSpecialtyOpen}
+        onOpenChange={(o) => {
+          setCreateSpecialtyOpen(o);
+          if (!o) setCreateSpecialtyRow(null);
+        }}
         onCreated={(sp) => {
           setSpecialties((prev) =>
             prev.some((s) => s.id === sp.id) ? prev : [sp, ...prev],
           );
-          setValue('specialtyId', sp.id, {
-            shouldDirty: true,
-            shouldValidate: true,
-          });
+          // Se asigna a la fila que la pidió. La especialidad nueva no tiene
+          // proveedores asignados aún, así que se limpia el de la fila.
+          const idx = createSpecialtyRow;
+          if (idx == null) return;
+          const rows = (getValues('serviceTypes') ?? []) as OrderValues['serviceTypes'];
+          if (!rows[idx]) return;
+          setValue(
+            'serviceTypes',
+            rows.map((r, i) =>
+              i === idx
+                ? { ...r, specialtyId: sp.id, doctorId: undefined, careCenterId: undefined }
+                : r,
+            ),
+            { shouldDirty: true, shouldValidate: true },
+          );
         }}
       />
 

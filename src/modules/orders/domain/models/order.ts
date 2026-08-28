@@ -80,6 +80,9 @@ export interface OrderInternalOrderRow {
 export interface OrderServiceTypeRow {
   serviceTypeId: string;
   serviceType?: { id: string; name: string };
+  /** Especialidad de esta fila (la orden interna del Paso 2 imprime la de sus filas). */
+  specialtyId?: string;
+  specialty?: { id: string; name: string };
   /** Nombre personalizado del ST en esta orden (override de serviceType.name). */
   customName?: string | null;
   providerType: ProviderType;
@@ -218,6 +221,18 @@ export interface Order {
     amountBs: string | number;
     effectiveDate: string;
   } | null;
+  /**
+   * Tasa USD/Bs elegida en el Paso 4 para emitir la factura. Manda sobre
+   * cualquier otra al imprimir. Nula en órdenes facturadas antes de que la tasa
+   * fuese seleccionable (conservan la precedencia histórica).
+   */
+  invoiceExchangeRateId?: string | null;
+  invoiceExchangeRate?: {
+    id: string;
+    currency: 'USD' | 'EUR';
+    amountBs: string | number;
+    effectiveDate: string;
+  } | null;
   invoiceNumber?: string | null;
   controlNumber?: string | null;
   /** Fecha impresa en la factura (Paso 4). Sin valor → cae a `orderDate`. */
@@ -275,6 +290,11 @@ export interface BillingProviderInput {
 
 export interface BillingOrderDto {
   providers: BillingProviderInput[];
+  /**
+   * Tasa USD/Bs elegida para emitir la factura. El BE la guarda como tasa de
+   * facturación, tasa de la factura y —en seguro no indexado— tasa fija de la
+   * cuenta por cobrar.
+   */
   billingExchangeRateId: string;
   invoiceNumber: string;
   controlNumber: string;
@@ -285,6 +305,12 @@ export interface BillingOrderDto {
 export interface OrderServiceTypeRowInput {
   serviceTypeId: string;
   providerType: ProviderType;
+  /**
+   * Especialidad de esta fila (obligatoria). Una orden puede combinar
+   * especialidades; el backend deriva `orders.specialtyId` (principal) de la
+   * primera fila.
+   */
+  specialtyId: string;
   doctorId?: string;
   careCenterId?: string;
   quantity?: number;
@@ -304,7 +330,6 @@ export interface CreateOrderDto {
   insuranceSource?: InsuranceSource;
   serviceKey?: string;
   isReimbursement?: boolean;
-  specialtyId: string;
   /**
    * Número de orden manual (órdenes viejas que se registran ahora). Debe ser
    * cualquier entero libre (el backend valida el bloque completo)
@@ -414,8 +439,13 @@ export interface OrderNumberAvailability {
   number: number | null;
   /** `null` cuando no se consultó un número concreto. */
   available: boolean | null;
-  /** Números del bloque ya ocupados. */
+  /** Números del bloque ya ocupados por órdenes vivas. */
   taken: number[];
+  /**
+   * Números del bloque libres porque su orden fue CANCELADA: se pueden
+   * reutilizar, pero esa orden los sigue mostrando (se avisa en el Paso 1).
+   */
+  cancelled: number[];
   /** Primer número ≥ el pedido cuyo bloque completo está libre. */
   nextFree: number;
 }
@@ -538,6 +568,7 @@ export const ORDER_LOG_FIELD_LABEL: Record<string, string> = {
   invoiceNumber: 'N° de factura',
   controlNumber: 'N° de control',
   invoiceDate: 'Fecha de factura',
+  invoiceExchangeRateId: 'Tasa de la factura',
   payment: 'Pago',
 };
 
@@ -550,6 +581,7 @@ export const ORDER_LOG_ID_FIELDS = new Set<string>([
   'insuranceId',
   'specialtyId',
   'fixedExchangeRateId',
+  'invoiceExchangeRateId',
 ]);
 
 /** Nombre visible de un usuario del sistema (creador de la orden, autor del cambio). */

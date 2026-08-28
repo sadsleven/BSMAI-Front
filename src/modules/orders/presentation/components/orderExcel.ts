@@ -71,12 +71,17 @@ async function loadLogoBuffer(): Promise<ArrayBuffer | null> {
  * verdad). Empate → la tasa con fecha efectiva más reciente.
  *
  * Los pagos en USD no llevan tasa y los de EUR llevan EUR/Bs: ninguno participa.
- * Devuelve 0 cuando la orden no tiene pagos en Bs (seguro, crédito).
+ * Devuelve `null` cuando la orden no tiene pagos en Bs (seguro, crédito).
+ *
+ * Es el valor por defecto del selector de tasa de la factura (Paso 4) para las
+ * órdenes que se pagaron en bolívares.
  */
-function dominantPaymentRateBs(order: Order): number {
+export function dominantPaymentRate(
+  order: Order,
+): { id: string; rate: number } | null {
   const totals = new Map<
     string,
-    { usd: number; rate: number; effectiveDate: string }
+    { id: string; usd: number; rate: number; effectiveDate: string }
   >();
   for (const p of order.payments ?? []) {
     if (p.amountCurrency !== 'BS') continue;
@@ -86,6 +91,7 @@ function dominantPaymentRateBs(order: Order): number {
     const amountBs = Number(p.amountValue) || 0;
     if (rate <= 0 || amountBs <= 0) continue;
     const acc = totals.get(r.id) ?? {
+      id: r.id,
       usd: 0,
       rate,
       effectiveDate: r.effectiveDate ?? '',
@@ -93,7 +99,12 @@ function dominantPaymentRateBs(order: Order): number {
     acc.usd += amountBs / rate;
     totals.set(r.id, acc);
   }
-  let best: { usd: number; rate: number; effectiveDate: string } | null = null;
+  let best: {
+    id: string;
+    usd: number;
+    rate: number;
+    effectiveDate: string;
+  } | null = null;
   for (const t of totals.values()) {
     if (
       !best ||
@@ -103,19 +114,31 @@ function dominantPaymentRateBs(order: Order): number {
       best = t;
     }
   }
-  return best?.rate ?? 0;
+  return best ? { id: best.id, rate: best.rate } : null;
+}
+
+function dominantPaymentRateBs(order: Order): number {
+  return dominantPaymentRate(order)?.rate ?? 0;
 }
 
 /**
  * Tasa USD/Bs de la FACTURA (Paso 4) — alimenta el campo "Tasa de cambio BCV" y
  * todos los montos en Bs del documento. Precedencia:
- *  1. Orden con tasa fija (seguro no indexado): su snapshot.
- *  2. Tasa del pago dominante del Paso 1 ({@link dominantPaymentRateBs}): la
+ *  1. Tasa **elegida** en el Paso 4 (`invoiceExchangeRate`): manda siempre.
+ *  2. Orden con tasa fija (seguro no indexado): su snapshot.
+ *  3. Tasa del pago dominante del Paso 1 ({@link dominantPaymentRate}): la
  *     factura queda a la tasa a la que realmente se cobró.
- *  3. Tasa vigente al CREAR la orden (órdenes sin pagos: seguro, crédito).
- *  4. Tasa de facturación snapshot; sino 0 (montos sin convertir).
+ *  4. Tasa vigente al CREAR la orden (órdenes sin pagos: seguro, crédito).
+ *  5. Tasa de facturación snapshot; sino 0 (montos sin convertir).
+ *
+ * Los pasos 2-5 sólo aplican a órdenes facturadas antes de que la tasa fuese
+ * seleccionable (sin `invoiceExchangeRate`): conservan su factura original.
  */
 export async function resolveInvoiceRateBs(order: Order): Promise<number> {
+  if (order.invoiceExchangeRate) {
+    const chosen = Number(order.invoiceExchangeRate.amountBs) || 0;
+    if (chosen > 0) return chosen;
+  }
   if (order.useFixedRate && order.fixedExchangeRate) {
     const fixed = Number(order.fixedExchangeRate.amountBs) || 0;
     if (fixed > 0) return fixed;
@@ -152,7 +175,19 @@ export interface OrderProviderGroup {
   providerCenterAddress: string;
   /** Número de orden interna de ESTE proveedor (lo que se imprime, no el base). */
   providerOrderNumber: string;
+  /**
+   * Especialidades de las filas de este proveedor (normalmente una). Es lo que
+   * se imprime en la orden interna: una orden puede combinar especialidades
+   * (ej. laboratorio en un centro + rayos X en otro) y cada orden interna
+   * muestra la suya, no la principal de la orden.
+   */
+  specialtyNames: string[];
   rows: OrderServiceTypeRow[];
+}
+
+/** Etiqueta de especialidad de un grupo (proveedor) para Excel/PDF. */
+export function groupSpecialtyLabel(group: OrderProviderGroup): string {
+  return group.specialtyNames.join(' / ').toUpperCase();
 }
 
 /**
@@ -217,10 +252,18 @@ export function groupOrderProviders(order: Order): OrderProviderGroup[] {
         providerName: name,
         providerCenterAddress: centerAddress,
         providerOrderNumber: providerInternalNumber(order, row.providerType, id),
+        specialtyNames: [],
         rows: [],
       });
     }
-    groups.get(key)!.rows.push(row);
+    const group = groups.get(key)!;
+    group.rows.push(row);
+    // Especialidad de la fila (fallback a la principal de la orden en órdenes
+    // previas a la especialidad por fila). Sin repetir.
+    const spName = row.specialty?.name ?? order.specialty?.name ?? '';
+    if (spName && !group.specialtyNames.includes(spName)) {
+      group.specialtyNames.push(spName);
+    }
   }
   return Array.from(groups.values());
 }
@@ -744,7 +787,8 @@ export async function downloadOrdenInternaForProvider(
   put('A5', group.providerType === 'doctor' ? 'Médico Tratante:' : 'Centro:', C11, leftMid);
   put('C5', group.providerName.toUpperCase(), C10, { horizontal: 'left', vertical: 'middle', wrapText: true });
   put('F5', 'Especialidad:', C11, leftMid);
-  put('G5', (order.specialty?.name ?? '').toUpperCase(), C8, centerWrap);
+  // Especialidad de ESTE proveedor (no la principal de la orden).
+  put('G5', groupSpecialtyLabel(group), C8, centerWrap);
   boxRow(5);
 
   // R6 — Centro/Dirección del proveedor (doctor o centro). C6:G6 mergeado.
