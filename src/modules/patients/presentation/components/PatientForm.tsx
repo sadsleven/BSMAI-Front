@@ -316,11 +316,6 @@ export function PatientForm({
                     />
                   )}
                 />
-                {!errors.cedula && (
-                  <p className="text-xs text-muted-foreground">
-                    Usa el prefijo M para menores de edad (ej. M-20.233.123).
-                  </p>
-                )}
                 <FieldError message={errors.cedula?.message} />
               </div>
               <div className="space-y-1.5">

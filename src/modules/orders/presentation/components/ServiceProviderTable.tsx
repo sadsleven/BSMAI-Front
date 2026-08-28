@@ -377,8 +377,8 @@ export function ServiceProviderTable({
                   </button>
                 </div>
 
-                {/* Fila 2: especialidad + proveedor (tipo + buscador) + cantidad — envuelve en pantallas chicas */}
-                <div className="flex flex-wrap items-end gap-3">
+                {/* Fila 2: especialidad + cantidad */}
+                <div className="flex flex-wrap items-start gap-3">
                   <div className="min-w-[190px] flex-1 space-y-1">
                     <label className="block text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                       Especialidad <span className="text-destructive">*</span>
@@ -420,42 +420,6 @@ export function ServiceProviderTable({
                       </p>
                     )}
                   </div>
-                  <div className="space-y-1">
-                    <label className="block text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                      Proveedor
-                    </label>
-                    <div className="inline-flex rounded-md border p-0.5 gap-0.5">
-                      {(['doctor', 'care_center'] as const).map((pt) => (
-                        <button
-                          key={pt}
-                          type="button"
-                          onClick={() => setRowProviderType(idx, pt)}
-                          disabled={disabled}
-                          className={cn(
-                            'px-2.5 py-1 rounded text-xs font-medium transition-colors',
-                            row.providerType === pt
-                              ? 'bg-brand-blue-soft text-brand-blue-strong'
-                              : 'text-muted-foreground hover:bg-accent',
-                          )}
-                        >
-                          {pt === 'doctor' ? 'Doctor' : 'Centro'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="min-w-[200px] flex-1">
-                    <ProviderSearchSelect
-                      providerType={row.providerType}
-                      value={cachedProvider}
-                      onChange={(pv) => setRowProvider(idx, pv)}
-                      disabled={disabled}
-                      hideLabel
-                      compact
-                      // Sólo proveedores con la especialidad de ESTA fila.
-                      specialtyId={row.specialtyId || undefined}
-                      error={rowError?.doctorId ?? rowError?.careCenterId}
-                    />
-                  </div>
                   <div className="w-24 space-y-1">
                     <label className="block text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                       Cantidad
@@ -483,7 +447,47 @@ export function ServiceProviderTable({
                   </div>
                 </div>
 
-                {/* Fila 3 (sólo seguro no indexado): ST indexado → tasa del día del cobro */}
+                {/* Fila 3: proveedor — tipo (doctor/centro) + buscador filtrado por la especialidad de la fila */}
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                    Proveedor
+                  </label>
+                  <div className="flex flex-wrap items-start gap-2">
+                    <div className="inline-flex shrink-0 rounded-md border p-0.5 gap-0.5">
+                      {(['doctor', 'care_center'] as const).map((pt) => (
+                        <button
+                          key={pt}
+                          type="button"
+                          onClick={() => setRowProviderType(idx, pt)}
+                          disabled={disabled}
+                          className={cn(
+                            'px-2.5 py-1.5 rounded text-xs font-medium transition-colors',
+                            row.providerType === pt
+                              ? 'bg-brand-blue-soft text-brand-blue-strong'
+                              : 'text-muted-foreground hover:bg-accent',
+                          )}
+                        >
+                          {pt === 'doctor' ? 'Doctor' : 'Centro'}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="min-w-[200px] flex-1">
+                      <ProviderSearchSelect
+                        providerType={row.providerType}
+                        value={cachedProvider}
+                        onChange={(pv) => setRowProvider(idx, pv)}
+                        disabled={disabled}
+                        hideLabel
+                        compact
+                        // Sólo proveedores con la especialidad de ESTA fila.
+                        specialtyId={row.specialtyId || undefined}
+                        error={rowError?.doctorId ?? rowError?.careCenterId}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Fila 4 (sólo seguro no indexado): ST indexado → tasa del día del cobro */}
                 {showIndexedCheck && (
                   <div className="rounded-md border border-dashed bg-muted/40 px-3 py-2">
                     <FormSwitch
