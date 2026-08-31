@@ -4,6 +4,8 @@ import type {
   AuthorizeOrderAmountDto,
   BillingOrderDto,
   CreateOrderDto,
+  InvoiceNumberAvailability,
+  IssueOrderInvoiceDto,
   Order,
   OrderChangeLog,
   OrderNumberAvailability,
@@ -12,6 +14,7 @@ import type {
   OrdersQuery,
   PaginatedResponse,
   ReportOrderDto,
+  ServiceKeyAvailability,
   UpdateOrderDto,
 } from '../domain/models/order';
 
@@ -117,6 +120,54 @@ export const orderGateway = {
     const { data } = await api.get<OrderNumberAvailability>(
       '/orders/numbers/availability',
       { params },
+    );
+    return data;
+  },
+  /**
+   * Disponibilidad de una clave de servicio (Paso 1, órdenes de seguro). Es
+   * única entre órdenes vivas y no se reutiliza: sólo queda libre si la orden
+   * que la tenía fue cancelada. `orderId` excluye la propia orden.
+   */
+  async serviceKeyAvailability(params: {
+    key: string;
+    orderId?: string;
+  }): Promise<ServiceKeyAvailability> {
+    const { data } = await api.get<ServiceKeyAvailability>(
+      '/orders/service-keys/availability',
+      { params },
+    );
+    return data;
+  },
+  /**
+   * Disponibilidad de un N° de factura (Paso 4). Sin `number` devuelve sólo la
+   * sugerencia (el mayor emitido + 1). Los números no se reutilizan: el de una
+   * factura anulada sigue ocupado. `orderId` no marca como ocupada la factura
+   * vigente de esa misma orden.
+   */
+  async invoiceNumberAvailability(params: {
+    number?: number;
+    orderId?: string;
+  }): Promise<InvoiceNumberAvailability> {
+    const { data } = await api.get<InvoiceNumberAvailability>(
+      '/orders/invoices/availability',
+      { params },
+    );
+    return data;
+  },
+  /** Emite una factura nueva en una orden finalizada sin factura vigente. */
+  async issueInvoice(id: string, dto: IssueOrderInvoiceDto): Promise<Order> {
+    const { data } = await api.post<Order>(`/orders/${id}/invoices`, dto);
+    return data;
+  },
+  /** Anula una factura de la orden (la orden sigue activa). */
+  async cancelInvoice(
+    id: string,
+    invoiceId: string,
+    reason: string,
+  ): Promise<Order> {
+    const { data } = await api.patch<Order>(
+      `/orders/${id}/invoices/${invoiceId}/cancel`,
+      { reason },
     );
     return data;
   },

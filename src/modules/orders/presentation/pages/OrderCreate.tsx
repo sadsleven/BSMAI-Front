@@ -26,7 +26,8 @@ import { localTodayIso } from '@/lib/dates';
 
 const DEFAULT_VALUES: OrderValues = {
   branchId: '',
-  type: 'cash',
+  // Tipo por defecto: Seguro (es la modalidad más frecuente).
+  type: 'insurance',
   holderId: '',
   patientId: '',
   contractorId: '',
@@ -235,6 +236,12 @@ export function OrderCreate() {
     numberOkRef.current = ok;
   }, []);
 
+  // Clave de servicio libre (no se reutiliza salvo orden cancelada).
+  const serviceKeyOkRef = useRef(true);
+  const handleServiceKeyOk = useCallback((ok: boolean) => {
+    serviceKeyOkRef.current = ok;
+  }, []);
+
   // Guardar como borrador: persiste los valores crudos (sin validar) para poder
   // salir y retomar. No bloquea por campos incompletos.
   const saveDraft = async () => {
@@ -290,6 +297,12 @@ export function OrderCreate() {
     if (!numberOkRef.current) {
       notify.error(
         'El N° de orden elegido ya está en uso. Usa uno libre antes de crear la orden.',
+      );
+      return;
+    }
+    if (!serviceKeyOkRef.current) {
+      notify.error(
+        'La clave de servicio ya está en uso en otra orden. Usa una libre antes de crear la orden.',
       );
       return;
     }
@@ -360,6 +373,7 @@ export function OrderCreate() {
             initialPatient={initialPatient}
             onStep1PaymentOkChange={handleStep1Ok}
             onOrderNumberOkChange={handleNumberOk}
+            onServiceKeyOkChange={handleServiceKeyOk}
           />
 
           <div className="flex items-center justify-between gap-3 pt-2 flex-wrap">

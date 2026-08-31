@@ -107,12 +107,29 @@ export interface AccountsReceivableBatch {
   collectedAt?: string | null;
   orders: AccountsReceivableOrder[];
   payments: AccountsReceivablePayment[];
+  /**
+   * Ajuste firmado del total a cobrar, en la moneda del lote (Bs si el lote es
+   * de tasa fija, USD si no). Negativo = resta (el seguro paga menos de lo
+   * facturado), positivo = suma. Null/0 = sin ajuste.
+   */
+  adjustmentAmount?: string | number | null;
+  adjustmentNote?: string | null;
+  adjustedBy?: {
+    firstName?: string | null;
+    lastName?: string | null;
+    email?: string | null;
+  } | null;
+  adjustedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
   // Transient (provistos por el BE).
   mode?: 'usd' | 'fixed';
+  /** Total a cobrar YA con el ajuste aplicado. */
   targetUsd?: number;
   targetBs?: number;
+  /** Total a cobrar SIN ajuste (Σ snapshot de las órdenes del lote). */
+  targetBaseUsd?: number;
+  targetBaseBs?: number;
   collectedUsd?: number;
   collectedBs?: number;
   pendingUsd?: number;

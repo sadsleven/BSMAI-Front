@@ -233,10 +233,21 @@ export interface Order {
     amountBs: string | number;
     effectiveDate: string;
   } | null;
+  /**
+   * Espejo de la factura VIGENTE. Quedan en null si esa factura se anula y la
+   * orden todavía no emitió otra.
+   */
   invoiceNumber?: string | null;
   controlNumber?: string | null;
   /** Fecha impresa en la factura (Paso 4). Sin valor → cae a `orderDate`. */
   invoiceDate?: string | null;
+  /**
+   * ¿La factura imprime la fila "Tasa de cambio BCV"? Switch del Paso 4 (sólo
+   * seguros). `null` → regla derivada `!useFixedRate`.
+   */
+  invoiceShowExchangeRate?: boolean | null;
+  /** Facturas emitidas: la vigente + las anuladas (más antigua primero). */
+  invoices?: OrderInvoice[];
   /**
    * Cancelación (reversible): la orden conserva su número y contenido pero
    * queda fuera del flujo. `cancelledAt` no nulo ⇔ `status='cancelled'`.
@@ -255,6 +266,103 @@ export interface Order {
   createdAt?: string;
   updatedAt?: string;
   deletedAt?: string | null;
+}
+
+/**
+ * Factura emitida en el Paso 4. Una orden puede acumular varias: a lo sumo una
+ * vigente más las anuladas. Anular una factura NO cancela la orden, y su número
+ * queda quemado para siempre (no se reutiliza).
+ */
+export interface OrderInvoice {
+  id: string;
+  orderId: string;
+  /** Valor numérico del N° de factura (null en facturas históricas). */
+  number?: string | number | null;
+  /** N° impreso, con ceros a la izquierda. */
+  invoiceNumber: string;
+  /** N° de control derivado (`número + 50` con dos ceros delante). */
+  controlNumber: string;
+  invoiceDate: string;
+  /** ¿Esta factura imprime la tasa? `null` → regla derivada. */
+  showExchangeRate?: boolean | null;
+  exchangeRateId?: string | null;
+  exchangeRate?: {
+    id: string;
+    currency: 'USD' | 'EUR';
+    amountBs: string | number;
+    effectiveDate: string;
+  } | null;
+  status: 'active' | 'cancelled';
+  cancelledAt?: string | null;
+  cancelReason?: string | null;
+  cancelledBy?: {
+    id: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    email?: string | null;
+  } | null;
+  createdBy?: {
+    id: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    email?: string | null;
+  } | null;
+  createdAt?: string;
+}
+
+/** Dígitos con los que se imprime el N° de factura (`4912` → `04912`). */
+export const INVOICE_NUMBER_PAD = 5;
+/** El N° de control va 50 por delante del de factura… */
+export const INVOICE_CONTROL_OFFSET = 50;
+/** …y con dos ceros extra adelante (`04912` → `0004962`). Espejo del BE. */
+export const INVOICE_CONTROL_PREFIX = '00';
+
+/** N° de factura impreso: entero con ceros a la izquierda. */
+export function formatInvoiceNumber(n: number): string {
+  return String(Math.trunc(n)).padStart(INVOICE_NUMBER_PAD, '0');
+}
+
+/**
+ * N° de control DERIVADO del de factura (no se captura a mano): mismo número
+ * + 50, con dos ceros delante. `04912` → `0004962`.
+ */
+export function deriveControlNumber(n: number): string {
+  return (
+    INVOICE_CONTROL_PREFIX +
+    formatInvoiceNumber(Math.trunc(n) + INVOICE_CONTROL_OFFSET)
+  );
+}
+
+/** Factura vigente de la orden (la que se imprime), o null si no tiene. */
+export function activeInvoice(order: Pick<Order, 'invoices'>): OrderInvoice | null {
+  return (order.invoices ?? []).find((i) => i.status === 'active') ?? null;
+}
+
+/** Disponibilidad de un N° de factura (Paso 4). */
+export interface InvoiceNumberAvailability {
+  /** Valor por defecto: el mayor emitido + 1. */
+  suggestion: number;
+  number: number | null;
+  /** `null` cuando no se consultó un número concreto. */
+  available: boolean | null;
+  /** El número lo tiene una factura ANULADA (tampoco se reutiliza). */
+  cancelled: boolean;
+  /** N° de la orden que ya usa ese número, si está ocupado. */
+  usedByOrderNumber: string | null;
+  /** Primer número libre ≥ el pedido. */
+  nextFree: number;
+  invoiceNumber: string | null;
+  controlNumber: string | null;
+}
+
+export interface IssueOrderInvoiceDto {
+  invoiceNumber: number;
+  /** `YYYY-MM-DD`. Sin enviar, el BE usa la fecha de la orden. */
+  invoiceDate?: string;
+  /** Tasa USD/Bs de la nueva factura. Sin enviar conserva la de la orden. */
+  exchangeRateId?: string;
+  /** ¿Imprime la fila "Tasa de cambio BCV"? Sin enviar, la regla derivada. */
+  showExchangeRate?: boolean;
 }
 
 export interface AttendOrderDto {
@@ -296,10 +404,12 @@ export interface BillingOrderDto {
    * cuenta por cobrar.
    */
   billingExchangeRateId: string;
-  invoiceNumber: string;
-  controlNumber: string;
+  /** N° de factura como entero. El N° de control lo deriva el BE. */
+  invoiceNumber: number;
   /** `YYYY-MM-DD`. Sin enviar, el BE usa la fecha de la orden. */
   invoiceDate?: string;
+  /** ¿Imprime la fila "Tasa de cambio BCV"? Sin enviar, la regla derivada. */
+  showExchangeRate?: boolean;
 }
 
 export interface OrderServiceTypeRowInput {
@@ -410,6 +520,17 @@ export const ORDER_TYPE_LABEL: Record<OrderType, string> = {
 };
 
 /**
+ * Orden de presentación de los tipos de orden en la UI (Paso 1 y filtros):
+ * Seguro primero (es el tipo por defecto), luego Cashea, Contado y Crédito.
+ */
+export const ORDER_TYPE_ORDER: OrderType[] = [
+  'insurance',
+  'cashea',
+  'cash',
+  'credit',
+];
+
+/**
  * Valor de "Clave de Servicio" para la orden interna (Paso 2). Las órdenes de
  * crédito marcadas como reembolso muestran "R"; el resto usa `serviceKey`
  * (que sólo persisten las órdenes de seguro). Vacío si no aplica.
@@ -424,6 +545,23 @@ export function orderInvoiceDate(order: {
 }): string {
   const d = (order.invoiceDate ?? '').slice(0, 10);
   return d || order.orderDate;
+}
+
+/**
+ * ¿La factura imprime la fila "Tasa de cambio BCV"?
+ *
+ *  - Elección explícita del switch del Paso 4 (sólo órdenes de seguro): manda.
+ *  - Sin elección (`null`, y todas las facturas históricas): regla derivada —
+ *    se imprime salvo en órdenes con tasa fija (`useFixedRate`, seguro "no
+ *    indexado"), donde la cuenta por cobrar ya quedó fija en bolívares.
+ *
+ * Es la ÚNICA fuente de esta decisión: la usan `orderExcel` y `orderPdf`.
+ */
+export function invoiceShowsExchangeRate(order: {
+  invoiceShowExchangeRate?: boolean | null;
+  useFixedRate?: boolean | null;
+}): boolean {
+  return order.invoiceShowExchangeRate ?? !order.useFixedRate;
 }
 
 /**
@@ -448,6 +586,17 @@ export interface OrderNumberAvailability {
   cancelled: number[];
   /** Primer número ≥ el pedido cuyo bloque completo está libre. */
   nextFree: number;
+}
+
+/** Disponibilidad de una clave de servicio (Paso 1, órdenes de seguro). */
+export interface ServiceKeyAvailability {
+  key: string | null;
+  /** `null` cuando no se consultó ninguna clave. */
+  available: boolean | null;
+  /** N° de la orden que la tiene (viva o cancelada). */
+  usedByOrderNumber: string | null;
+  /** La clave está libre porque la orden que la tenía fue cancelada. */
+  cancelled: boolean;
 }
 
 /** Orden cancelada: fuera del flujo (no se atiende, informa ni factura). */
@@ -503,7 +652,9 @@ export type OrderChangeAction =
   | 'soft_delete'
   | 'restore'
   | 'cancel'
-  | 'uncancel';
+  | 'uncancel'
+  | 'invoice_issue'
+  | 'invoice_cancel';
 
 /** Fila del historial de cambios de la orden (mapea OrderChangeLog del BE). */
 export interface OrderChangeLog {
@@ -536,6 +687,8 @@ export const ORDER_LOG_ACTION_LABEL: Record<OrderChangeAction, string> = {
   restore: 'Restaurada',
   cancel: 'Orden cancelada',
   uncancel: 'Cancelación revertida',
+  invoice_issue: 'Factura emitida',
+  invoice_cancel: 'Factura anulada',
 };
 
 export const ORDER_LOG_FIELD_LABEL: Record<string, string> = {

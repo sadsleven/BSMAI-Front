@@ -62,7 +62,10 @@ import {
   type AccountsReceivableDebtorType,
   type PendingReceivable,
 } from '../../domain/models/accountsReceivable';
-import { PAYMENT_TYPE_LABEL } from '@/modules/orders/domain/models/order';
+import {
+  PAYMENT_TYPE_LABEL,
+  orderUserDisplayName,
+} from '@/modules/orders/domain/models/order';
 import { Can } from '@/modules/auth/presentation/components/Can';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 
@@ -478,6 +481,13 @@ function BatchDetail({ id }: { id: string }) {
   const [candidateSearch, setCandidateSearch] = useState('');
   const [candidateSel, setCandidateSel] = useState<Set<string>>(new Set());
 
+  // Ajuste del total a cobrar (resta o suma). Espeja el ajuste de monto del
+  // Paso 1: signo + monto + motivo obligatorio, con autor y fecha.
+  const [adjSign, setAdjSign] = useState<'minus' | 'plus'>('minus');
+  const [adjAmount, setAdjAmount] = useState<string>('');
+  const [adjNote, setAdjNote] = useState<string>('');
+  const [savingAdjustment, setSavingAdjustment] = useState(false);
+
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmPaymentDelete, setConfirmPaymentDelete] = useState<string | null>(null);
   const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
@@ -623,6 +633,40 @@ function BatchDetail({ id }: { id: string }) {
   );
 
   const unit = fixed ? 'Bs.' : 'USD';
+
+  // Ajuste guardado del lote (en la moneda del lote).
+  const savedAdjustment = Number(batch?.adjustmentAmount ?? 0) || 0;
+  // Hidrata el formulario del ajuste con lo guardado (al cargar y tras guardar).
+  useEffect(() => {
+    const amount = Number(batch?.adjustmentAmount ?? 0) || 0;
+    setAdjSign(amount > 0 ? 'plus' : 'minus');
+    setAdjAmount(amount ? String(Math.abs(amount)) : '');
+    setAdjNote(batch?.adjustmentNote ?? '');
+  }, [batch?.id, batch?.adjustmentAmount, batch?.adjustmentNote]);
+
+  const saveAdjustment = async (clear = false) => {
+    const raw = Number((adjAmount || '0').replace(',', '.'));
+    const value = clear || !Number.isFinite(raw) ? 0 : Math.abs(raw);
+    const signed = adjSign === 'minus' ? -value : value;
+    if (!clear && value > 0 && adjNote.trim().length < 3) {
+      notify.error('Indica el motivo del ajuste (mínimo 3 caracteres).');
+      return;
+    }
+    setSavingAdjustment(true);
+    try {
+      const updated = await accountsReceivableGateway.setAdjustment(
+        id,
+        clear ? 0 : signed,
+        clear ? undefined : adjNote.trim(),
+      );
+      setBatch(updated);
+      notify.success(clear ? 'Ajuste eliminado' : 'Ajuste guardado');
+    } catch (e) {
+      notify.fromError(e, 'No se pudo guardar el ajuste');
+    } finally {
+      setSavingAdjustment(false);
+    }
+  };
 
   // Desglose Cashea agregado del lote (sólo lotes cashea): suma el breakdown
   // exacto en centavos de cada orden con sus tasas snapshot (pueden diferir
@@ -853,7 +897,15 @@ function BatchDetail({ id }: { id: string }) {
           <SummaryTile
             label="Total a cobrar"
             value={`${formatMoney(target)} ${unit}`}
-            sub={bsRef(target)}
+            sub={
+              savedAdjustment
+                ? `Base ${formatMoney(
+                    fixed ? batch.targetBaseBs ?? 0 : batch.targetBaseUsd ?? 0,
+                  )} ${unit} · ajuste ${savedAdjustment > 0 ? '+' : '−'}${formatMoney(
+                    Math.abs(savedAdjustment),
+                  )} ${unit}`
+                : bsRef(target)
+            }
           />
           <SummaryTile
             label="Total cobrado"
@@ -963,6 +1015,133 @@ function BatchDetail({ id }: { id: string }) {
           </div>
         ) : null}
       </FormSection>
+
+      {/* Ajuste del total a cobrar (resta o suma) */}
+      <Can permission={PERMISSIONS.ACCOUNTS_RECEIVABLE.UPDATE}>
+        <FormSection
+          title="Ajuste del total a cobrar"
+          description={`Resta o suma sobre el total del lote, en ${
+            fixed ? 'bolívares' : 'dólares'
+          }. Úsalo cuando el deudor paga menos (o más) de lo facturado: el total a cobrar y el estado del lote se recalculan con el ajuste.`}
+        >
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1.5">
+                <span className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground block">
+                  Tipo
+                </span>
+                <div className="inline-flex rounded-lg border overflow-hidden">
+                  {(
+                    [
+                      { key: 'minus' as const, label: 'Resta' },
+                      { key: 'plus' as const, label: 'Suma' },
+                    ]
+                  ).map((opt) => (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => setAdjSign(opt.key)}
+                      className={
+                        'px-3 py-2 text-sm font-medium transition-colors ' +
+                        (adjSign === opt.key
+                          ? opt.key === 'minus'
+                            ? 'bg-destructive-soft text-destructive'
+                            : 'bg-success-soft text-success'
+                          : 'hover:bg-accent')
+                      }
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <span className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground block">
+                  Monto ({unit})
+                </span>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  inputMode="decimal"
+                  value={adjAmount}
+                  onChange={(e) => setAdjAmount(e.target.value)}
+                  placeholder="0,00"
+                  className="h-9 w-40"
+                />
+              </div>
+              <div className="flex-1 min-w-[220px] space-y-1.5">
+                <span className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground block">
+                  Motivo <span className="text-destructive">*</span>
+                </span>
+                <Input
+                  value={adjNote}
+                  onChange={(e) => setAdjNote(e.target.value)}
+                  maxLength={500}
+                  placeholder="Motivo del ajuste (descuento del seguro, glosa, diferencia acordada…)"
+                  className="h-9"
+                />
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void saveAdjustment()}
+                disabled={savingAdjustment || busy}
+              >
+                {savingAdjustment ? 'Guardando…' : 'Guardar ajuste'}
+              </Button>
+              {savedAdjustment ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void saveAdjustment(true)}
+                  disabled={savingAdjustment || busy}
+                >
+                  Quitar ajuste
+                </Button>
+              ) : null}
+            </div>
+            {savedAdjustment ? (
+              <div className="rounded-md border border-dashed bg-muted/30 px-3 py-2 text-xs space-y-0.5">
+                <div>
+                  Ajuste vigente:{' '}
+                  <span
+                    className={
+                      savedAdjustment < 0
+                        ? 'font-semibold text-destructive'
+                        : 'font-semibold text-success'
+                    }
+                  >
+                    {savedAdjustment < 0 ? '−' : '+'}
+                    {formatMoney(Math.abs(savedAdjustment))} {unit}
+                  </span>
+                  {batch.adjustedBy ? (
+                    <>
+                      {' '}
+                      · aplicado por{' '}
+                      <span className="font-medium">
+                        {orderUserDisplayName(batch.adjustedBy)}
+                      </span>
+                    </>
+                  ) : null}
+                  {batch.adjustedAt
+                    ? ` el ${new Date(batch.adjustedAt).toLocaleString('es-VE')}`
+                    : ''}
+                  .
+                </div>
+                {batch.adjustmentNote ? (
+                  <div className="text-muted-foreground">
+                    Motivo: {batch.adjustmentNote}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </FormSection>
+      </Can>
 
       {/* Estado de cuenta (sólo lotes de seguro) */}
       {debtorType === 'insurance' ? (

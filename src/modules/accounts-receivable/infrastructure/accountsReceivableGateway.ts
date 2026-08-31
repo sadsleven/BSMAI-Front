@@ -91,6 +91,23 @@ export const accountsReceivableGateway = {
     );
     return data;
   },
+  /**
+   * Ajuste (resta o suma) del total a cobrar del lote — p. ej. el seguro paga
+   * menos de lo facturado. `amount` va en la moneda del lote (Bs en modo tasa
+   * fija, USD en modo USD); 0 limpia el ajuste. Con ajuste ≠ 0 el motivo es
+   * obligatorio.
+   */
+  async setAdjustment(
+    id: string,
+    amount: number,
+    note?: string,
+  ): Promise<AccountsReceivableBatch> {
+    const { data } = await api.patch<AccountsReceivableBatch>(
+      `${BASE}/${id}/adjustment`,
+      { amount, note },
+    );
+    return data;
+  },
   async registerCollection(
     id: string,
     payments: AccountsReceivablePaymentInput[],

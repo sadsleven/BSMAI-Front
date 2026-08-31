@@ -4,11 +4,14 @@ import { saveAs } from 'file-saver';
 import type { Order } from '../../domain/models/order';
 import {
   holderDisplayName,
+  invoiceShowsExchangeRate,
   orderInvoiceDate,
   orderServiceKeyDisplay,
 } from '../../domain/models/order';
 import {
   groupSpecialtyLabel,
+  internalOrderFileBaseName,
+  invoiceFileBaseName,
   orderReferenceLabel,
   providerInternalNumber,
   resolveInvoiceRateBs,
@@ -34,10 +37,6 @@ function holderId(p?: { cedula?: string | null; rif?: string | null } | null): s
 // `orderDate` es columna `date` (string YYYY-MM-DD): formatear sin `new Date`
 // para no imprimir el día anterior en UTC-4.
 const fmtDate = formatDateOnly;
-
-function safeFilenameSegment(s: string): string {
-  return s.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').trim().slice(0, 80) || 'sin_nombre';
-}
 
 function ageFromBirthDate(iso?: string | null): string {
   if (!iso) return '';
@@ -152,9 +151,9 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
   // Anchos (mm). col0 ancho para que "Nombre o Razón Social :" no parta en 2
   // líneas; resto calca las proporciones del Excel.
   const colW = {
-    0: 42.0,
+    0: 46.0,
     1: 13.0,
-    2: 70.0,
+    2: 66.0,
     3: 22.0,
     4: 27.0,
   };
@@ -177,7 +176,7 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
     { content: 'Fecha de Emisión:', colSpan: 2, styles: { halign: 'right' } },
     {
       content: fmtDate(orderInvoiceDate(order)),
-      styles: { halign: 'center', fontSize: 9 },
+      styles: { halign: 'center' },
     },
   ]);
 
@@ -203,7 +202,6 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
       {
         content: contratantePhone ? `Teléfono:(${contratantePhone})` : 'Teléfono:',
         colSpan: 2,
-        styles: { fontSize: 8 },
       },
     ]);
     // R7 — Contratante (valor abarca C:E). Seguro directo al paciente / no
@@ -214,23 +212,22 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
       {
         content: contratante,
         colSpan: 3,
-        styles: { fontSize: 8 },
       },
     ]);
   }
 
   // R8 — Titular (Rif abarca D:E)
   body.push([
-    { content: 'Nombre del Titular:', styles: { fontSize: 8 } },
+    'Nombre del Titular:',
     '',
-    { content: holder, styles: { fontSize: 8 } },
+    holder,
     { content: `Rif ó CI: ${holderCi}`, colSpan: 2 },
   ]);
   // R9 — Paciente (Rif abarca D:E)
   body.push([
-    { content: 'Nombre del Paciente:', styles: { fontSize: 8 } },
+    'Nombre del Paciente:',
     '',
-    { content: patient, styles: { fontSize: 8 } },
+    patient,
     { content: `Rif ó CI: ${patientCi}`, colSpan: 2 },
   ]);
 
@@ -255,7 +252,7 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
     '',
     {
       content: 'CONDICIONES DE PAGO',
-      styles: { halign: 'center', fontSize: 7, fontStyle: 'bold' },
+      styles: { halign: 'center', fontStyle: 'bold' },
     },
     { content: condicionesPago, styles: { halign: 'center' } },
   ]);
@@ -263,18 +260,14 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
   // R12 — Header tabla detalle (con bordes)
   const tableHeaderIdx = HEADER_ROW_IDX();
   body.push([
-    { content: 'CANTIDAD', styles: { halign: 'center', fontStyle: 'bold' } },
-    {
-      content: 'N° ORDEN',
-      styles: { halign: 'center', fontStyle: 'bold', fontSize: 7 },
-    },
-    { content: 'DETALLE DE  SERVICIOS', styles: { halign: 'center', fontStyle: 'bold' } },
-    { content: 'P. U Bs.', styles: { halign: 'center', fontStyle: 'bold' } },
-    { content: 'TOTAL Bs.', styles: { halign: 'center', fontStyle: 'bold' } },
+    { content: 'CANTIDAD', styles: { halign: 'center' } },
+    { content: 'N° ORDEN', styles: { halign: 'center' } },
+    { content: 'DETALLE DE  SERVICIOS', styles: { halign: 'center' } },
+    { content: 'P. U Bs.', styles: { halign: 'center' } },
+    { content: 'TOTAL Bs.', styles: { halign: 'center' } },
   ]);
 
-  // R13+ — Una fila por Tipo de Servicio (con bordes, precio por ST)
-  const detailStartIdx = HEADER_ROW_IDX();
+  // R13+ — Una fila por Tipo de Servicio (sin bordes, precio por ST)
   detailRowsList.forEach((row) => {
     body.push([
       { content: String(row.qty).padStart(2, '0'), styles: { halign: 'center' } },
@@ -284,8 +277,6 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
       { content: fmtMoney(row.totalRowBs), styles: { halign: 'center' } },
     ]);
   });
-  const detailEndIdx = HEADER_ROW_IDX();
-
   // R14 — espaciador
   body.push(['', '', '', '', '']);
 
@@ -313,15 +304,15 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
     { content: 'Bs', styles: { halign: 'right' } },
     { content: fmtMoney(totalBs), styles: { halign: 'center' } },
   ]);
-  // R18 — Tasa de cambio + IVA. Seguro no indexado (useFixedRate, tasa fija de
-  // la orden): la factura NO muestra la tasa usada.
+  // R18 — Tasa de cambio + IVA. Que la fila de la tasa se imprima o no lo
+  // decide el switch del Paso 4 (por defecto: no sale en seguro no indexado).
   body.push([
-    ...(order.useFixedRate
-      ? ['', '']
-      : [
+    ...(invoiceShowsExchangeRate(order)
+      ? [
           'Tasa de cambio BCV :  ',
           { content: fmtMoney(rateBs), styles: { halign: 'center' } },
-        ]),
+        ]
+      : ['', '']),
     { content: 'IVA %  ( E )', styles: { halign: 'right' } },
     { content: 'Bs', styles: { halign: 'right' } },
     { content: '0,00', styles: { halign: 'center' } },
@@ -341,7 +332,7 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
     theme: 'plain',
     styles: {
       font: 'helvetica',
-      fontSize: 9,
+      fontSize: 10,
       cellPadding: { top: 0.7, bottom: 0.7, left: 1.4, right: 1.4 },
       lineColor: [0, 0, 0],
       lineWidth: 0,
@@ -360,9 +351,6 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
       if (data.row.index === tableHeaderIdx) {
         data.cell.styles.lineWidth = 0.2;
         data.cell.styles.lineColor = [0, 0, 0];
-      } else if (data.row.index >= detailStartIdx && data.row.index < detailEndIdx) {
-        data.cell.styles.lineWidth = 0.2;
-        data.cell.styles.lineColor = [0, 0, 0];
       } else if (data.row.index === condRowIdx && (data.column.index === 3 || data.column.index === 4)) {
         data.cell.styles.lineWidth = 0.2;
         data.cell.styles.lineColor = [0, 0, 0];
@@ -371,7 +359,7 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
   });
 
   const blob = doc.output('blob');
-  saveAs(blob, `Facturacion-${order.orderNumber}.pdf`);
+  saveAs(blob, `${invoiceFileBaseName(order)}.pdf`);
 }
 
 /** Orden interna: PDF con mismo layout que el Excel template `Orden interna.xlsx`. */
@@ -659,8 +647,6 @@ export async function downloadOrdenInternaPdfForProvider(
   y += 4.5;
   doc.text(jobTitle, pageW / 2, y, { align: 'center' });
 
-  const providerSlug = safeFilenameSegment(group.providerName);
-  const typeSlug = group.providerType === 'doctor' ? 'doctor' : 'centro';
   const blob = doc.output('blob');
-  saveAs(blob, `Orden-${group.providerOrderNumber}-${typeSlug}-${providerSlug}.pdf`);
+  saveAs(blob, `${internalOrderFileBaseName(order, group)}.pdf`);
 }

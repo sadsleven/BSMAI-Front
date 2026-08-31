@@ -46,9 +46,12 @@ import {
 } from 'lucide-react';
 import { useOrderStore } from '../../domain/store/orderStore';
 import { orderGateway } from '../../infrastructure/orderGateway';
+import { doctorGateway } from '@/modules/doctors/infrastructure/doctorGateway';
+import { careCenterGateway } from '@/modules/care-centers/infrastructure/careCenterGateway';
 import {
   ORDER_STATUS_LABEL,
   ORDER_TYPE_LABEL,
+  ORDER_TYPE_ORDER,
   type Order,
   type OrderStatus,
   type OrderType,
@@ -78,17 +81,22 @@ function readQuery(sp: URLSearchParams) {
     status: (sp.get('status') as OrderStatus | '') || '',
     type: (sp.get('type') as OrderType | '') || '',
     branchId: sp.get('branchId') ?? '',
+    // Proveedor combinado: `doctor:<id>` | `care_center:<id>`.
+    provider: sp.get('provider') ?? '',
     deletion: (sp.get('deletion') as DeletionFilter) ?? 'active',
-    sortBy: (sp.get('sortBy') as SortBy) ?? 'createdAt',
+    // El listado ordena por N° de orden por defecto (no por fecha de creación).
+    sortBy: (sp.get('sortBy') as SortBy) ?? 'orderNumber',
     sortDir: ((sp.get('sortDir') as SortDir) ?? 'DESC') as SortDir,
   };
 }
 
+// Cada estado con su propio color: atendida (ámbar) e informe emitido (cian)
+// no pueden verse iguales.
 const STATUS_COLOR: Record<OrderStatus, string> = {
   draft: 'bg-muted text-muted-foreground',
   in_progress: 'bg-brand-blue-soft text-brand-blue-strong',
   attended: 'bg-warning-soft text-warning',
-  report_issued: 'bg-warning-soft text-warning',
+  report_issued: 'bg-brand-cyan-soft text-brand-cyan-strong',
   finalized: 'bg-success-soft text-success',
   cancelled: 'bg-destructive-soft text-destructive',
 };
@@ -136,6 +144,12 @@ export function OrderList() {
   const isProvider = !!me?.providerLink;
   const colCount = isProvider ? 8 : 10;
 
+  // Filtro de proveedor: un solo selector para doctores y centros; al backend
+  // viaja como `doctorId` o `careCenterId` según el tipo elegido.
+  const [providerType, providerId] = filters.provider.includes(':')
+    ? (filters.provider.split(':') as ['doctor' | 'care_center', string])
+    : ['', ''];
+
   useEffect(() => {
     setQuery({
       page: filters.page,
@@ -144,6 +158,8 @@ export function OrderList() {
       status: (filters.status || undefined) as OrderStatus | undefined,
       type: (filters.type || undefined) as OrderType | undefined,
       branchId: filters.branchId || undefined,
+      doctorId: providerType === 'doctor' ? providerId : undefined,
+      careCenterId: providerType === 'care_center' ? providerId : undefined,
       withDeleted: filters.deletion === 'all',
       onlyDeleted: filters.deletion === 'deleted',
       sortBy: filters.sortBy,
@@ -160,6 +176,8 @@ export function OrderList() {
     filters.deletion,
     filters.sortBy,
     filters.sortDir,
+    providerType,
+    providerId,
     setQuery,
     fetch,
   ]);
@@ -197,12 +215,43 @@ export function OrderList() {
     Boolean(filters.status) ||
     Boolean(filters.type) ||
     Boolean(filters.branchId) ||
+    Boolean(filters.provider) ||
     filters.deletion !== 'active';
 
   const clearFilters = () => {
     setSearchInput('');
     setSp(new URLSearchParams(), { replace: true });
   };
+
+  // Opciones del selector de proveedor (doctores + centros en un solo select).
+  const [providerOptions, setProviderOptions] = useState<
+    Array<{ value: string; label: string; kind: 'doctor' | 'care_center' }>
+  >([]);
+  useEffect(() => {
+    if (isProvider) return;
+    let cancelled = false;
+    Promise.all([
+      doctorGateway.listAssignable().catch(() => []),
+      careCenterGateway.listAssignable().catch(() => []),
+    ]).then(([doctors, centers]) => {
+      if (cancelled) return;
+      setProviderOptions([
+        ...doctors.map((d) => ({
+          value: `doctor:${d.id}`,
+          label: `${d.firstName ?? ''} ${d.lastName ?? ''}`.trim() || '—',
+          kind: 'doctor' as const,
+        })),
+        ...centers.map((c) => ({
+          value: `care_center:${c.id}`,
+          label: c.businessName || '—',
+          kind: 'care_center' as const,
+        })),
+      ]);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isProvider]);
 
   const [deleteTarget, setDeleteTarget] = useState<Order | null>(null);
   const [hardConfirmStep, setHardConfirmStep] = useState(0);
@@ -350,13 +399,33 @@ export function OrderList() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Tipo: todos</SelectItem>
-                  {(['cash', 'credit', 'insurance', 'cashea'] as OrderType[]).map((t) => (
+                  {ORDER_TYPE_ORDER.map((t) => (
                     <SelectItem key={t} value={t}>
                       {ORDER_TYPE_LABEL[t]}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+
+              {!isProvider ? (
+                <Select
+                  value={filters.provider || 'all'}
+                  onValueChange={(v) => updateParam({ provider: v === 'all' ? undefined : v })}
+                >
+                  <SelectTrigger className="h-9 w-56">
+                    <SelectValue placeholder="Proveedor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Proveedor: todos</SelectItem>
+                    {providerOptions.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.kind === 'doctor' ? 'Dr. ' : ''}
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : null}
 
               {!isProvider ? (
                 <Select
@@ -405,7 +474,13 @@ export function OrderList() {
         <div className="m-4 rounded-lg border overflow-hidden">
         <Table>
           <TableHeader>
+            {/* Acciones va PRIMERO (única tabla del sistema con este orden),
+                luego N° orden, Titular/Paciente, Tipo y Estado; las fechas y el
+                creador quedan agrupados al final. */}
             <TableRow className="bg-brand-blue-soft hover:bg-brand-blue-soft">
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-center">
+                Acciones
+              </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 <SortableHeader<SortBy>
                   column="orderNumber"
@@ -417,31 +492,16 @@ export function OrderList() {
                 </SortableHeader>
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                <SortableHeader<SortBy>
-                  column="orderDate"
-                  activeColumn={filters.sortBy}
-                  direction={filters.sortDir}
-                  onSort={onSort}
-                >
-                  Fecha
-                </SortableHeader>
+                Titular / Paciente
               </TableHead>
-              {!isProvider ? (
-                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                  Creado por
-                </TableHead>
-              ) : null}
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Tipo
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                Titular / Paciente
+                Estado
               </TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Proveedor
-              </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                Estado
               </TableHead>
               {!isProvider ? (
                 <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
@@ -457,6 +517,16 @@ export function OrderList() {
               ) : null}
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 <SortableHeader<SortBy>
+                  column="orderDate"
+                  activeColumn={filters.sortBy}
+                  direction={filters.sortDir}
+                  onSort={onSort}
+                >
+                  Fecha
+                </SortableHeader>
+              </TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                <SortableHeader<SortBy>
                   column="createdAt"
                   activeColumn={filters.sortBy}
                   direction={filters.sortDir}
@@ -465,9 +535,11 @@ export function OrderList() {
                   Creación
                 </SortableHeader>
               </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-center">
-                Acciones
-              </TableHead>
+              {!isProvider ? (
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                  Creado por
+                </TableHead>
+              ) : null}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -497,64 +569,9 @@ export function OrderList() {
               orders.map((order) => {
                 const isDeleted = !!order.deletedAt;
                 const isCancelled = isOrderCancelled(order);
-                return (
-                  <TableRow key={order.id} className="hover:bg-[oklch(0.985_0.003_250)]">
-                    <TableCell className="py-3.5 px-4 font-mono text-sm">
-                      {(() => {
-                        const nums = orderInternalNumbers(order);
-                        return (
-                          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-                            <span className="font-semibold">{nums[0]}</span>
-                            {nums.slice(1).map((n) => (
-                              <span key={n} className="text-muted-foreground">
-                                · {n}
-                              </span>
-                            ))}
-                          </div>
-                        );
-                      })()}
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm">
-                      {order.orderDate.slice(0, 10)}
-                    </TableCell>
-                    {!isProvider ? (
-                      <TableCell className="py-3.5 px-4 text-sm">
-                        {orderUserDisplayName(order.createdBy)}
-                      </TableCell>
-                    ) : null}
-                    <TableCell className="py-3.5 px-4">
-                      <Badge variant="secondary">
-                        {ORDER_TYPE_LABEL[order.type]}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4">
-                      <div className="text-sm font-medium">
-                        {holderDisplayName(order.holder)}
-                      </div>
-                      {order.patientId !== order.holderId ? (
-                        <div className="text-xs text-muted-foreground">
-                          → {holderDisplayName(order.patient)}
-                        </div>
-                      ) : null}
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm">{providerOf(order)}</TableCell>
-                    <TableCell className="py-3.5 px-4">
-                      {isProvider ? (
-                        <ProviderObservationBadge
-                          complete={!!order.providerObservationComplete}
-                        />
-                      ) : (
-                        <StatusBadge status={order.status} />
-                      )}
-                    </TableCell>
-                    {!isProvider ? (
-                      <TableCell className="py-3.5 px-4 text-sm font-mono">
-                        {formatMoney(order.priceAmount)} USD
-                      </TableCell>
-                    ) : null}
-                    <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
-                      {formatCreatedDateTime(order.createdAt)}
-                    </TableCell>
+                // Acciones es la PRIMERA columna de esta tabla: la celda se arma
+                // acá y se pinta al inicio de la fila.
+                const actionsCell = (
                     <TableCell className="py-3.5 px-4 text-right">
                       <div className="flex items-center justify-center gap-0.5">
                         {isProvider ? (
@@ -681,6 +698,66 @@ export function OrderList() {
                         )}
                       </div>
                     </TableCell>
+                );
+                return (
+                  <TableRow key={order.id} className="hover:bg-[oklch(0.985_0.003_250)]">
+                    {actionsCell}
+                    <TableCell className="py-3.5 px-4 font-mono text-sm">
+                      {(() => {
+                        const nums = orderInternalNumbers(order);
+                        return (
+                          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                            <span className="font-semibold">{nums[0]}</span>
+                            {nums.slice(1).map((n) => (
+                              <span key={n} className="text-muted-foreground">
+                                · {n}
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4">
+                      <div className="text-sm font-medium">
+                        {holderDisplayName(order.holder)}
+                      </div>
+                      {order.patientId !== order.holderId ? (
+                        <div className="text-xs text-muted-foreground">
+                          → {holderDisplayName(order.patient)}
+                        </div>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4">
+                      <Badge variant="secondary">
+                        {ORDER_TYPE_LABEL[order.type]}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4">
+                      {isProvider ? (
+                        <ProviderObservationBadge
+                          complete={!!order.providerObservationComplete}
+                        />
+                      ) : (
+                        <StatusBadge status={order.status} />
+                      )}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm">{providerOf(order)}</TableCell>
+                    {!isProvider ? (
+                      <TableCell className="py-3.5 px-4 text-sm font-mono">
+                        {formatMoney(order.priceAmount)} USD
+                      </TableCell>
+                    ) : null}
+                    <TableCell className="py-3.5 px-4 text-sm">
+                      {order.orderDate.slice(0, 10)}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                      {formatCreatedDateTime(order.createdAt)}
+                    </TableCell>
+                    {!isProvider ? (
+                      <TableCell className="py-3.5 px-4 text-sm">
+                        {orderUserDisplayName(order.createdBy)}
+                      </TableCell>
+                    ) : null}
                   </TableRow>
                 );
               })

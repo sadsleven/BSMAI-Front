@@ -3,10 +3,14 @@ import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
   ArrowRight,
+  Ban,
   Download,
   FileSpreadsheet,
   HandCoins,
   ListTree,
+  Minus,
+  Plus,
+  ReceiptText,
   Wallet,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -20,12 +24,14 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { FormSection } from '@/components/ui/form-section';
+import { FormSwitch } from '@/components/ui/form-switch';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { notify } from '@/lib/notifications/toast';
 import { getHttpErrorMessage } from '@/lib/api';
 import { formatMoney } from '@/lib/format/money';
+import { formatDateOnly, localTodayIso } from '@/lib/dates';
 import { orderGateway } from '../../../infrastructure/orderGateway';
 import { useRatesByCurrency } from '@/modules/exchange-rates/presentation/hooks/useUsdRates';
 import { UsdRateSelect } from '@/modules/exchange-rates/presentation/components/UsdRateSelect';
@@ -41,8 +47,18 @@ import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { doctorGateway } from '@/modules/doctors/infrastructure/doctorGateway';
 import { careCenterGateway } from '@/modules/care-centers/infrastructure/careCenterGateway';
 import type { ServicePriceRow } from '@/lib/types/servicePrice';
-import type { Order } from '../../../domain/models/order';
-import { orderInvoiceDate } from '../../../domain/models/order';
+import type {
+  InvoiceNumberAvailability,
+  Order,
+  OrderInvoice,
+} from '../../../domain/models/order';
+import {
+  activeInvoice,
+  deriveControlNumber,
+  formatInvoiceNumber,
+  orderUserDisplayName,
+} from '../../../domain/models/order';
+import { OrderInvoiceCancelModal } from '../OrderInvoiceCancelModal';
 
 /**
  * Paso 4 — Facturación y liquidación (USD-only).
@@ -85,6 +101,7 @@ export function OrderBillingStep({
 }) {
   const { has } = usePermissions();
   const canSetProviderAmount = has(PERMISSIONS.ORDERS.SET_PROVIDER_AMOUNT);
+  const canBilling = has(PERMISSIONS.ORDERS.STAGE_BILLING);
   const priceAmount = Number(order.priceAmount);
   const isFinalized = order.status === 'finalized';
 
@@ -105,10 +122,37 @@ export function OrderBillingStep({
   // Errores de monto visibles sólo tras intentar finalizar; se auto-limpian
   // al corregir el monto (derivados de `p.amount`, sin estado por fila).
   const [amountErrorsVisible, setAmountErrorsVisible] = useState(false);
-  const [invoiceNumber, setInvoiceNumber] = useState(order.invoiceNumber ?? '');
-  const [controlNumber, setControlNumber] = useState(order.controlNumber ?? '');
-  // Fecha impresa en la factura. Por defecto la fecha de la orden (Paso 1).
-  const [invoiceDate, setInvoiceDate] = useState<string>(orderInvoiceDate(order));
+  // Factura vigente de la orden (null si nunca se emitió o si se anuló).
+  const invoiceActive = useMemo(() => activeInvoice(order), [order]);
+  /** Orden facturada y con factura vigente: los campos quedan fijos. */
+  const invoiceLocked = isFinalized && !!invoiceActive;
+  /** Orden finalizada cuya factura se anuló: puede emitir una nueva. */
+  const canIssueInvoice = isFinalized && !invoiceActive;
+
+  // N° de factura como ENTERO (se imprime con ceros a la izquierda). El N° de
+  // control NO se captura: se deriva (número + 50, con dos ceros delante).
+  const [invoiceNumber, setInvoiceNumber] = useState<number | undefined>(
+    invoiceActive?.number != null ? Number(invoiceActive.number) : undefined,
+  );
+  const [numberCheck, setNumberCheck] =
+    useState<InvoiceNumberAvailability | null>(null);
+  const [numberChecking, setNumberChecking] = useState(false);
+  const [issuing, setIssuing] = useState(false);
+  const [invoiceToCancel, setInvoiceToCancel] = useState<OrderInvoice | null>(
+    null,
+  );
+  // Fecha impresa en la factura: por defecto HOY (si ya hay factura vigente, la suya).
+  const [invoiceDate, setInvoiceDate] = useState<string>(
+    invoiceActive?.invoiceDate ?? localTodayIso(),
+  );
+  // ¿La factura imprime la fila "Tasa de cambio BCV"? Sólo se elige en órdenes
+  // de seguro; por defecto la regla de siempre (no sale si la tasa es fija).
+  const isInsurance = order.type === 'insurance';
+  const [showRate, setShowRate] = useState<boolean>(
+    invoiceActive?.showExchangeRate ??
+      order.invoiceShowExchangeRate ??
+      !order.useFixedRate,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -236,6 +280,58 @@ export function OrderBillingStep({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order.id]);
 
+  // Prefill del N° de factura: el último disponible (el mayor emitido + 1).
+  useEffect(() => {
+    if (invoiceNumber !== undefined) return;
+    let cancelled = false;
+    orderGateway
+      .invoiceNumberAvailability({})
+      .then((res) => {
+        if (!cancelled) setInvoiceNumber(res.suggestion);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order.id]);
+
+  // Disponibilidad en vivo (debounce 350ms). El BE re-valida al guardar: esto
+  // es sólo feedback mientras el usuario mueve el número.
+  useEffect(() => {
+    const n = invoiceNumber;
+    // Sin número válido no hay nada que consultar: el veredicto viejo se
+    // descarta solo (se compara contra el número actual).
+    if (n === undefined || !Number.isFinite(n) || n < 1) return;
+    let cancelled = false;
+    const t = setTimeout(() => {
+      setNumberChecking(true);
+      orderGateway
+        .invoiceNumberAvailability({ number: n, orderId: order.id })
+        .then((res) => !cancelled && setNumberCheck(res))
+        .catch(() => !cancelled && setNumberCheck(null))
+        .finally(() => !cancelled && setNumberChecking(false));
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [invoiceNumber, order.id]);
+
+  // Veredicto sólo si la respuesta corresponde al número actual.
+  const numberAvailable =
+    numberCheck && numberCheck.number === invoiceNumber
+      ? numberCheck.available
+      : null;
+  const invoiceNumberText = invoiceNumber
+    ? formatInvoiceNumber(invoiceNumber)
+    : '';
+  const controlNumberText = invoiceNumber
+    ? deriveControlNumber(invoiceNumber)
+    : '';
+  const invoiceNumberOk =
+    invoiceNumber !== undefined && numberAvailable !== false;
+
   /**
    * Tasa dominante en bolívares de los pagos del Paso 1 (contado/cashea). Null
    * cuando la orden no se pagó en Bs (seguro, crédito).
@@ -313,12 +409,16 @@ export function OrderBillingStep({
       notify.error('La suma de pagos supera el monto declarado de la orden');
       return;
     }
-    if (!invoiceNumber.trim()) {
+    if (invoiceNumber === undefined) {
       notify.error('Ingresa el número de factura');
       return;
     }
-    if (!controlNumber.trim()) {
-      notify.error('Ingresa el número de control');
+    if (numberAvailable === false) {
+      notify.error(
+        numberCheck?.cancelled
+          ? 'Ese número ya se usó en una factura anulada: elige otro'
+          : 'Ese número de factura ya está en uso',
+      );
       return;
     }
     if (!invoiceDate) {
@@ -335,9 +435,9 @@ export function OrderBillingStep({
           amount: p.amount!,
         })),
         billingExchangeRateId: invoiceRateId,
-        invoiceNumber: invoiceNumber.trim(),
-        controlNumber: controlNumber.trim(),
+        invoiceNumber,
         invoiceDate,
+        ...(isInsurance ? { showExchangeRate: showRate } : {}),
       });
       notify.success('Orden finalizada');
       onSaved();
@@ -345,6 +445,40 @@ export function OrderBillingStep({
       notify.error(getHttpErrorMessage(err, 'No se pudo finalizar la orden'));
     } finally {
       setSaving(false);
+    }
+  };
+
+  /**
+   * Emite una factura NUEVA en una orden ya finalizada cuya factura vigente se
+   * anuló. No toca la liquidación por proveedor ni los lotes de CxP/CxC.
+   */
+  const handleIssueInvoice = async () => {
+    if (invoiceNumber === undefined) {
+      notify.error('Ingresa el número de factura');
+      return;
+    }
+    if (numberAvailable === false) {
+      notify.error('Ese número de factura ya se usó: elige otro');
+      return;
+    }
+    if (!invoiceDate) {
+      notify.error('Selecciona la fecha de la factura');
+      return;
+    }
+    setIssuing(true);
+    try {
+      await orderGateway.issueInvoice(order.id, {
+        invoiceNumber,
+        invoiceDate,
+        ...(isInsurance ? { showExchangeRate: showRate } : {}),
+        ...(invoiceRateId ? { exchangeRateId: invoiceRateId } : {}),
+      });
+      notify.success('Factura emitida');
+      onSaved();
+    } catch (err) {
+      notify.error(getHttpErrorMessage(err, 'No se pudo emitir la factura'));
+    } finally {
+      setIssuing(false);
     }
   };
 
@@ -356,6 +490,10 @@ export function OrderBillingStep({
       const doc: Order = {
         ...order,
         invoiceDate: invoiceDate || order.invoiceDate,
+        // El nombre del archivo y el documento salen con el número elegido.
+        invoiceNumber: invoiceNumberText || order.invoiceNumber,
+        controlNumber: controlNumberText || order.controlNumber,
+        ...(isInsurance ? { invoiceShowExchangeRate: showRate } : {}),
         ...(invoiceRate
           ? {
               invoiceExchangeRateId: invoiceRate.id,
@@ -422,27 +560,105 @@ export function OrderBillingStep({
             <Label htmlFor="invoiceNumber">
               Número de factura <span className="text-destructive">*</span>
             </Label>
-            <Input
-              id="invoiceNumber"
-              value={invoiceNumber}
-              maxLength={50}
-              disabled={isFinalized}
-              placeholder="Ej. 00012345"
-              onChange={(e) => setInvoiceNumber(e.target.value)}
-            />
+            <div className="flex items-center gap-1.5">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-9 w-9 shrink-0"
+                aria-label="Número anterior"
+                disabled={invoiceLocked || (invoiceNumber ?? 1) <= 1}
+                onClick={() =>
+                  setInvoiceNumber((v) => Math.max(1, (v ?? 1) - 1))
+                }
+              >
+                <Minus className="w-3.5 h-3.5" />
+              </Button>
+              <Input
+                id="invoiceNumber"
+                type="number"
+                min={1}
+                step={1}
+                inputMode="numeric"
+                className="max-w-[140px] text-center font-mono"
+                disabled={invoiceLocked}
+                value={invoiceNumber ?? ''}
+                onChange={(e) => {
+                  const rawValue = e.target.value.trim();
+                  if (!rawValue) {
+                    setInvoiceNumber(undefined);
+                    return;
+                  }
+                  const n = Math.trunc(Number(rawValue));
+                  setInvoiceNumber(Number.isFinite(n) && n > 0 ? n : undefined);
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-9 w-9 shrink-0"
+                aria-label="Número siguiente"
+                disabled={invoiceLocked}
+                onClick={() => setInvoiceNumber((v) => (v ?? 0) + 1)}
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap min-h-[18px]">
+              {numberChecking ? (
+                <span className="text-xs text-muted-foreground">
+                  Verificando disponibilidad…
+                </span>
+              ) : numberAvailable === true ? (
+                <span className="text-xs text-success font-medium">
+                  Disponible
+                </span>
+              ) : numberAvailable === false ? (
+                <>
+                  <span className="text-xs text-destructive font-medium">
+                    {numberCheck?.cancelled
+                      ? 'Ya se usó en una factura anulada'
+                      : `Ya está en uso${
+                          numberCheck?.usedByOrderNumber
+                            ? ` (orden N° ${numberCheck.usedByOrderNumber})`
+                            : ''
+                        }`}
+                  </span>
+                  {!invoiceLocked && numberCheck?.nextFree ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setInvoiceNumber(numberCheck.nextFree)}
+                    >
+                      Usar {formatInvoiceNumber(numberCheck.nextFree)}
+                    </Button>
+                  ) : null}
+                </>
+              ) : null}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Se imprime como{' '}
+              <span className="font-mono font-semibold text-foreground">
+                {invoiceNumberText || '—'}
+              </span>
+              . Los números no se reutilizan, tampoco los de facturas anuladas.
+            </p>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="controlNumber">
-              Número de control <span className="text-destructive">*</span>
-            </Label>
+            <Label htmlFor="controlNumber">Número de control</Label>
             <Input
               id="controlNumber"
-              value={controlNumber}
-              maxLength={50}
-              disabled={isFinalized}
-              placeholder="Ej. 00012345"
-              onChange={(e) => setControlNumber(e.target.value)}
+              value={controlNumberText}
+              readOnly
+              disabled
+              className="font-mono"
+              placeholder="—"
             />
+            <p className="text-xs text-muted-foreground">
+              Se calcula solo: número de factura + 50, con dos ceros delante.
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="invoiceDate">
@@ -452,12 +668,11 @@ export function OrderBillingStep({
               id="invoiceDate"
               value={invoiceDate || undefined}
               onChange={(v) => setInvoiceDate(v ?? '')}
-              disabled={isFinalized}
+              disabled={invoiceLocked}
               invalid={!invoiceDate}
             />
             <p className="text-xs text-muted-foreground">
-              Es la fecha que se imprime en la factura. Por defecto es la fecha
-              de la orden.
+              Es la fecha que se imprime en la factura. Por defecto es hoy.
             </p>
           </div>
           <div className="space-y-1.5">
@@ -470,9 +685,9 @@ export function OrderBillingStep({
               selectedId={invoiceRateId}
               currentRateId={currentRateId}
               onSelect={setPickedRateId}
-              disabled={isFinalized}
+              disabled={invoiceLocked}
               lockNote={
-                isFinalized
+                invoiceLocked
                   ? 'La orden ya está facturada: la tasa quedó fija.'
                   : undefined
               }
@@ -494,7 +709,113 @@ export function OrderBillingStep({
               </p>
             )}
           </div>
+          {isInsurance ? (
+            <div className="sm:col-span-2 rounded-lg border bg-card p-3">
+              <FormSwitch
+                id="invoiceShowExchangeRate"
+                label="Mostrar la tasa de cambio en la factura"
+                description={
+                  <>
+                    Imprime la fila «Tasa de cambio BCV» en el Excel y el PDF.
+                    Por defecto{' '}
+                    {order.useFixedRate
+                      ? 'viene apagado: el seguro es no indexado y su cuenta por cobrar ya quedó fija en bolívares.'
+                      : 'viene encendido: el seguro es indexado.'}
+                  </>
+                }
+                checked={showRate}
+                onCheckedChange={setShowRate}
+                disabled={invoiceLocked}
+              />
+            </div>
+          ) : null}
         </div>
+        {canIssueInvoice ? (
+          <div className="mt-4 rounded-lg border border-warning/40 bg-warning-soft px-3 py-2.5 flex items-center justify-between gap-3 flex-wrap">
+            <p className="text-xs text-warning">
+              La factura anterior quedó anulada. La orden sigue finalizada: emite
+              una factura nueva con otro número.
+            </p>
+            {canBilling ? (
+              <Button
+                type="button"
+                onClick={handleIssueInvoice}
+                disabled={issuing || !invoiceNumberOk || !invoiceDate}
+              >
+                <ReceiptText className="w-4 h-4" />
+                {issuing ? 'Emitiendo…' : 'Emitir factura'}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+      </FormSection>
+
+      <FormSection
+        title="Facturas emitidas"
+        description="Historial fiscal de la orden. Anular una factura NO cancela la orden: queda el rastro y puedes emitir otra con un número nuevo."
+      >
+        {(order.invoices ?? []).length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            La orden todavía no tiene facturas emitidas.
+          </p>
+        ) : (
+          <ul className="divide-y rounded-lg border bg-card overflow-hidden">
+            {(order.invoices ?? []).map((inv) => {
+              const cancelled = inv.status === 'cancelled';
+              return (
+                <li
+                  key={inv.id}
+                  className="px-3 py-2.5 flex items-start justify-between gap-3 flex-wrap"
+                >
+                  <div className="min-w-0 space-y-0.5">
+                    <div className="text-sm font-semibold flex items-center gap-2 flex-wrap">
+                      <span className="font-mono">N° {inv.invoiceNumber}</span>
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          'text-[10px]',
+                          cancelled
+                            ? 'text-destructive border-destructive/40'
+                            : 'text-success border-success/40',
+                        )}
+                      >
+                        {cancelled ? 'Anulada' : 'Vigente'}
+                      </Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Control{' '}
+                      <span className="font-mono">{inv.controlNumber}</span> ·
+                      Emitida el {formatDateOnly(inv.invoiceDate)}
+                      {inv.createdBy
+                        ? ` · por ${orderUserDisplayName(inv.createdBy)}`
+                        : ''}
+                    </div>
+                    {cancelled ? (
+                      <div className="text-xs text-destructive">
+                        Anulada
+                        {inv.cancelledBy
+                          ? ` por ${orderUserDisplayName(inv.cancelledBy)}`
+                          : ''}
+                        {inv.cancelReason ? ` — ${inv.cancelReason}` : ''}
+                      </div>
+                    ) : null}
+                  </div>
+                  {!cancelled && canBilling ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setInvoiceToCancel(inv)}
+                    >
+                      <Ban className="w-3.5 h-3.5" />
+                      Anular factura
+                    </Button>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </FormSection>
 
       {canSetProviderAmount ? (
@@ -763,8 +1084,7 @@ export function OrderBillingStep({
                   isFinalized ||
                   !invoiceRateId ||
                   exceedsCap ||
-                  !invoiceNumber.trim() ||
-                  !controlNumber.trim() ||
+                  !invoiceNumberOk ||
                   !invoiceDate
                 }
               >
@@ -838,6 +1158,25 @@ export function OrderBillingStep({
           {order.type === 'cashea' ? ' y el cobro vía Cashea' : ''}.
         </p>
       )}
+
+      <OrderInvoiceCancelModal
+        key={invoiceToCancel?.id ?? 'sin-factura'}
+        open={!!invoiceToCancel}
+        onOpenChange={(open) => {
+          if (!open) setInvoiceToCancel(null);
+        }}
+        orderId={order.id}
+        invoice={invoiceToCancel}
+        onDone={() => {
+          setInvoiceToCancel(null);
+          // La anulada quemó su número: propone el próximo libre para reemitir.
+          orderGateway
+            .invoiceNumberAvailability({})
+            .then((res) => setInvoiceNumber(res.suggestion))
+            .catch(() => undefined);
+          onSaved();
+        }}
+      />
     </div>
   );
 }

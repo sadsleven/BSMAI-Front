@@ -274,6 +274,12 @@ export function OrderEdit() {
     numberOkRef.current = ok;
   }, []);
 
+  // Clave de servicio libre (no se reutiliza salvo orden cancelada).
+  const serviceKeyOkRef = useRef(true);
+  const handleServiceKeyOk = useCallback((ok: boolean) => {
+    serviceKeyOkRef.current = ok;
+  }, []);
+
   // Solo el creador (o Super Admin) puede modificar el Paso 1. Los demás pasos
   // siguen disponibles según sus permisos. Espejo del guard BE.
   // Orden cancelada: el flujo queda congelado (espejo del guard BE). Se
@@ -291,6 +297,12 @@ export function OrderEdit() {
     if (!numberOkRef.current) {
       notify.error(
         'El N° de orden elegido ya está en uso. Usa uno libre antes de guardar.',
+      );
+      return;
+    }
+    if (!serviceKeyOkRef.current) {
+      notify.error(
+        'La clave de servicio ya está en uso en otra orden. Usa una libre antes de guardar.',
       );
       return;
     }
@@ -398,6 +410,7 @@ export function OrderEdit() {
             }}
             onStep1PaymentOkChange={handleStep1Ok}
             onOrderNumberOkChange={handleNumberOk}
+            onServiceKeyOkChange={handleServiceKeyOk}
           />
 
           <div className="flex items-center justify-between gap-3 pt-2 flex-wrap">

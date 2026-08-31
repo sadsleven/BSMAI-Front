@@ -3,6 +3,7 @@ import { saveAs } from 'file-saver';
 import type { Order, OrderServiceTypeRow } from '../../domain/models/order';
 import {
   holderDisplayName,
+  invoiceShowsExchangeRate,
   orderInvoiceDate,
   orderServiceKeyDisplay,
 } from '../../domain/models/order';
@@ -227,6 +228,28 @@ export function providerInternalNumber(
   return iio?.internalNumber ?? order.orderNumber;
 }
 
+/**
+ * Nombre de archivo de la FACTURA: `F {N° de factura} {PACIENTE}`
+ * (ej. `F 04912 JUANA PEREZ`). Sin factura emitida cae al N° de la orden.
+ */
+export function invoiceFileBaseName(order: Order): string {
+  const number = order.invoiceNumber?.trim() || order.orderNumber;
+  const patient = holderDisplayName(order.patient).toUpperCase();
+  return safeFilenameSegment(`F ${number} ${patient}`.trim());
+}
+
+/**
+ * Nombre de archivo de la ORDEN INTERNA: `{N° de orden interna} {PACIENTE}`
+ * (ej. `5080 JUANA PEREZ`). El número es el del proveedor de esa orden interna.
+ */
+export function internalOrderFileBaseName(
+  order: Order,
+  group: OrderProviderGroup,
+): string {
+  const patient = holderDisplayName(order.patient).toUpperCase();
+  return safeFilenameSegment(`${group.providerOrderNumber} ${patient}`.trim());
+}
+
 /** Agrupa las filas OST por proveedor distinto. */
 export function groupOrderProviders(order: Order): OrderProviderGroup[] {
   const groups = new Map<string, OrderProviderGroup>();
@@ -282,9 +305,8 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
     { width: 12.86 },
   ];
 
+  // Toda la factura va en Calibri 10: no hay tamaños mixtos en el documento.
   const DEFAULT_FONT: Partial<ExcelJS.Font> = { name: 'Calibri', size: 10 };
-  const SMALL_FONT: Partial<ExcelJS.Font> = { name: 'Calibri', size: 9 };
-  const BOLD_FONT: Partial<ExcelJS.Font> = { name: 'Calibri', size: 10, bold: true };
 
   const isInsurance = order.type === 'insurance';
   const insurancePhone = order.insurance?.phones?.[0]?.number ?? '';
@@ -329,7 +351,7 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
   r3.getCell(4).font = DEFAULT_FONT;
   r3.getCell(4).alignment = { horizontal: 'right', vertical: 'middle' };
   r3.getCell(5).value = fmtDate(orderInvoiceDate(order));
-  r3.getCell(5).font = SMALL_FONT;
+  r3.getCell(5).font = DEFAULT_FONT;
   r3.getCell(5).alignment = { horizontal: 'center', vertical: 'middle' };
 
   const wrapLeft: Partial<ExcelJS.Alignment> = {
@@ -390,7 +412,7 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
     ws.mergeCells('D6:E6');
     const c6d = ws.getCell('D6');
     c6d.value = contratantePhone ? `Teléfono:(${contratantePhone})` : 'Teléfono:';
-    c6d.font = SMALL_FONT;
+    c6d.font = DEFAULT_FONT;
     c6d.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
   }
 
@@ -403,7 +425,7 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
     ws.mergeCells('C7:E7');
     const c7c = ws.getCell('C7');
     c7c.value = contratante;
-    c7c.font = SMALL_FONT;
+    c7c.font = DEFAULT_FONT;
     c7c.alignment = wrapLeftTop;
     // Excel no auto-ajusta filas con celdas mergeadas: altura explícita.
     const contratanteLines = Math.max(1, Math.ceil(contratante.length / 78));
@@ -413,11 +435,11 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
   // R8 — Titular
   const c8a = ws.getCell('A8');
   c8a.value = 'Nombre del Titular:';
-  c8a.font = SMALL_FONT;
+  c8a.font = DEFAULT_FONT;
   c8a.alignment = { horizontal: 'left', vertical: 'top' };
   const c8c = ws.getCell('C8');
   c8c.value = holder;
-  c8c.font = SMALL_FONT;
+  c8c.font = DEFAULT_FONT;
   c8c.alignment = wrapLeftTop;
   ws.mergeCells('D8:E8');
   const c8d = ws.getCell('D8');
@@ -428,11 +450,11 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
   // R9 — Paciente
   const c9a = ws.getCell('A9');
   c9a.value = 'Nombre del Paciente:';
-  c9a.font = SMALL_FONT;
+  c9a.font = DEFAULT_FONT;
   c9a.alignment = { horizontal: 'left', vertical: 'top' };
   const c9c = ws.getCell('C9');
   c9c.value = patient;
-  c9c.font = SMALL_FONT;
+  c9c.font = DEFAULT_FONT;
   c9c.alignment = wrapLeftTop;
   ws.mergeCells('D9:E9');
   const c9d = ws.getCell('D9');
@@ -457,7 +479,7 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
   ws.getRow(11).height = 22.5;
   const c11d = ws.getCell('D11');
   c11d.value = 'CONDICIONES DE PAGO';
-  c11d.font = { name: 'Calibri', size: 8, bold: true };
+  c11d.font = { name: 'Calibri', size: 10, bold: true };
   c11d.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
   c11d.border = thinBorder();
   const c11e = ws.getCell('E11');
@@ -473,7 +495,7 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
   for (let c = 1; c <= 5; c++) {
     const cell = headerRow.getCell(c);
     cell.value = headers[c - 1];
-    cell.font = c === 2 ? { name: 'Calibri', size: 8, bold: true } : BOLD_FONT;
+    cell.font = DEFAULT_FONT;
     cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: c === 2 };
     cell.border = thinBorder();
   }
@@ -534,7 +556,6 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
       const cell = r.getCell(c);
       cell.font = DEFAULT_FONT;
       cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: c === 3 };
-      cell.border = thinBorder();
     }
   });
 
@@ -596,10 +617,10 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
   re.font = DEFAULT_FONT;
   re.alignment = { horizontal: 'center' };
 
-  // Tasa de cambio + IVA. Seguro no indexado (useFixedRate, tasa fija de la
-  // orden): la factura NO muestra la tasa usada.
+  // Tasa de cambio + IVA. Que la fila de la tasa se imprima o no lo decide el
+  // switch del Paso 4 (por defecto: no sale en seguro no indexado).
   const tasaRow = equivRow + 1;
-  if (!order.useFixedRate) {
+  if (invoiceShowsExchangeRate(order)) {
     ra = ws.getCell(`A${tasaRow}`);
     ra.value = 'Tasa de cambio BCV :  ';
     ra.font = DEFAULT_FONT;
@@ -642,7 +663,7 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
   const buf = await wb.xlsx.writeBuffer();
   saveAs(
     new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
-    `Facturacion-${order.orderNumber}.xlsx`,
+    `${invoiceFileBaseName(order)}.xlsx`,
   );
 }
 
@@ -898,13 +919,11 @@ export async function downloadOrdenInternaForProvider(
   put(`A${sigRow + 1}`, jobTitle, C10B, center);
 
   const buf = await wb.xlsx.writeBuffer();
-  const providerSlug = safeFilenameSegment(group.providerName);
-  const typeSlug = group.providerType === 'doctor' ? 'doctor' : 'centro';
   saveAs(
     new Blob([buf], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     }),
-    `Orden-${group.providerOrderNumber}-${typeSlug}-${providerSlug}.xlsx`,
+    `${internalOrderFileBaseName(order, group)}.xlsx`,
   );
 }
 

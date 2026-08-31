@@ -40,8 +40,16 @@ import {
   getUserBranches,
   setLastBranchId,
 } from '@/lib/auth/branches';
-import type { OrderNumberAvailability, OrderType } from '../../domain/models/order';
-import { ORDER_TYPE_LABEL, orderUserDisplayName } from '../../domain/models/order';
+import type {
+  OrderNumberAvailability,
+  OrderType,
+  ServiceKeyAvailability,
+} from '../../domain/models/order';
+import {
+  ORDER_TYPE_LABEL,
+  ORDER_TYPE_ORDER,
+  orderUserDisplayName,
+} from '../../domain/models/order';
 import type { OrderValues } from '@/lib/validations/schemas';
 import type { Patient } from '@/modules/patients/domain/models/patient';
 import type { Specialty } from '@/modules/specialties/domain/models/specialty';
@@ -219,6 +227,12 @@ export type OrderFormProps = {
    */
   onOrderNumberOkChange?: (ok: boolean) => void;
   /**
+   * Reporta si la clave de servicio escrita está libre. Es única entre órdenes
+   * vivas y no se reutiliza (sólo se libera al cancelarse la orden que la
+   * tenía): la página padre frena el submit; el backend lo valida igual.
+   */
+  onServiceKeyOkChange?: (ok: boolean) => void;
+  /**
    * Paso 1 de sólo lectura porque el usuario actual NO es quien creó la orden
    * (sólo el creador — o Super Admin — puede modificarlo). Los pasos 2-4 no se
    * ven afectados.
@@ -236,6 +250,7 @@ export function OrderForm({
   onOrderRefresh,
   onStep1PaymentOkChange,
   onOrderNumberOkChange,
+  onServiceKeyOkChange,
   step1ReadOnly = false,
 }: OrderFormProps) {
   const me = useAuthStore((s) => s.user);
@@ -294,6 +309,11 @@ export function OrderForm({
     null,
   );
   const [numberChecking, setNumberChecking] = useState(false);
+  // Clave de servicio: única entre órdenes vivas (sólo se libera si la orden
+  // que la tenía fue cancelada). Chequeo en vivo; el backend revalida.
+  const [serviceKeyCheck, setServiceKeyCheck] =
+    useState<ServiceKeyAvailability | null>(null);
+  const [serviceKeyChecking, setServiceKeyChecking] = useState(false);
   void initialProvider;
 
   const orderNumberValue = useWatch({ control, name: 'customOrderNumber' }) as
@@ -301,17 +321,28 @@ export function OrderForm({
     | undefined;
 
   // Prefill: orden guardada → su propio número; orden nueva → la sugerencia del
-  // backend. Una sola vez (no pisa lo que el usuario tipea).
+  // backend. Una sola vez (no pisa lo que el usuario tipea). Un borrador
+  // reanudado ya trae su número hidratado: la sugerencia NO debe pisarlo.
   const savedOrderNumber = savedOrder?.orderNumber;
-  const numberPrefilled = useRef(false);
+  // De dónde salió el valor prefilleado: el número de la orden guardada manda
+  // sobre una sugerencia que haya llegado antes (la orden carga en paralelo).
+  const numberPrefilled = useRef<'saved' | 'suggestion' | null>(null);
   useEffect(() => {
-    if (numberPrefilled.current) return;
     if (savedOrderNumber) {
+      if (numberPrefilled.current === 'saved') return;
       const n = Number(savedOrderNumber);
       if (Number.isFinite(n) && n > 0) {
-        numberPrefilled.current = true;
+        numberPrefilled.current = 'saved';
         setValue('customOrderNumber', n);
       }
+      return;
+    }
+    if (numberPrefilled.current) return;
+    // Borrador reanudado: el número ya viene hidratado en el formulario y la
+    // sugerencia NO debe pisarlo.
+    const hydrated = getValues('customOrderNumber');
+    if (typeof hydrated === 'number' && hydrated > 0) {
+      numberPrefilled.current = 'saved';
       return;
     }
     if (savedOrder) return;
@@ -319,8 +350,8 @@ export function OrderForm({
     orderGateway
       .numberAvailability({})
       .then((res) => {
-        if (cancelled) return;
-        numberPrefilled.current = true;
+        if (cancelled || numberPrefilled.current) return;
+        numberPrefilled.current = 'suggestion';
         setValue('customOrderNumber', res.suggestion);
       })
       .catch(() => {
@@ -828,6 +859,45 @@ export function OrderForm({
     };
   }, [orderNumberValue, numberBlockCount, savedOrderId]);
 
+  // Clave de servicio: chequeo de unicidad con debounce (mismo patrón que el
+  // N° de orden). Sólo aplica a órdenes de seguro y con clave escrita.
+  const serviceKeyValue = useWatch({ control, name: 'serviceKey' }) as
+    | string
+    | undefined;
+  const serviceKeyTrimmed = (serviceKeyValue ?? '').trim();
+  useEffect(() => {
+    if (type !== 'insurance' || !serviceKeyTrimmed) {
+      setServiceKeyCheck(null);
+      setServiceKeyChecking(false);
+      return;
+    }
+    let cancelled = false;
+    const t = setTimeout(() => {
+      setServiceKeyChecking(true);
+      orderGateway
+        .serviceKeyAvailability({
+          key: serviceKeyTrimmed,
+          orderId: savedOrder?.id,
+        })
+        .then((res) => !cancelled && setServiceKeyCheck(res))
+        .catch(() => !cancelled && setServiceKeyCheck(null))
+        .finally(() => !cancelled && setServiceKeyChecking(false));
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [type, serviceKeyTrimmed, savedOrder?.id]);
+
+  // `null` mientras no hay veredicto para la clave escrita.
+  const serviceKeyAvailable =
+    serviceKeyCheck && serviceKeyCheck.key === serviceKeyTrimmed
+      ? serviceKeyCheck.available
+      : null;
+  useEffect(() => {
+    onServiceKeyOkChange?.(serviceKeyAvailable !== false);
+  }, [serviceKeyAvailable, onServiceKeyOkChange]);
+
   // Verdadero/falso sólo si la respuesta corresponde al número y a la cantidad
   // de proveedores actuales; `null` mientras no hay veredicto.
   const numberAvailable =
@@ -1290,7 +1360,7 @@ export function OrderForm({
           <div className="space-y-2">
             <RequiredLabel required>Tipo de orden</RequiredLabel>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {(['cash', 'credit', 'insurance', 'cashea'] as OrderType[]).map((t) => (
+              {ORDER_TYPE_ORDER.map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -1503,6 +1573,37 @@ export function OrderForm({
                     />
                   )}
                 />
+                {serviceKeyTrimmed ? (
+                  serviceKeyChecking ? (
+                    <p className="text-xs text-muted-foreground">
+                      Verificando disponibilidad…
+                    </p>
+                  ) : serviceKeyAvailable === true ? (
+                    <p className="text-xs text-success font-medium">
+                      Disponible
+                      {serviceKeyCheck?.cancelled &&
+                      serviceKeyCheck.usedByOrderNumber ? (
+                        <span className="text-warning font-normal">
+                          {' '}
+                          · quedó libre al cancelarse la orden N°{' '}
+                          {serviceKeyCheck.usedByOrderNumber}
+                        </span>
+                      ) : null}
+                    </p>
+                  ) : serviceKeyAvailable === false ? (
+                    <p className="text-xs text-destructive font-medium">
+                      Ya está en uso
+                      {serviceKeyCheck?.usedByOrderNumber
+                        ? ` por la orden N° ${serviceKeyCheck.usedByOrderNumber}`
+                        : ''}
+                      . Usa otra clave.
+                    </p>
+                  ) : null
+                ) : null}
+                <p className="text-[11px] text-muted-foreground">
+                  No se repite entre órdenes: sólo vuelve a quedar libre si la
+                  orden que la tenía se cancela.
+                </p>
                 <FieldError message={errors.serviceKey?.message} />
               </div>
 
