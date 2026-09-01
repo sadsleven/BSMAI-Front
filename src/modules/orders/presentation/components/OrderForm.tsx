@@ -865,8 +865,14 @@ export function OrderForm({
     | string
     | undefined;
   const serviceKeyTrimmed = (serviceKeyValue ?? '').trim();
+  // La clave guardada no se re-valida: la regla es de aplicación (no hay
+  // UNIQUE en la base) y las órdenes históricas pueden traer claves repetidas
+  // — editarles el monto o la fecha no debe quedar bloqueado. Sólo se chequea
+  // la clave que el usuario escribe o cambia.
+  const savedServiceKey = (savedOrder?.serviceKey ?? '').trim();
+  const serviceKeyChanged = serviceKeyTrimmed !== savedServiceKey;
   useEffect(() => {
-    if (type !== 'insurance' || !serviceKeyTrimmed) {
+    if (type !== 'insurance' || !serviceKeyTrimmed || !serviceKeyChanged) {
       setServiceKeyCheck(null);
       setServiceKeyChecking(false);
       return;
@@ -887,7 +893,7 @@ export function OrderForm({
       cancelled = true;
       clearTimeout(t);
     };
-  }, [type, serviceKeyTrimmed, savedOrder?.id]);
+  }, [type, serviceKeyTrimmed, serviceKeyChanged, savedOrder?.id]);
 
   // `null` mientras no hay veredicto para la clave escrita.
   const serviceKeyAvailable =
@@ -1573,7 +1579,7 @@ export function OrderForm({
                     />
                   )}
                 />
-                {serviceKeyTrimmed ? (
+                {serviceKeyTrimmed && serviceKeyChanged ? (
                   serviceKeyChecking ? (
                     <p className="text-xs text-muted-foreground">
                       Verificando disponibilidad…
