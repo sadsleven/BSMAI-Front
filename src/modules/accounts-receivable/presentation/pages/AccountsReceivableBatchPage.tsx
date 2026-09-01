@@ -1333,6 +1333,9 @@ function BatchDetail({ id }: { id: string }) {
                   <div className="text-xs text-muted-foreground font-mono">
                     {formatMoney(p.amountValue)} {p.amountCurrency} ·{' '}
                     {formatMoney(p.amountInUsd)} USD
+                    {p.amountCurrency !== 'USD' && p.exchangeRate
+                      ? ` · tasa ${formatMoney(Number(p.exchangeRate.amountBs))} Bs.`
+                      : ''}
                     {p.referenceNumber ? ` · Ref. ${p.referenceNumber}` : ''}
                   </div>
                 </div>
