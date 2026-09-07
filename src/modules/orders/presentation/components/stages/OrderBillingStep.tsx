@@ -148,6 +148,20 @@ export function OrderBillingStep({
   // ¿La factura imprime la fila "Tasa de cambio BCV"? Sólo se elige en órdenes
   // de seguro; por defecto la regla de siempre (no sale si la tasa es fija).
   const isInsurance = order.type === 'insurance';
+  // Emitir factura: obligatorio en seguro; en contado / crédito / cashea es
+  // opcional y viene apagado (hay que activarlo aquí, en el Paso 4).
+  const [generateInvoice, setGenerateInvoice] = useState<boolean>(
+    isInsurance || !!invoiceActive,
+  );
+  /** ¿Esta finalización emite factura? */
+  const invoiceEnabled = isInsurance || generateInvoice;
+  /**
+   * Campos fiscales visibles: cuando se va a emitir la factura y también en
+   * órdenes ya finalizadas (allí sirven para emitir una factura nueva).
+   */
+  const showInvoiceFields = invoiceEnabled || isFinalized;
+  /** La orden nunca tuvo factura (se finalizó sin ella). */
+  const neverInvoiced = (order.invoices ?? []).length === 0;
   const [showRate, setShowRate] = useState<boolean>(
     invoiceActive?.showExchangeRate ??
       order.invoiceShowExchangeRate ??
@@ -409,21 +423,23 @@ export function OrderBillingStep({
       notify.error('La suma de pagos supera el monto declarado de la orden');
       return;
     }
-    if (invoiceNumber === undefined) {
-      notify.error('Ingresa el número de factura');
-      return;
-    }
-    if (numberAvailable === false) {
-      notify.error(
-        numberCheck?.cancelled
-          ? 'Ese número ya se usó en una factura anulada: elige otro'
-          : 'Ese número de factura ya está en uso',
-      );
-      return;
-    }
-    if (!invoiceDate) {
-      notify.error('Selecciona la fecha de la factura');
-      return;
+    if (invoiceEnabled) {
+      if (invoiceNumber === undefined) {
+        notify.error('Ingresa el número de factura');
+        return;
+      }
+      if (numberAvailable === false) {
+        notify.error(
+          numberCheck?.cancelled
+            ? 'Ese número ya se usó en una factura anulada: elige otro'
+            : 'Ese número de factura ya está en uso',
+        );
+        return;
+      }
+      if (!invoiceDate) {
+        notify.error('Selecciona la fecha de la factura');
+        return;
+      }
     }
     setSaving(true);
     try {
@@ -435,11 +451,13 @@ export function OrderBillingStep({
           amount: p.amount!,
         })),
         billingExchangeRateId: invoiceRateId,
-        invoiceNumber,
-        invoiceDate,
+        generateInvoice: invoiceEnabled,
+        ...(invoiceEnabled ? { invoiceNumber, invoiceDate } : {}),
         ...(isInsurance ? { showExchangeRate: showRate } : {}),
       });
-      notify.success('Orden finalizada');
+      notify.success(
+        invoiceEnabled ? 'Orden finalizada' : 'Orden finalizada sin factura',
+      );
       onSaved();
     } catch (err) {
       notify.error(getHttpErrorMessage(err, 'No se pudo finalizar la orden'));
@@ -519,8 +537,25 @@ export function OrderBillingStep({
     <div className="space-y-5">
       <FormSection
         title="Factura"
-        description="Descarga la factura única con todos los tipos de servicio de la orden, en Excel o PDF."
+        description={
+          invoiceEnabled
+            ? 'Descarga la factura única con todos los tipos de servicio de la orden, en Excel o PDF.'
+            : 'Esta orden puede finalizarse sin factura. Activa la factura si necesitas emitirla.'
+        }
       >
+        {!isInsurance && !isFinalized ? (
+          <div className="rounded-lg border bg-card p-3 mb-4">
+            <FormSwitch
+              id="generateInvoice"
+              label="Generar factura"
+              description="En órdenes de contado, crédito y cashea la factura es opcional. Actívala para asignarle número y fecha; si la dejas apagada, la orden se finaliza sin factura y puedes emitirla después desde este mismo paso."
+              checked={generateInvoice}
+              onCheckedChange={setGenerateInvoice}
+            />
+          </div>
+        ) : null}
+
+        {showInvoiceFields ? (
         <div className="rounded-lg border bg-card p-4 flex items-center gap-3 flex-wrap">
           <div className="w-10 h-10 rounded-md bg-success-soft text-success flex items-center justify-center shrink-0">
             <FileSpreadsheet className="w-5 h-5" />
@@ -554,8 +589,11 @@ export function OrderBillingStep({
             </Button>
           </div>
         </div>
+        ) : null}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-[18px] mt-4">
+          {showInvoiceFields ? (
+          <>
           <div className="space-y-1.5">
             <Label htmlFor="invoiceNumber">
               Número de factura <span className="text-destructive">*</span>
@@ -675,9 +713,11 @@ export function OrderBillingStep({
               Es la fecha que se imprime en la factura. Por defecto es hoy.
             </p>
           </div>
+          </>
+          ) : null}
           <div className="space-y-1.5">
             <Label>
-              Tasa de cambio de la factura{' '}
+              {invoiceEnabled ? 'Tasa de cambio de la factura' : 'Tasa de cambio'}{' '}
               <span className="text-destructive">*</span>
             </Label>
             <UsdRateSelect
@@ -696,11 +736,13 @@ export function OrderBillingStep({
             <p className="text-xs text-muted-foreground">
               {order.useFixedRate
                 ? 'Con esta tasa se imprime la factura y queda fija en bolívares la cuenta por cobrar del seguro no indexado.'
-                : dominantRate
-                  ? 'Por defecto, la tasa con la que más se pagó en bolívares.'
-                  : 'Por defecto, la tasa más reciente vigente.'}
+                : !invoiceEnabled
+                  ? 'Convierte a bolívares los montos de cuentas por pagar, retenciones y reportes.'
+                  : dominantRate
+                    ? 'Por defecto, la tasa con la que más se pagó en bolívares.'
+                    : 'Por defecto, la tasa más reciente vigente.'}
             </p>
-            {invoiceRateBs > 0 && priceAmount > 0 && (
+            {invoiceEnabled && invoiceRateBs > 0 && priceAmount > 0 && (
               <p className="text-xs text-muted-foreground">
                 Total de la factura:{' '}
                 <span className="font-mono font-semibold text-foreground">
@@ -733,8 +775,9 @@ export function OrderBillingStep({
         {canIssueInvoice ? (
           <div className="mt-4 rounded-lg border border-warning/40 bg-warning-soft px-3 py-2.5 flex items-center justify-between gap-3 flex-wrap">
             <p className="text-xs text-warning">
-              La factura anterior quedó anulada. La orden sigue finalizada: emite
-              una factura nueva con otro número.
+              {neverInvoiced
+                ? 'La orden se finalizó sin factura. Puedes emitirla ahora con el número y la fecha de arriba.'
+                : 'La factura anterior quedó anulada. La orden sigue finalizada: emite una factura nueva con otro número.'}
             </p>
             {canBilling ? (
               <Button
@@ -1084,8 +1127,7 @@ export function OrderBillingStep({
                   isFinalized ||
                   !invoiceRateId ||
                   exceedsCap ||
-                  !invoiceNumberOk ||
-                  !invoiceDate
+                  (invoiceEnabled && (!invoiceNumberOk || !invoiceDate))
                 }
               >
                 {saving

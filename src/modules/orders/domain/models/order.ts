@@ -404,8 +404,13 @@ export interface BillingOrderDto {
    * cuenta por cobrar.
    */
   billingExchangeRateId: string;
+  /**
+   * ¿Se emite factura al finalizar? Obligatoria en seguro (el BE la fuerza);
+   * opcional en contado / crédito / cashea, donde por defecto NO se emite.
+   */
+  generateInvoice?: boolean;
   /** N° de factura como entero. El N° de control lo deriva el BE. */
-  invoiceNumber: number;
+  invoiceNumber?: number;
   /** `YYYY-MM-DD`. Sin enviar, el BE usa la fecha de la orden. */
   invoiceDate?: string;
   /** ¿Imprime la fila "Tasa de cambio BCV"? Sin enviar, la regla derivada. */
