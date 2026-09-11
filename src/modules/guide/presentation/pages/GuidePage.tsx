@@ -421,6 +421,14 @@ export function GuidePage() {
                 cuadrar con el monto a recibir tras retención de impuestos.
               </p>
               <p>
+                La retención de ISLR es <strong>opcional por lote</strong>: la
+                card "Retención SENIAT" al inicio del lote trae el switch
+                "Aplicar retención de ISLR" activado por defecto. Si lo apagas,
+                el proveedor recibe el bruto completo y no se genera la
+                obligación con el SENIAT. Puedes cambiarlo mientras el lote no
+                esté pagado.
+              </p>
+              <p>
                 Estados: <code>unpaid</code> → <code>partially_paid</code> →{' '}
                 <code>paid</code>.
               </p>

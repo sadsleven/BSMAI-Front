@@ -96,6 +96,17 @@ export const accountsPayableGateway = {
     );
     return data;
   },
+  /** Activa/desactiva la retención de ISLR del lote (recalcula neto/estado). */
+  async setRetention(
+    id: string,
+    applyRetention: boolean,
+  ): Promise<AccountsPayableBatch> {
+    const { data } = await api.patch<AccountsPayableBatch>(
+      `${BASE}/${id}/retention`,
+      { applyRetention },
+    );
+    return data;
+  },
   async registerPayment(
     id: string,
     payments: AccountsPayablePaymentInput[],

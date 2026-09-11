@@ -78,6 +78,11 @@ export interface AccountsPayableBatch {
   /** UT del cálculo de retención SENIAT del lote (null = UT vigente al calcular). */
   taxUnitId?: string | null;
   taxUnit?: { id: string; amountBs: string; effectiveDate: string } | null;
+  /**
+   * ¿El lote descuenta la retención de ISLR? `false` ⇒ neto = bruto y no nace
+   * obligación SENIAT al pagarlo. Usa `batchAppliesRetention(b)` (undefined ⇒ sí).
+   */
+  applyRetention?: boolean;
   status: AccountsPayableStatus;
   paidAt?: string | null;
   orders: AccountsPayableOrder[];
@@ -131,6 +136,8 @@ export interface CreateAccountsPayableBatchDto {
   careCenterId?: string;
   /** UT para la retención SENIAT del lote. Sin enviar = UT vigente. */
   taxUnitId?: string;
+  /** ¿Descontar la retención de ISLR? Sin enviar = `true`. */
+  applyRetention?: boolean;
   internalOrderIds: string[];
 }
 
@@ -157,6 +164,11 @@ export function recipientName(b: AccountsPayableBatch): string {
 /** Nombre del proveedor de una orden pendiente. */
 export function pendingProviderName(p: PendingPayable): string {
   return p.providerName?.trim() || '—';
+}
+
+/** ¿El lote descuenta retención SENIAT? (espejo de BE `appliesRetention`; undefined ⇒ sí). */
+export function batchAppliesRetention(b: AccountsPayableBatch): boolean {
+  return b.applyRetention !== false;
 }
 
 /** Régimen fiscal SENIAT del destinatario (espejo de BE `personTypeOf`). */

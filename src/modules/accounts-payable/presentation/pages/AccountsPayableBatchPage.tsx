@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { FormSection } from '@/components/ui/form-section';
+import { FormSwitch } from '@/components/ui/form-switch';
 import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { getHttpErrorMessage } from '@/lib/api';
@@ -57,6 +58,7 @@ import {
 } from '@/lib/taxes/seniatRetention';
 import { accountsPayableGateway } from '../../infrastructure/accountsPayableGateway';
 import {
+  batchAppliesRetention,
   orderInternalNumber,
   pendingProviderId,
   pendingProviderName,
@@ -70,7 +72,15 @@ import {
   type OrderPaymentType,
 } from '@/modules/orders/domain/models/order';
 import { Can } from '@/modules/auth/presentation/components/Can';
+import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
+
+/** Texto bajo el switch de retención según su estado (create + detalle). */
+function retentionSwitchDescription(applies: boolean): string {
+  return applies
+    ? 'El neto a pagar = bruto − retención de ISLR (Decreto 1.808). Al quedar pagado el lote nace la obligación con el SENIAT.'
+    : 'Sin retención: el proveedor recibe el bruto completo y no se genera obligación con el SENIAT.';
+}
 
 const paymentSchema = z.object({
   payments: z.array(egressPaymentSchema).min(1, 'Registra al menos un pago'),
@@ -139,6 +149,8 @@ export function AccountsPayableBatchPage() {
   const { taxUnit: currentTaxUnit } = useTaxUnit();
   const [selectedTaxUnit, setSelectedTaxUnit] = useState<TaxUnit | null>(null);
   const batchTaxUnit = selectedTaxUnit ?? currentTaxUnit;
+  // Retención SENIAT del lote: opcional, activada por defecto.
+  const [applyRetention, setApplyRetention] = useState(true);
   // Si vino selección de la lista, fijamos el proveedor de entrada.
   const lockedProvider = useMemo<CreateProvider | null>(
     () =>
@@ -264,6 +276,7 @@ export function AccountsPayableBatchPage() {
             ? activeProvider.providerId
             : undefined,
         taxUnitId: batchTaxUnit?.id,
+        applyRetention,
         internalOrderIds: selectedRows.map((r) => r.internalOrderId),
       });
       notify.success('Lote creado');
@@ -300,6 +313,18 @@ export function AccountsPayableBatchPage() {
             <ChevronLeft className="w-3.5 h-3.5" /> Volver
           </button>
         </div>
+
+        <FormSection
+          title="Retención SENIAT"
+          description="Define si este lote descuenta la retención de ISLR al proveedor. Puedes cambiarlo después mientras el lote no esté pagado."
+        >
+          <FormSwitch
+            label="Aplicar retención de ISLR"
+            description={retentionSwitchDescription(applyRetention)}
+            checked={applyRetention}
+            onCheckedChange={setApplyRetention}
+          />
+        </FormSection>
 
         <FormSection
           title="Órdenes del lote"
@@ -414,17 +439,19 @@ export function AccountsPayableBatchPage() {
           </div>
         </FormSection>
 
-        <FormSection
-          title="Unidad Tributaria"
-          description="UT usada para calcular la retención SENIAT del lote. Por defecto la vigente; puedes seleccionar otra."
-        >
-          <TaxUnitSelect
-            className="max-w-md"
-            selectedId={batchTaxUnit?.id ?? null}
-            selectedFallback={batchTaxUnit}
-            onSelect={setSelectedTaxUnit}
-          />
-        </FormSection>
+        {applyRetention ? (
+          <FormSection
+            title="Unidad Tributaria"
+            description="UT usada para calcular la retención SENIAT del lote. Por defecto la vigente; puedes seleccionar otra."
+          >
+            <TaxUnitSelect
+              className="max-w-md"
+              selectedId={batchTaxUnit?.id ?? null}
+              selectedFallback={batchTaxUnit}
+              onSelect={setSelectedTaxUnit}
+            />
+          </FormSection>
+        ) : null}
 
         <div className="flex items-center justify-end gap-2">
           <Button
@@ -451,6 +478,8 @@ export function AccountsPayableBatchPage() {
 function BatchDetail({ id }: { id: string }) {
   const navigate = useNavigate();
   const { taxUnit } = useTaxUnit();
+  const { has: hasPermission } = usePermissions();
+  const canUpdate = hasPermission(PERMISSIONS.ACCOUNTS_PAYABLE.UPDATE);
   const [batch, setBatch] = useState<AccountsPayableBatch | null>(null);
   const [loading, setLoading] = useState(true);
   const [eurRatesById, setEurRatesById] = useState<Record<string, ExchangeRate>>({});
@@ -787,6 +816,20 @@ function BatchDetail({ id }: { id: string }) {
     }
   };
 
+  const onSetRetention = async (next: boolean) => {
+    setBusy(true);
+    try {
+      setBatch(await accountsPayableGateway.setRetention(id, next));
+      notify.success(
+        next ? 'Retención de ISLR activada' : 'Retención de ISLR desactivada',
+      );
+    } catch (e) {
+      notify.fromError(e, 'No se pudo cambiar la retención');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const existingInternalIds = useMemo(
     () => new Set((batch?.orders ?? []).map((o) => o.internalOrderId)),
     [batch],
@@ -801,6 +844,7 @@ function BatchDetail({ id }: { id: string }) {
 
   // Desglose SENIAT (espejo del cálculo del BE) para la sección Resumen.
   // Usa la UT del lote; los lotes previos (sin UT propia) caen a la vigente.
+  const appliesRetention = batchAppliesRetention(batch);
   const seniatPersonType: SeniatPersonType = personTypeOf(batch);
   const effectiveTaxUnit = batch.taxUnit ?? taxUnit;
   const taxUnitBs = effectiveTaxUnit ? Number(effectiveTaxUnit.amountBs) : null;
@@ -835,18 +879,47 @@ function BatchDetail({ id }: { id: string }) {
         </button>
       </div>
 
+      {/* Retención (opcional por lote) */}
+      <FormSection
+        title="Retención SENIAT"
+        description="Define si este lote descuenta la retención de ISLR al proveedor."
+      >
+        <FormSwitch
+          label="Aplicar retención de ISLR"
+          description={retentionSwitchDescription(appliesRetention)}
+          checked={appliesRetention}
+          onCheckedChange={onSetRetention}
+          disabled={isPaid || busy || !canUpdate}
+        />
+        {isPaid ? (
+          <p className="text-xs text-muted-foreground mt-2">
+            El lote está pagado: edita o quita un pago para cambiar la retención.
+          </p>
+        ) : canUpdate ? (
+          <p className="text-xs text-muted-foreground mt-2">
+            Cambiar la retención recalcula el neto a pagar y el estado del lote.
+          </p>
+        ) : null}
+      </FormSection>
+
       {/* Totales */}
       <FormSection
         title="Resumen"
-        description="Bruto, retención de ISLR (Decreto 1.808) y el neto a pagar al proveedor."
+        description={
+          appliesRetention
+            ? 'Bruto, retención de ISLR (Decreto 1.808) y el neto a pagar al proveedor.'
+            : 'Bruto y neto a pagar al proveedor. Este lote no descuenta retención de ISLR.'
+        }
       >
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
           <SummaryTile label="TotalUSD" value={`${formatMoney(batch.grossUsd ?? 0)} USD`} />
           <SummaryTile label="TotalBs." value={`${formatMoney(batch.grossBs ?? 0)} Bs.`} />
           <SummaryTile
             label="Retención SENIAT"
-            value={`${formatMoney(batch.retentionBs ?? 0)} Bs.`}
-            tone="warning"
+            value={
+              appliesRetention ? `${formatMoney(batch.retentionBs ?? 0)} Bs.` : 'No aplica'
+            }
+            tone={appliesRetention ? 'warning' : undefined}
           />
           <SummaryTile
             label="Neto a pagar"
@@ -859,37 +932,41 @@ function BatchDetail({ id }: { id: string }) {
           />
         </div>
 
-        <SeniatBreakdown
-          personType={seniatPersonType}
-          grossBs={batch.grossBs ?? 0}
-          retentionBs={batch.retentionBs ?? 0}
-          taxUnitBs={taxUnitBs}
-          result={seniatBreakdown}
-        />
-
-        <Can permission={PERMISSIONS.ACCOUNTS_PAYABLE.UPDATE}>
-          <div className="mt-4">
-            <TaxUnitSelect
-              className="max-w-md"
-              label="Unidad Tributaria del lote"
-              placeholder="UT vigente al calcular"
-              selectedId={batch.taxUnitId ?? null}
-              selectedFallback={batch.taxUnit ?? null}
-              onSelect={(ut) => onSetTaxUnit(ut.id)}
-              disabled={isPaid || busy}
-              lockNote={
-                isPaid
-                  ? 'El lote está pagado: edita o quita un pago para cambiar la UT.'
-                  : undefined
-              }
+        {appliesRetention ? (
+          <>
+            <SeniatBreakdown
+              personType={seniatPersonType}
+              grossBs={batch.grossBs ?? 0}
+              retentionBs={batch.retentionBs ?? 0}
+              taxUnitBs={taxUnitBs}
+              result={seniatBreakdown}
             />
-            {!isPaid ? (
-              <p className="text-xs text-muted-foreground mt-1.5">
-                Cambiar la UT recalcula la retención y el neto a pagar del lote.
-              </p>
-            ) : null}
-          </div>
-        </Can>
+
+            <Can permission={PERMISSIONS.ACCOUNTS_PAYABLE.UPDATE}>
+              <div className="mt-4">
+                <TaxUnitSelect
+                  className="max-w-md"
+                  label="Unidad Tributaria del lote"
+                  placeholder="UT vigente al calcular"
+                  selectedId={batch.taxUnitId ?? null}
+                  selectedFallback={batch.taxUnit ?? null}
+                  onSelect={(ut) => onSetTaxUnit(ut.id)}
+                  disabled={isPaid || busy}
+                  lockNote={
+                    isPaid
+                      ? 'El lote está pagado: edita o quita un pago para cambiar la UT.'
+                      : undefined
+                  }
+                />
+                {!isPaid ? (
+                  <p className="text-xs text-muted-foreground mt-1.5">
+                    Cambiar la UT recalcula la retención y el neto a pagar del lote.
+                  </p>
+                ) : null}
+              </div>
+            </Can>
+          </>
+        ) : null}
       </FormSection>
 
       {/* Órdenes */}
@@ -1073,7 +1150,11 @@ function BatchDetail({ id }: { id: string }) {
             >
               <FormSection
                 title={editingPaymentId ? 'Editar pago' : 'Registrar pago'}
-                description="El proveedor recibe el neto (bruto − retención SENIAT). Puedes pagar parcial."
+                description={
+                  appliesRetention
+                    ? 'El proveedor recibe el neto (bruto − retención SENIAT). Puedes pagar parcial.'
+                    : 'El proveedor recibe el bruto completo (este lote no descuenta retención). Puedes pagar parcial.'
+                }
               >
                 {!usdRate ? (
                   <p className="text-sm text-destructive flex items-center gap-1.5">
