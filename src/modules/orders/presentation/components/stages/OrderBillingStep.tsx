@@ -174,6 +174,7 @@ export function OrderBillingStep({
    */
   const [candidates, setCandidates] = useState<InvoiceableOrder[]>([]);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
+  const [candidatesError, setCandidatesError] = useState<string | null>(null);
   const [groupedIds, setGroupedIds] = useState<string[]>([]);
   /** Órdenes que ya quedaron agrupadas en la factura vigente (sólo lectura). */
   const alreadyGrouped = useMemo(
@@ -426,9 +427,22 @@ export function OrderBillingStep({
       setLoadingCandidates(true);
       try {
         const rows = await orderGateway.invoiceableOrders(order.id);
-        if (!cancelled) setCandidates(rows);
-      } catch {
-        if (!cancelled) setCandidates([]);
+        if (!cancelled) {
+          setCandidates(rows);
+          setCandidatesError(null);
+        }
+      } catch (err) {
+        // No se traga el error: si falla (por ejemplo, el backend no tiene la
+        // migración de facturas agrupadas) hay que verlo, no quedarse sin card.
+        if (!cancelled) {
+          setCandidates([]);
+          setCandidatesError(
+            getHttpErrorMessage(
+              err,
+              'No se pudieron cargar las órdenes que se pueden agrupar',
+            ),
+          );
+        }
       } finally {
         if (!cancelled) setLoadingCandidates(false);
       }
@@ -865,7 +879,7 @@ export function OrderBillingStep({
             </div>
           ) : null}
         </div>
-        {canGroupInvoice && (loadingCandidates || candidates.length > 0) ? (
+        {canGroupInvoice ? (
           <div className="mt-4 rounded-lg border bg-card p-4 space-y-3">
             <div className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-md bg-brand-cyan-soft text-brand-cyan-strong flex items-center justify-center shrink-0">
@@ -887,6 +901,20 @@ export function OrderBillingStep({
             {loadingCandidates ? (
               <p className="text-sm text-muted-foreground">
                 Buscando órdenes que se puedan agrupar…
+              </p>
+            ) : candidatesError ? (
+              <p className="text-xs text-destructive flex items-start gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                {candidatesError}
+              </p>
+            ) : candidates.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No hay otras órdenes para agrupar. Aquí sólo aparecen las
+                órdenes <span className="font-medium">ya finalizadas</span> del
+                mismo{' '}
+                {isInsurance ? 'seguro (y misma vía)' : 'titular'}, del mismo
+                tipo de orden y de esta sucursal, que todavía{' '}
+                <span className="font-medium">no tengan factura</span>.
               </p>
             ) : (
               <>
