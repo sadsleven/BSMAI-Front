@@ -1,0 +1,27 @@
+name: Deploy AFMI Frontend
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # Permite el botón "Run workflow" en la pestaña Actions de GitHub
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ejecutar despliegue vía SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USERNAME }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          script: |
+            # Asegurar que Bun esté en el PATH durante la sesión SSH no interactiva
+            export PATH="$HOME/.bun/bin:$PATH"
+            
+            cd /opt/afmi/afmi-front
+            git pull origin main
+            bun install
+            bun run build
+            pm2 restart afmi-front
