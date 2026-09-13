@@ -4,6 +4,7 @@ import type {
   AuthorizeOrderAmountDto,
   BillingOrderDto,
   CreateOrderDto,
+  InvoiceableOrder,
   InvoiceNumberAvailability,
   IssueOrderInvoiceDto,
   Order,
@@ -151,6 +152,17 @@ export const orderGateway = {
     const { data } = await api.get<InvoiceNumberAvailability>(
       '/orders/invoices/availability',
       { params },
+    );
+    return data;
+  },
+  /**
+   * Órdenes que se pueden AGRUPAR en la misma factura que esta: mismo
+   * contratante, mismo tipo, misma sucursal, ya finalizadas y sin factura
+   * vigente. Alimenta el selector del Paso 4.
+   */
+  async invoiceableOrders(id: string): Promise<InvoiceableOrder[]> {
+    const { data } = await api.get<InvoiceableOrder[]>(
+      `/orders/${id}/invoiceable`,
     );
     return data;
   },

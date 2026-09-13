@@ -291,7 +291,130 @@ export function groupOrderProviders(order: Order): OrderProviderGroup[] {
   return Array.from(groups.values());
 }
 
-export async function downloadFacturacionXlsx(order: Order): Promise<void> {
+/** Fila del detalle de la factura (una por Tipo de Servicio de cada orden). */
+export type InvoiceDetailRow = {
+  name: string;
+  qty: number;
+  unitBs: number;
+  totalRowBs: number;
+  /** N° de orden interna del proveedor de esa fila. */
+  orderNo: string;
+};
+
+/**
+ * Órdenes que salen en la factura: la EMISORA primero y detrás las AGRUPADAS
+ * (mismo contratante, atendidas en fechas distintas). Sin agrupar es sólo una.
+ */
+export function invoiceCoveredOrders(
+  order: Order,
+  grouped: Order[] = [],
+): Order[] {
+  const seen = new Set([order.id]);
+  const out = [order];
+  for (const o of grouped) {
+    if (!o || seen.has(o.id)) continue;
+    seen.add(o.id);
+    out.push(o);
+  }
+  return out;
+}
+
+/**
+ * Detalle + totales de la factura. Cada fila usa el snapshot de precios de SU
+ * propia orden, pero TODAS se convierten con la MISMA tasa: la de la factura.
+ */
+export function invoiceDetail(
+  covered: Order[],
+  rateBs: number,
+): {
+  rows: InvoiceDetailRow[];
+  totalBs: number;
+  totalFx: number;
+  priceFx: number;
+} {
+  const priceFx = covered.reduce((a, o) => a + (Number(o.priceAmount) || 0), 0);
+  const rows: InvoiceDetailRow[] = [];
+  for (const o of covered) {
+    const cobroKind: 'insurance' | 'particular' =
+      o.type === 'insurance' ? 'insurance' : 'particular';
+    const priceFxForSt = (serviceTypeId: string): number => {
+      const snap = (o.servicePricing ?? []).find(
+        (sp) => sp.serviceTypeId === serviceTypeId && sp.kind === cobroKind,
+      );
+      return snap ? Number(snap.priceUsd) || 0 : 0;
+    };
+    const sts = (o.orderServiceTypes ?? []).filter((row) => !!row.serviceTypeId);
+    const orderPriceFx = Number(o.priceAmount) || 0;
+    const orderPriceBs = rateBs > 0 ? orderPriceFx * rateBs : orderPriceFx;
+    if (sts.length === 0) {
+      // Orden sin filas cargadas: una línea con el monto declarado.
+      rows.push({
+        name: '',
+        qty: 1,
+        unitBs: orderPriceBs,
+        totalRowBs: orderPriceBs,
+        orderNo: o.orderNumber,
+      });
+      continue;
+    }
+    for (const row of sts) {
+      const fx = priceFxForSt(row.serviceTypeId);
+      const unitBs = rateBs > 0 ? fx * rateBs : fx;
+      const qty = Math.max(1, Math.trunc(row.quantity ?? 1));
+      const pid =
+        row.providerType === 'doctor' ? row.doctorId : row.careCenterId;
+      rows.push({
+        name: row.customName?.trim() || row.serviceType?.name || '',
+        qty,
+        unitBs,
+        totalRowBs: unitBs * qty,
+        orderNo:
+          row.internalOrder?.internalNumber ??
+          providerInternalNumber(o, row.providerType, pid ?? ''),
+      });
+    }
+  }
+  const sumStsBs = rows.reduce((acc, r) => acc + r.totalRowBs, 0);
+  const priceBs = rateBs > 0 ? priceFx * rateBs : priceFx;
+  const totalBs = sumStsBs > 0 ? sumStsBs : priceBs;
+  const totalFx = rateBs > 0 ? totalBs / rateBs : priceFx;
+  return { rows, totalBs, totalFx, priceFx };
+}
+
+/**
+ * Paciente impreso en la factura: el único de las órdenes agrupadas, o
+ * "VARIOS" cuando la factura cubre a más de uno (mismo titular).
+ */
+export function invoicePatientLabel(covered: Order[]): {
+  name: string;
+  ci: string;
+} {
+  const names = Array.from(
+    new Set(covered.map((o) => holderDisplayName(o.patient)).filter(Boolean)),
+  );
+  if (names.length > 1) return { name: 'VARIOS', ci: '' };
+  return {
+    name: names[0] ?? '',
+    ci: holderId(covered[0]?.patient),
+  };
+}
+
+/** Claves de servicio de la factura (una por orden agrupada, sin repetir). */
+export function invoiceServiceKeys(covered: Order[]): string {
+  return Array.from(
+    new Set(covered.map((o) => (o.serviceKey ?? '').trim()).filter(Boolean)),
+  ).join(' / ');
+}
+
+/**
+ * Factura del Paso 4. `groupedOrders` son las órdenes ADICIONALES que la misma
+ * factura cubre (factura agrupada): sus servicios se listan debajo con su
+ * propio N° de orden y suman al total, con la tasa de ESTA factura.
+ */
+export async function downloadFacturacionXlsx(
+  order: Order,
+  groupedOrders: Order[] = [],
+): Promise<void> {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'AFMI';
   const ws = wb.addWorksheet('FACTURACION');
@@ -308,12 +431,14 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
   // Toda la factura va en Calibri 10: no hay tamaños mixtos en el documento.
   const DEFAULT_FONT: Partial<ExcelJS.Font> = { name: 'Calibri', size: 10 };
 
+  const covered = invoiceCoveredOrders(order, groupedOrders);
   const isInsurance = order.type === 'insurance';
   const insurancePhone = order.insurance?.phones?.[0]?.number ?? '';
   const holder = holderDisplayName(order.holder);
-  const patient = holderDisplayName(order.patient);
+  const patientLabel = invoicePatientLabel(covered);
+  const patient = patientLabel.name;
   const holderCi = holderId(order.holder);
-  const patientCi = holderId(order.patient);
+  const patientCi = patientLabel.ci;
 
   // Contratante de la factura: seguro → datos del seguro;
   // contado/crédito/cashea → datos del titular.
@@ -335,10 +460,10 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
   const condicionesPago =
     order.type === 'cash' ? 'CONTADO' : 'CREDITO';
 
-  // Conversión a Bs vía tasa más reciente vigente al crear la orden
+  // Conversión a Bs con la tasa de ESTA factura (una sola para todas las
+  // órdenes agrupadas, aunque se hayan atendido en fechas distintas).
   const rateBs = await resolveInvoiceRateBs(order);
-  const priceFx = Number(order.priceAmount) || 0;
-  const priceBs = rateBs > 0 ? priceFx * rateBs : priceFx;
+  const { rows: detailRows, totalBs, totalFx } = invoiceDetail(covered, rateBs);
   const currencySymbol = '$';
 
   // Espacios superiores
@@ -470,7 +595,8 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
     c10a.font = DEFAULT_FONT;
     c10a.alignment = { horizontal: 'left', vertical: 'middle' };
     const c10c = ws.getCell('C10');
-    c10c.value = order.serviceKey ?? '';
+    // Agrupada: las claves de todas las órdenes, separadas por " / ".
+    c10c.value = invoiceServiceKeys(covered);
     c10c.font = DEFAULT_FONT;
     c10c.alignment = wrapLeft;
   }
@@ -500,48 +626,8 @@ export async function downloadFacturacionXlsx(order: Order): Promise<void> {
     cell.border = thinBorder();
   }
 
-  // R13..R13+N-1 — Una fila por Tipo de Servicio con su precio en Bs
-  const cobroKind: 'insurance' | 'particular' =
-    order.type === 'insurance' ? 'insurance' : 'particular';
-  const priceFxForSt = (serviceTypeId: string): number => {
-    const snap = (order.servicePricing ?? []).find(
-      (p) => p.serviceTypeId === serviceTypeId && p.kind === cobroKind,
-    );
-    if (!snap) return 0;
-    return Number(snap.priceUsd) || 0;
-  };
-  const stsRaw = (order.orderServiceTypes ?? []).filter(
-    (row) => !!row.serviceTypeId,
-  );
-  const detailRows: Array<{
-    name: string;
-    qty: number;
-    unitBs: number;
-    totalRowBs: number;
-    orderNo: string;
-  }> =
-    stsRaw.length > 0
-      ? stsRaw.map((row) => {
-          const fx = priceFxForSt(row.serviceTypeId);
-          const unitBs = rateBs > 0 ? fx * rateBs : fx;
-          const qty = Math.max(1, Math.trunc(row.quantity ?? 1));
-          const pid =
-            row.providerType === 'doctor' ? row.doctorId : row.careCenterId;
-          return {
-            name: row.customName?.trim() || row.serviceType?.name || '',
-            qty,
-            unitBs,
-            totalRowBs: unitBs * qty,
-            // N° de orden interna del proveedor de ESTA fila (no el base).
-            orderNo:
-              row.internalOrder?.internalNumber ??
-              providerInternalNumber(order, row.providerType, pid ?? ''),
-          };
-        })
-      : [{ name: '', qty: 1, unitBs: priceBs, totalRowBs: priceBs, orderNo: order.orderNumber }];
-  const sumStsBs = detailRows.reduce((acc, r) => acc + r.totalRowBs, 0);
-  const totalBs = sumStsBs > 0 ? sumStsBs : priceBs;
-  const totalFx = rateBs > 0 ? totalBs / rateBs : priceFx;
+  // R13..R13+N-1 — Una fila por Tipo de Servicio (de TODAS las órdenes que
+  // cubre la factura), con su N° de orden interna y su precio en Bs.
   const detailStart = 13;
   detailRows.forEach((row, i) => {
     const r = ws.getRow(detailStart + i);

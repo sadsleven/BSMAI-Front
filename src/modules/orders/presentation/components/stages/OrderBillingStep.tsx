@@ -8,6 +8,7 @@ import {
   FileSpreadsheet,
   HandCoins,
   ListTree,
+  Layers,
   Minus,
   Plus,
   ReceiptText,
@@ -27,6 +28,7 @@ import { FormSection } from '@/components/ui/form-section';
 import { FormSwitch } from '@/components/ui/form-switch';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { notify } from '@/lib/notifications/toast';
 import { getHttpErrorMessage } from '@/lib/api';
@@ -48,6 +50,7 @@ import { doctorGateway } from '@/modules/doctors/infrastructure/doctorGateway';
 import { careCenterGateway } from '@/modules/care-centers/infrastructure/careCenterGateway';
 import type { ServicePriceRow } from '@/lib/types/servicePrice';
 import type {
+  InvoiceableOrder,
   InvoiceNumberAvailability,
   Order,
   OrderInvoice,
@@ -57,6 +60,7 @@ import {
   deriveControlNumber,
   formatInvoiceNumber,
   orderUserDisplayName,
+  otherCoveredOrders,
 } from '../../../domain/models/order';
 import { OrderInvoiceCancelModal } from '../OrderInvoiceCancelModal';
 
@@ -162,6 +166,21 @@ export function OrderBillingStep({
   const showInvoiceFields = invoiceEnabled || isFinalized;
   /** La orden nunca tuvo factura (se finalizó sin ella). */
   const neverInvoiced = (order.invoices ?? []).length === 0;
+  /**
+   * Factura AGRUPADA: otras órdenes finalizadas del mismo contratante que salen
+   * en esta misma factura (el paciente atendido varias veces que pide un solo
+   * documento). No toca cuentas por cobrar ni por pagar: la factura es sólo el
+   * comprobante hacia el cliente.
+   */
+  const [candidates, setCandidates] = useState<InvoiceableOrder[]>([]);
+  const [loadingCandidates, setLoadingCandidates] = useState(false);
+  const [groupedIds, setGroupedIds] = useState<string[]>([]);
+  /** Órdenes que ya quedaron agrupadas en la factura vigente (sólo lectura). */
+  const alreadyGrouped = useMemo(
+    () => (invoiceActive ? otherCoveredOrders(invoiceActive, order.id) : []),
+    [invoiceActive, order.id],
+  );
+
   const [showRate, setShowRate] = useState<boolean>(
     invoiceActive?.showExchangeRate ??
       order.invoiceShowExchangeRate ??
@@ -392,6 +411,72 @@ export function OrderBillingStep({
   const exceedsCap = totalUsd > priceAmount + 0.005;
   const netProfit = priceAmount - totalUsd;
 
+  // Candidatas a agruparse: sólo hace falta cuando esta pantalla va a EMITIR
+  // la factura (no si ya está emitida ni si la orden se finaliza sin factura).
+  // Aplica siempre que esta pantalla pueda EMITIR la factura: al finalizar
+  // (switch "Generar factura" encendido, o seguro) y también en una orden ya
+  // finalizada que quedó sin factura — el caso típico del paciente que vuelve
+  // después a pedirla por varias atenciones.
+  const canGroupInvoice =
+    canBilling && !invoiceLocked && (invoiceEnabled || canIssueInvoice);
+  useEffect(() => {
+    if (!canGroupInvoice) return;
+    let cancelled = false;
+    void (async () => {
+      setLoadingCandidates(true);
+      try {
+        const rows = await orderGateway.invoiceableOrders(order.id);
+        if (!cancelled) setCandidates(rows);
+      } catch {
+        if (!cancelled) setCandidates([]);
+      } finally {
+        if (!cancelled) setLoadingCandidates(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [canGroupInvoice, order.id]);
+
+  const toggleGrouped = (id: string) => {
+    setGroupedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  };
+
+  /**
+   * Selección efectiva: sólo las que siguen siendo candidatas (otra sesión pudo
+   * facturarlas mientras tanto) y sólo si esta pantalla va a emitir la factura.
+   * El BE rechazaría las demás.
+   */
+  const groupedSelection = useMemo(
+    () =>
+      canGroupInvoice
+        ? groupedIds.filter((id) => candidates.some((c) => c.id === id))
+        : [],
+    [canGroupInvoice, groupedIds, candidates],
+  );
+
+  /** Total USD de la factura: esta orden + las agrupadas seleccionadas. */
+  const groupedTotalUsd = useMemo(() => {
+    const extra = candidates
+      .filter((c) => groupedSelection.includes(c.id))
+      .reduce((acc, c) => acc + (Number(c.priceAmount) || 0), 0);
+    return priceAmount + extra;
+  }, [candidates, groupedSelection, priceAmount]);
+
+  /**
+   * Órdenes agrupadas completas, para armar el documento: las seleccionadas
+   * mientras se emite, o las ya agrupadas si la factura está emitida.
+   */
+  const loadGroupedOrders = async (): Promise<Order[]> => {
+    const ids = invoiceLocked
+      ? alreadyGrouped.map((o) => o.id)
+      : groupedSelection;
+    if (!ids.length) return [];
+    return Promise.all(ids.map((id) => orderGateway.getById(id)));
+  };
+
   const updateProvider = (idx: number, patch: Partial<ProviderRow>) => {
     setProviders((prev) => prev.map((p, i) => (i === idx ? { ...p, ...patch } : p)));
   };
@@ -453,6 +538,9 @@ export function OrderBillingStep({
         billingExchangeRateId: invoiceRateId,
         generateInvoice: invoiceEnabled,
         ...(invoiceEnabled ? { invoiceNumber, invoiceDate } : {}),
+        ...(invoiceEnabled && groupedSelection.length
+          ? { coveredOrderIds: groupedSelection }
+          : {}),
         ...(isInsurance ? { showExchangeRate: showRate } : {}),
       });
       notify.success(
@@ -488,6 +576,9 @@ export function OrderBillingStep({
       await orderGateway.issueInvoice(order.id, {
         invoiceNumber,
         invoiceDate,
+        ...(groupedSelection.length
+          ? { coveredOrderIds: groupedSelection }
+          : {}),
         ...(isInsurance ? { showExchangeRate: showRate } : {}),
         ...(invoiceRateId ? { exchangeRateId: invoiceRateId } : {}),
       });
@@ -524,8 +615,10 @@ export function OrderBillingStep({
             }
           : {}),
       };
-      if (fmt === 'xlsx') await downloadFacturacionXlsx(doc);
-      else await downloadFacturacionPdf(doc);
+      // La factura agrupada lista también los servicios de las otras órdenes.
+      const grouped = await loadGroupedOrders();
+      if (fmt === 'xlsx') await downloadFacturacionXlsx(doc, grouped);
+      else await downloadFacturacionPdf(doc, grouped);
     } catch (err) {
       notify.error(getHttpErrorMessage(err, 'No se pudo generar la factura'));
     } finally {
@@ -772,6 +865,115 @@ export function OrderBillingStep({
             </div>
           ) : null}
         </div>
+        {canGroupInvoice && (loadingCandidates || candidates.length > 0) ? (
+          <div className="mt-4 rounded-lg border bg-card p-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-md bg-brand-cyan-soft text-brand-cyan-strong flex items-center justify-center shrink-0">
+                <Layers className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold">
+                  Agrupar otras órdenes en esta factura
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Órdenes ya finalizadas del mismo contratante que todavía no
+                  tienen factura. Sus servicios salen en este mismo documento,
+                  cada uno con su N° de orden. No cambia nada en cuentas por
+                  cobrar ni por pagar.
+                </p>
+              </div>
+            </div>
+
+            {loadingCandidates ? (
+              <p className="text-sm text-muted-foreground">
+                Buscando órdenes que se puedan agrupar…
+              </p>
+            ) : (
+              <>
+                <ul className="divide-y rounded-lg border overflow-hidden">
+                  {candidates.map((c) => {
+                    const checked = groupedIds.includes(c.id);
+                    return (
+                      <li key={c.id}>
+                        <label
+                          htmlFor={`grouped-${c.id}`}
+                          className={cn(
+                            'flex items-start gap-3 px-3 py-2.5 cursor-pointer',
+                            checked && 'bg-brand-cyan-soft/40',
+                          )}
+                        >
+                          <Checkbox
+                            id={`grouped-${c.id}`}
+                            checked={checked}
+                            onCheckedChange={() => toggleGrouped(c.id)}
+                            className="mt-0.5"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-semibold flex items-center gap-2 flex-wrap">
+                              <span className="font-mono">N° {c.orderNumber}</span>
+                              <span className="text-muted-foreground font-normal">
+                                {formatDateOnly(c.orderDate)}
+                              </span>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {c.patientName || 'Sin paciente'} ·{' '}
+                              {c.serviceTypesCount}{' '}
+                              {c.serviceTypesCount === 1
+                                ? 'servicio'
+                                : 'servicios'}
+                              {c.serviceKey ? ` · Clave ${c.serviceKey}` : ''}
+                            </div>
+                          </div>
+                          <div className="text-sm font-mono shrink-0">
+                            {formatMoney(Number(c.priceAmount) || 0)} $
+                          </div>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <p className="text-xs text-muted-foreground">
+                  {groupedSelection.length === 0 ? (
+                    'La factura sale sólo con esta orden.'
+                  ) : (
+                    <>
+                      La factura agrupa{' '}
+                      <span className="font-semibold text-foreground">
+                        {groupedSelection.length + 1} órdenes
+                      </span>{' '}
+                      por un total de{' '}
+                      <span className="font-mono font-semibold text-foreground">
+                        {formatMoney(groupedTotalUsd)} $
+                      </span>
+                      {invoiceRateBs > 0
+                        ? ` (${formatMoney(groupedTotalUsd * invoiceRateBs)} Bs)`
+                        : ''}
+                      .
+                    </>
+                  )}
+                </p>
+              </>
+            )}
+          </div>
+        ) : null}
+
+        {invoiceLocked && alreadyGrouped.length > 0 ? (
+          <div className="mt-4 rounded-lg border bg-card p-3">
+            <div className="text-sm font-semibold flex items-center gap-2">
+              <Layers className="w-4 h-4 text-brand-cyan-strong" />
+              Factura agrupada · {alreadyGrouped.length + 1} órdenes
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Además de esta orden, la factura N° {invoiceActive?.invoiceNumber}{' '}
+              cubre:{' '}
+              <span className="font-mono text-foreground">
+                {alreadyGrouped.map((o) => `N° ${o.orderNumber}`).join(', ')}
+              </span>
+              . Al anularla, todas vuelven a quedar sin factura.
+            </p>
+          </div>
+        ) : null}
+
         {canIssueInvoice ? (
           <div className="mt-4 rounded-lg border border-warning/40 bg-warning-soft px-3 py-2.5 flex items-center justify-between gap-3 flex-wrap">
             <p className="text-xs text-warning">
@@ -824,7 +1026,25 @@ export function OrderBillingStep({
                       >
                         {cancelled ? 'Anulada' : 'Vigente'}
                       </Badge>
+                      {(inv.coveredOrders ?? []).length > 1 ? (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] text-brand-cyan-strong border-brand-cyan-strong/40"
+                        >
+                          Agrupada · {(inv.coveredOrders ?? []).length} órdenes
+                        </Badge>
+                      ) : null}
                     </div>
+                    {(inv.coveredOrders ?? []).length > 1 ? (
+                      <div className="text-xs text-muted-foreground">
+                        Órdenes:{' '}
+                        <span className="font-mono">
+                          {(inv.coveredOrders ?? [])
+                            .map((o) => o.orderNumber)
+                            .join(', ')}
+                        </span>
+                      </div>
+                    ) : null}
                     <div className="text-xs text-muted-foreground">
                       Control{' '}
                       <span className="font-mono">{inv.controlNumber}</span> ·

@@ -44,6 +44,9 @@ export function OrderInvoiceCancelModal({
 
   if (!invoice) return null;
 
+  /** Órdenes que la factura cubre además de esta (factura agrupada). */
+  const grouped = (invoice.coveredOrders ?? []).filter((o) => o.id !== orderId);
+
   const onSubmit = async () => {
     if (reason.trim().length < 3) {
       setError('El motivo debe tener al menos 3 caracteres');
@@ -102,6 +105,16 @@ export function OrderInvoiceCancelModal({
             {invoice.controlNumber} NO se podrán volver a usar: ese número ya se
             emitió.
           </div>
+          {grouped.length > 0 ? (
+            <div className="rounded-lg border border-warning/40 bg-warning-soft px-3 py-2.5 text-xs text-warning flex items-start gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              Es una factura agrupada: también quedarán sin factura las órdenes{' '}
+              <span className="font-mono">
+                {grouped.map((o) => `N° ${o.orderNumber}`).join(', ')}
+              </span>
+              . Podrás volver a agruparlas en una factura nueva.
+            </div>
+          ) : null}
           <div className="space-y-1.5">
             <Label htmlFor="invoiceCancelReason" className="text-sm font-medium">
               Motivo de la anulación

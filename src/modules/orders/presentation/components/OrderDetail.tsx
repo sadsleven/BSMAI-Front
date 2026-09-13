@@ -11,10 +11,12 @@ import { formatMoney } from '@/lib/format/money';
 import { formatDateOnly } from '@/lib/dates';
 import { orderGateway } from '../../infrastructure/orderGateway';
 import {
+  activeInvoice,
   holderDisplayId,
   holderDisplayName,
   orderServiceKeyDisplay,
   orderUserDisplayName,
+  otherCoveredOrders,
   ORDER_STATUS_LABEL,
   ORDER_TYPE_LABEL,
   PAYMENT_TYPE_LABEL,
@@ -87,6 +89,12 @@ export function OrderDetailBody({
         .filter(Boolean),
     ),
   );
+
+  // Factura AGRUPADA: otras órdenes que salen en la misma factura vigente.
+  const currentInvoice = activeInvoice(order);
+  const groupedInvoiceOrders = currentInvoice
+    ? otherCoveredOrders(currentInvoice, order.id)
+    : [];
 
   // Ajuste de monto del Paso 1: priceAmount − priceBaseAmount (null si no hay
   // base snapshot o si el monto coincide con el catálogo).
@@ -284,6 +292,15 @@ export function OrderDetailBody({
         )}
         {order.invoiceDate && (
           <DetailRow label="Fecha de factura" value={fmtDay(order.invoiceDate)} />
+        )}
+        {groupedInvoiceOrders.length > 0 && (
+          <DetailRow
+            label="Factura agrupada con"
+            value={groupedInvoiceOrders
+              .map((o) => `N° ${o.orderNumber}`)
+              .join(', ')}
+            mono
+          />
         )}
         {order.invoiceExchangeRate ? (
           <DetailRow

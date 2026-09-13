@@ -11,9 +11,12 @@ import {
 import {
   groupSpecialtyLabel,
   internalOrderFileBaseName,
+  invoiceCoveredOrders,
+  invoiceDetail,
   invoiceFileBaseName,
+  invoicePatientLabel,
+  invoiceServiceKeys,
   orderReferenceLabel,
-  providerInternalNumber,
   resolveInvoiceRateBs,
   type OrderProviderGroup,
 } from './orderExcel';
@@ -72,15 +75,24 @@ async function loadLogoDataUrl(): Promise<string | null> {
 }
 
 /** Facturación: PDF con mismo layout que el Excel. */
-export async function downloadFacturacionPdf(order: Order): Promise<void> {
+/**
+ * Factura del Paso 4 en PDF. `groupedOrders` son las órdenes ADICIONALES que la
+ * misma factura cubre (factura agrupada). Espeja `downloadFacturacionXlsx`.
+ */
+export async function downloadFacturacionPdf(
+  order: Order,
+  groupedOrders: Order[] = [],
+): Promise<void> {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
 
+  const covered = invoiceCoveredOrders(order, groupedOrders);
   const isInsurance = order.type === 'insurance';
   const insurancePhone = order.insurance?.phones?.[0]?.number ?? '';
   const holder = holderDisplayName(order.holder);
-  const patient = holderDisplayName(order.patient);
+  const patientLabel = invoicePatientLabel(covered);
+  const patient = patientLabel.name;
   const holderCi = holderId(order.holder);
-  const patientCi = holderId(order.patient);
+  const patientCi = patientLabel.ci;
   const condicionesPago = order.type === 'cash' ? 'CONTADO' : 'CREDITO';
 
   // Contratante de la factura: seguro → datos del seguro;
@@ -99,52 +111,16 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
       : order.contractor?.name ?? ''
     : holder;
 
-  // Conversión a Bs vía tasa más reciente vigente al crear la orden
+  // Conversión a Bs con la tasa de ESTA factura (una sola para todas las
+  // órdenes agrupadas).
   const rateBs = await resolveInvoiceRateBs(order);
-  const priceFx = Number(order.priceAmount) || 0;
-  const priceBs = rateBs > 0 ? priceFx * rateBs : priceFx;
   const currencySymbol = '$';
 
-  const cobroKind: 'insurance' | 'particular' =
-    order.type === 'insurance' ? 'insurance' : 'particular';
-  const priceFxForSt = (serviceTypeId: string): number => {
-    const snap = (order.servicePricing ?? []).find(
-      (p) => p.serviceTypeId === serviceTypeId && p.kind === cobroKind,
-    );
-    if (!snap) return 0;
-    return Number(snap.priceUsd) || 0;
-  };
-  const stsRaw = (order.orderServiceTypes ?? []).filter(
-    (row) => !!row.serviceTypeId,
-  );
-  const detailRowsList: Array<{
-    name: string;
-    qty: number;
-    unitBs: number;
-    totalRowBs: number;
-    orderNo: string;
-  }> =
-    stsRaw.length > 0
-      ? stsRaw.map((row) => {
-          const fx = priceFxForSt(row.serviceTypeId);
-          const unitBs = rateBs > 0 ? fx * rateBs : fx;
-          const qty = Math.max(1, Math.trunc(row.quantity ?? 1));
-          const pid =
-            row.providerType === 'doctor' ? row.doctorId : row.careCenterId;
-          return {
-            name: row.customName?.trim() || row.serviceType?.name || '',
-            qty,
-            unitBs,
-            totalRowBs: unitBs * qty,
-            orderNo:
-              row.internalOrder?.internalNumber ??
-              providerInternalNumber(order, row.providerType, pid ?? ''),
-          };
-        })
-      : [{ name: '', qty: 1, unitBs: priceBs, totalRowBs: priceBs, orderNo: order.orderNumber }];
-  const sumStsBs = detailRowsList.reduce((acc, r) => acc + r.totalRowBs, 0);
-  const totalBs = sumStsBs > 0 ? sumStsBs : priceBs;
-  const totalFx = rateBs > 0 ? totalBs / rateBs : priceFx;
+  const {
+    rows: detailRowsList,
+    totalBs,
+    totalFx,
+  } = invoiceDetail(covered, rateBs);
 
   const fmtMoney = (n: number): string => formatMoney(n);
 
@@ -236,7 +212,8 @@ export async function downloadFacturacionPdf(order: Order): Promise<void> {
   body.push([
     'Clave de Servicio Nº:',
     '',
-    order.serviceKey ?? '',
+    // Agrupada: las claves de todas las órdenes, separadas por " / ".
+    invoiceServiceKeys(covered),
     '',
     '',
   ]);

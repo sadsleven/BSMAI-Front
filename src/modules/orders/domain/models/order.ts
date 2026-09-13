@@ -268,14 +268,29 @@ export interface Order {
   deletedAt?: string | null;
 }
 
+/** Orden cubierta por una factura (en una agrupada hay varias). */
+export interface InvoiceCoveredOrder {
+  id: string;
+  orderNumber: string;
+  /** `YYYY-MM-DD`. */
+  orderDate: string;
+  priceAmount: string | number;
+}
+
 /**
  * Factura emitida en el Paso 4. Una orden puede acumular varias: a lo sumo una
  * vigente más las anuladas. Anular una factura NO cancela la orden, y su número
  * queda quemado para siempre (no se reutiliza).
+ *
+ * Una misma factura puede AGRUPAR varias órdenes del mismo contratante
+ * (`coveredOrders`): `orderId` es sólo la orden EMISORA.
  */
 export interface OrderInvoice {
   id: string;
+  /** Orden EMISORA. Las órdenes que cubre están en `coveredOrders`. */
   orderId: string;
+  /** Órdenes que cubre esta factura (incluye la emisora). */
+  coveredOrders?: InvoiceCoveredOrder[];
   /** Valor numérico del N° de factura (null en facturas históricas). */
   number?: string | number | null;
   /** N° impreso, con ceros a la izquierda. */
@@ -338,6 +353,38 @@ export function activeInvoice(order: Pick<Order, 'invoices'>): OrderInvoice | nu
   return (order.invoices ?? []).find((i) => i.status === 'active') ?? null;
 }
 
+/** ¿La factura agrupa más de una orden? */
+export function isGroupedInvoice(invoice: OrderInvoice): boolean {
+  return (invoice.coveredOrders ?? []).length > 1;
+}
+
+/**
+ * Órdenes AGRUPADAS en la factura distintas de `orderId` (las "otras" que
+ * salen en el mismo documento).
+ */
+export function otherCoveredOrders(
+  invoice: OrderInvoice,
+  orderId: string,
+): InvoiceCoveredOrder[] {
+  return (invoice.coveredOrders ?? []).filter((o) => o.id !== orderId);
+}
+
+/**
+ * Candidata a agruparse en la misma factura: orden finalizada del mismo
+ * contratante y tipo que todavía no tiene factura vigente.
+ * (`GET /orders/:id/invoiceable`).
+ */
+export interface InvoiceableOrder {
+  id: string;
+  orderNumber: string;
+  /** `YYYY-MM-DD`. */
+  orderDate: string;
+  priceAmount: string | number;
+  serviceKey: string | null;
+  patientName: string;
+  serviceTypesCount: number;
+}
+
 /** Disponibilidad de un N° de factura (Paso 4). */
 export interface InvoiceNumberAvailability {
   /** Valor por defecto: el mayor emitido + 1. */
@@ -363,6 +410,11 @@ export interface IssueOrderInvoiceDto {
   exchangeRateId?: string;
   /** ¿Imprime la fila "Tasa de cambio BCV"? Sin enviar, la regla derivada. */
   showExchangeRate?: boolean;
+  /**
+   * Órdenes ADICIONALES que cubre esta misma factura (factura agrupada). La
+   * orden de la ruta va incluida siempre; no hace falta repetirla.
+   */
+  coveredOrderIds?: string[];
 }
 
 export interface AttendOrderDto {
@@ -415,6 +467,11 @@ export interface BillingOrderDto {
   invoiceDate?: string;
   /** ¿Imprime la fila "Tasa de cambio BCV"? Sin enviar, la regla derivada. */
   showExchangeRate?: boolean;
+  /**
+   * Órdenes ADICIONALES que cubre esta misma factura (factura agrupada). Sólo
+   * aplica cuando la finalización emite factura.
+   */
+  coveredOrderIds?: string[];
 }
 
 export interface OrderServiceTypeRowInput {
