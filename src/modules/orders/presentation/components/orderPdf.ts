@@ -11,6 +11,7 @@ import {
 import {
   groupSpecialtyLabel,
   internalOrderFileBaseName,
+  invoiceCondicionesPago,
   invoiceCoveredOrders,
   invoiceDetail,
   invoiceFileBaseName,
@@ -93,7 +94,7 @@ export async function downloadFacturacionPdf(
   const patient = patientLabel.name;
   const holderCi = holderId(order.holder);
   const patientCi = patientLabel.ci;
-  const condicionesPago = order.type === 'cash' ? 'CONTADO' : 'CREDITO';
+  const condicionesPago = invoiceCondicionesPago(covered);
 
   // Contratante de la factura: seguro → datos del seguro;
   // contado/crédito/cashea → datos del titular.

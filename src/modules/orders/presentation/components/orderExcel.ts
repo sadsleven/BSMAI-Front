@@ -399,6 +399,15 @@ export function invoicePatientLabel(covered: Order[]): {
   };
 }
 
+/**
+ * Condiciones de pago de la factura. Una factura agrupada puede mezclar tipos
+ * de orden: sale CONTADO sólo si TODAS las órdenes son de contado; basta una a
+ * crédito / seguro / cashea para que el documento diga CREDITO.
+ */
+export function invoiceCondicionesPago(covered: Order[]): string {
+  return covered.every((o) => o.type === 'cash') ? 'CONTADO' : 'CREDITO';
+}
+
 /** Claves de servicio de la factura (una por orden agrupada, sin repetir). */
 export function invoiceServiceKeys(covered: Order[]): string {
   return Array.from(
@@ -456,9 +465,9 @@ export async function downloadFacturacionXlsx(
       : order.contractor?.name ?? ''
     : holder;
 
-  // Condiciones de pago: insurance/credit/cashea → CREDITO ; cash → CONTADO
-  const condicionesPago =
-    order.type === 'cash' ? 'CONTADO' : 'CREDITO';
+  // Condiciones de pago: CONTADO sólo si TODAS las órdenes de la factura son
+  // de contado (una agrupada puede mezclar tipos).
+  const condicionesPago = invoiceCondicionesPago(covered);
 
   // Conversión a Bs con la tasa de ESTA factura (una sola para todas las
   // órdenes agrupadas, aunque se hayan atendido en fechas distintas).

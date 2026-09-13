@@ -59,6 +59,7 @@ import {
   activeInvoice,
   deriveControlNumber,
   formatInvoiceNumber,
+  ORDER_TYPE_LABEL,
   orderUserDisplayName,
   otherCoveredOrders,
 } from '../../../domain/models/order';
@@ -172,6 +173,8 @@ export function OrderBillingStep({
    * documento). No toca cuentas por cobrar ni por pagar: la factura es sólo el
    * comprobante hacia el cliente.
    */
+  /** Switch "Agrupar otras órdenes": apagado no carga ni muestra la lista. */
+  const [groupInvoice, setGroupInvoice] = useState(false);
   const [candidates, setCandidates] = useState<InvoiceableOrder[]>([]);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [candidatesError, setCandidatesError] = useState<string | null>(null);
@@ -421,7 +424,7 @@ export function OrderBillingStep({
   const canGroupInvoice =
     canBilling && !invoiceLocked && (invoiceEnabled || canIssueInvoice);
   useEffect(() => {
-    if (!canGroupInvoice) return;
+    if (!canGroupInvoice || !groupInvoice) return;
     let cancelled = false;
     void (async () => {
       setLoadingCandidates(true);
@@ -450,7 +453,13 @@ export function OrderBillingStep({
     return () => {
       cancelled = true;
     };
-  }, [canGroupInvoice, order.id]);
+  }, [canGroupInvoice, groupInvoice, order.id]);
+
+  const toggleGroupInvoice = (checked: boolean) => {
+    setGroupInvoice(checked);
+    // Apagarlo descarta lo marcado: la factura vuelve a ser de una sola orden.
+    if (!checked) setGroupedIds([]);
+  };
 
   const toggleGrouped = (id: string) => {
     setGroupedIds((prev) =>
@@ -465,11 +474,26 @@ export function OrderBillingStep({
    */
   const groupedSelection = useMemo(
     () =>
-      canGroupInvoice
+      canGroupInvoice && groupInvoice
         ? groupedIds.filter((id) => candidates.some((c) => c.id === id))
         : [],
-    [canGroupInvoice, groupedIds, candidates],
+    [canGroupInvoice, groupInvoice, groupedIds, candidates],
   );
+
+  /**
+   * La factura dice CONTADO sólo si TODAS sus órdenes son de contado. Si la
+   * selección mezcla tipos, se avisa para que nadie se sorprenda.
+   */
+  const mixedTypesWarning = useMemo(() => {
+    const selected = candidates.filter((c) => groupedSelection.includes(c.id));
+    if (!selected.length) return null;
+    const types = new Set<string>([order.type, ...selected.map((c) => c.orderType)]);
+    if (types.size <= 1) return null;
+    const labels = Array.from(types)
+      .map((t) => ORDER_TYPE_LABEL[t as keyof typeof ORDER_TYPE_LABEL] ?? t)
+      .join(', ');
+    return `La factura mezcla órdenes de ${labels}. Las condiciones de pago saldrán como CREDITO (sólo dice CONTADO si todas son de contado) y el encabezado usa los datos de esta orden.`;
+  }, [candidates, groupedSelection, order.type]);
 
   /** Total USD de la factura: esta orden + las agrupadas seleccionadas. */
   const groupedTotalUsd = useMemo(() => {
@@ -880,25 +904,16 @@ export function OrderBillingStep({
           ) : null}
         </div>
         {canGroupInvoice ? (
-          <div className="mt-4 rounded-lg border bg-card p-4 space-y-3">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-md bg-brand-cyan-soft text-brand-cyan-strong flex items-center justify-center shrink-0">
-                <Layers className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-sm font-semibold">
-                  Agrupar otras órdenes en esta factura
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Órdenes ya finalizadas del mismo contratante que todavía no
-                  tienen factura. Sus servicios salen en este mismo documento,
-                  cada uno con su N° de orden. No cambia nada en cuentas por
-                  cobrar ni por pagar.
-                </p>
-              </div>
-            </div>
+          <div className="mt-4 rounded-lg border bg-card p-3 space-y-3">
+            <FormSwitch
+              id="groupInvoice"
+              label="Agrupar otras órdenes en esta factura"
+              description="Emite una sola factura por varias órdenes del mismo titular que todavía no tengan factura, sin importar el tipo de orden ni la sucursal. Sus servicios salen en este mismo documento, cada uno con su N° de orden. No cambia nada en cuentas por cobrar ni por pagar."
+              checked={groupInvoice}
+              onCheckedChange={toggleGroupInvoice}
+            />
 
-            {loadingCandidates ? (
+            {!groupInvoice ? null : loadingCandidates ? (
               <p className="text-sm text-muted-foreground">
                 Buscando órdenes que se puedan agrupar…
               </p>
@@ -910,10 +925,8 @@ export function OrderBillingStep({
             ) : candidates.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 No hay otras órdenes para agrupar. Aquí sólo aparecen las
-                órdenes <span className="font-medium">ya finalizadas</span> del
-                mismo{' '}
-                {isInsurance ? 'seguro (y misma vía)' : 'titular'}, del mismo
-                tipo de orden y de esta sucursal, que todavía{' '}
+                órdenes <span className="font-medium">ya finalizadas</span> del{' '}
+                <span className="font-medium">mismo titular</span> que todavía{' '}
                 <span className="font-medium">no tengan factura</span>.
               </p>
             ) : (
@@ -945,11 +958,15 @@ export function OrderBillingStep({
                             </div>
                             <div className="text-xs text-muted-foreground">
                               {c.patientName || 'Sin paciente'} ·{' '}
+                              {ORDER_TYPE_LABEL[c.orderType]} ·{' '}
                               {c.serviceTypesCount}{' '}
                               {c.serviceTypesCount === 1
                                 ? 'servicio'
                                 : 'servicios'}
                               {c.serviceKey ? ` · Clave ${c.serviceKey}` : ''}
+                              {c.branchName && c.branchName !== order.branch?.name
+                                ? ` · ${c.branchName}`
+                                : ''}
                             </div>
                           </div>
                           <div className="text-sm font-mono shrink-0">
@@ -960,6 +977,12 @@ export function OrderBillingStep({
                     );
                   })}
                 </ul>
+                {mixedTypesWarning ? (
+                  <p className="text-xs text-warning flex items-start gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                    {mixedTypesWarning}
+                  </p>
+                ) : null}
                 <p className="text-xs text-muted-foreground">
                   {groupedSelection.length === 0 ? (
                     'La factura sale sólo con esta orden.'

@@ -370,9 +370,9 @@ export function otherCoveredOrders(
 }
 
 /**
- * Candidata a agruparse en la misma factura: orden finalizada del mismo
- * contratante y tipo que todavía no tiene factura vigente.
- * (`GET /orders/:id/invoiceable`).
+ * Candidata a agruparse en la misma factura: orden finalizada del **mismo
+ * titular** que todavía no tiene factura vigente. El tipo de orden y la
+ * sucursal no restringen (`GET /orders/:id/invoiceable`).
  */
 export interface InvoiceableOrder {
   id: string;
@@ -382,6 +382,10 @@ export interface InvoiceableOrder {
   priceAmount: string | number;
   serviceKey: string | null;
   patientName: string;
+  /** Tipo de la orden candidata: una factura agrupada puede mezclar tipos. */
+  orderType: OrderType;
+  /** Sucursal de la orden candidata (puede no ser la de la emisora). */
+  branchName: string | null;
   serviceTypesCount: number;
 }
 
