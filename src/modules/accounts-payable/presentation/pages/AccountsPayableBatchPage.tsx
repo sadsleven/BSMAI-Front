@@ -151,6 +151,13 @@ export function AccountsPayableBatchPage() {
   const batchTaxUnit = selectedTaxUnit ?? currentTaxUnit;
   // Retención SENIAT del lote: opcional, activada por defecto.
   const [applyRetention, setApplyRetention] = useState(true);
+  // Tasa de pago USD/Bs del lote: por defecto la vigente; define el neto en Bs.
+  const { usdRates: createRates, currentRateId: createCurrentRateId } = useUsdRates();
+  const [createRateId, setCreateRateId] = useState<string | null>(null);
+  const createRate = useMemo<ExchangeRate | null>(() => {
+    const wanted = createRateId ?? createCurrentRateId;
+    return (wanted ? createRates.find((r) => r.id === wanted) : null) ?? null;
+  }, [createRateId, createCurrentRateId, createRates]);
   // Si vino selección de la lista, fijamos el proveedor de entrada.
   const lockedProvider = useMemo<CreateProvider | null>(
     () =>
@@ -277,6 +284,7 @@ export function AccountsPayableBatchPage() {
             : undefined,
         taxUnitId: batchTaxUnit?.id,
         applyRetention,
+        exchangeRateId: createRate?.id,
         internalOrderIds: selectedRows.map((r) => r.internalOrderId),
       });
       notify.success('Lote creado');
@@ -430,6 +438,9 @@ export function AccountsPayableBatchPage() {
           <div className="mt-3 rounded-md border p-3 flex items-center justify-between gap-3 text-sm">
             <div className="text-[11px] text-muted-foreground font-mono">
               {selectedRows.length} orden(es) · {formatMoney(selectedTotalUsd)} USD
+              {createRate
+                ? ` ≈ ${formatMoney(selectedTotalUsd * Number(createRate.amountBs))} Bs. (bruto)`
+                : ''}
             </div>
             {selectedRows.length > 0 && !sameProvider ? (
               <Badge className="bg-warning text-white shrink-0">
@@ -437,6 +448,20 @@ export function AccountsPayableBatchPage() {
               </Badge>
             ) : null}
           </div>
+        </FormSection>
+
+        <FormSection
+          title="Tasa de pago"
+          description="Tasa USD/Bs a la que se paga el lote: define el total en Bs, la retención y el neto a pagar. Por defecto la vigente; puedes cambiarla después mientras el lote no esté pagado."
+        >
+          <UsdRateSelect
+            className="max-w-md"
+            rates={createRates}
+            selectedId={createRate?.id ?? ''}
+            currentRateId={createCurrentRateId}
+            onSelect={setCreateRateId}
+            label="Tasa de pago (USD/Bs)"
+          />
         </FormSection>
 
         {applyRetention ? (
@@ -572,7 +597,8 @@ function BatchDetail({ id }: { id: string }) {
     if (candidatesOpen) loadCandidates();
   }, [candidatesOpen, loadCandidates]);
 
-  // Tasa de facturación (USD/Bs) de la primera orden — define el neto en Bs.
+  // Tasa de facturación (USD/Bs) de la primera orden: fallback para lotes
+  // previos sin tasa de pago propia (el BE aplica la misma regla).
   const usdRate = useMemo<ExchangeRate | null>(() => {
     const fr = batch?.orders?.[0]?.internalOrder?.order?.billingExchangeRate;
     if (!fr) return null;
@@ -585,12 +611,25 @@ function BatchDetail({ id }: { id: string }) {
     } as ExchangeRate;
   }, [batch]);
 
-  // Tasa de pago seleccionable: si el pago se hizo otro día, se puede elegir la
-  // tasa de ese día. Por defecto (null) aplica la tasa de facturación.
+  // Tasa de pago del lote (persistida en el BE): define bruto Bs, retención y
+  // neto a pagar. Cambiarla recalcula el lote en el servidor.
+  const batchRate = useMemo<ExchangeRate | null>(() => {
+    const er = batch?.exchangeRate;
+    if (!er) return null;
+    return {
+      id: er.id,
+      currency: er.currency,
+      amountBs: String(er.amountBs),
+      effectiveDate: er.effectiveDate ?? '',
+      isActive: er.isActive ?? true,
+    } as ExchangeRate;
+  }, [batch]);
+  const paymentRate = batchRate ?? usdRate;
+
   const { usdRates, currentRateId } = useUsdRates();
-  const [paymentRateId, setPaymentRateId] = useState<string | null>(null);
   const ratesForSelect = useMemo<ExchangeRate[]>(() => {
     const list = [...usdRates];
+    if (batchRate && !list.some((r) => r.id === batchRate.id)) list.push(batchRate);
     if (usdRate && !list.some((r) => r.id === usdRate.id)) list.push(usdRate);
     // Tasas ya snapshoteadas en pagos del lote (para prefijar al editar).
     for (const p of batch?.payments ?? []) {
@@ -606,13 +645,7 @@ function BatchDetail({ id }: { id: string }) {
       }
     }
     return list;
-  }, [usdRates, usdRate, batch]);
-  const paymentRate = useMemo<ExchangeRate | null>(
-    () =>
-      (paymentRateId ? ratesForSelect.find((r) => r.id === paymentRateId) : null) ??
-      usdRate,
-    [paymentRateId, ratesForSelect, usdRate],
-  );
+  }, [usdRates, batchRate, usdRate, batch]);
 
   // ---------------- Payment form ----------------
   const methods = useForm<PaymentFormValues>({
@@ -678,7 +711,7 @@ function BatchDetail({ id }: { id: string }) {
   const cumulativeBs = Math.round((priorPaidBs + totalPaymentsBs) * 100) / 100;
   const isOver = netBs > 0 && cumulativeBs - netBs > 0.01;
   const isComplete = netBs > 0 && Math.abs(cumulativeBs - netBs) <= 0.01;
-  const canRegister = !isPaid && !!usdRate && totalPaymentsBs > 0.01 && !isOver;
+  const canRegister = !isPaid && !!paymentRate && totalPaymentsBs > 0.01 && !isOver;
 
   const onSubmitPayment = async (values: PaymentFormValues) => {
     setBusy(true);
@@ -710,7 +743,6 @@ function BatchDetail({ id }: { id: string }) {
       setBatch(updated);
       reset({ payments: [] });
       setEditingPaymentId(null);
-      setPaymentRateId(null);
     } catch (e) {
       notify.fromError(e, 'No se pudo registrar el pago');
     } finally {
@@ -722,10 +754,8 @@ function BatchDetail({ id }: { id: string }) {
     const p = batch?.payments?.find((x) => x.id === paymentId);
     if (!p) return;
     setEditingPaymentId(paymentId);
-    // Prefijar la tasa de pago con la snapshot del pago (si es USD/Bs).
-    setPaymentRateId(
-      p.amountCurrency !== 'EUR' && p.exchangeRateId ? p.exchangeRateId : null,
-    );
+    // La fila trae su propia tasa snapshot (exchangeRateId); la tasa de pago
+    // del lote no se toca al editar un pago.
     reset({
       payments: [
         {
@@ -745,7 +775,6 @@ function BatchDetail({ id }: { id: string }) {
 
   const cancelEdit = () => {
     setEditingPaymentId(null);
-    setPaymentRateId(null);
     reset({ payments: [] });
   };
 
@@ -830,6 +859,38 @@ function BatchDetail({ id }: { id: string }) {
     }
   };
 
+  /**
+   * Cambia la tasa de pago del lote (el BE recalcula bruto Bs/retención/neto).
+   * Las filas del form que estaban en la tasa anterior (o sin tasa) pasan a la
+   * nueva; las que el usuario fijó a otra tasa se respetan.
+   */
+  const onSetExchangeRate = async (exchangeRateId: string) => {
+    if (!exchangeRateId || exchangeRateId === paymentRate?.id) return;
+    const prevRateId = paymentRate?.id ?? '';
+    setBusy(true);
+    try {
+      setBatch(await accountsPayableGateway.setExchangeRate(id, exchangeRateId));
+      const rows = getValues('payments') ?? [];
+      if (rows.length) {
+        setValue(
+          'payments',
+          rows.map((p) =>
+            p.amountCurrency === 'BS' &&
+            (!p.exchangeRateId || p.exchangeRateId === prevRateId)
+              ? { ...p, exchangeRateId }
+              : p,
+          ),
+          { shouldDirty: true },
+        );
+      }
+      notify.success('Tasa de pago actualizada');
+    } catch (e) {
+      notify.fromError(e, 'No se pudo cambiar la tasa de pago');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const existingInternalIds = useMemo(
     () => new Set((batch?.orders ?? []).map((o) => o.internalOrderId)),
     [batch],
@@ -905,11 +966,15 @@ function BatchDetail({ id }: { id: string }) {
       {/* Totales */}
       <FormSection
         title="Resumen"
-        description={
+        description={`${
           appliesRetention
             ? 'Bruto, retención de ISLR (Decreto 1.808) y el neto a pagar al proveedor.'
             : 'Bruto y neto a pagar al proveedor. Este lote no descuenta retención de ISLR.'
-        }
+        }${
+          paymentRate
+            ? ` Bs a la tasa de pago del lote: 1 USD = ${formatMoney(paymentRate.amountBs)} Bs.`
+            : ''
+        }`}
       >
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
           <SummaryTile label="TotalUSD" value={`${formatMoney(batch.grossUsd ?? 0)} USD`} />
@@ -1156,11 +1221,11 @@ function BatchDetail({ id }: { id: string }) {
                     : 'El proveedor recibe el bruto completo (este lote no descuenta retención). Puedes pagar parcial.'
                 }
               >
-                {!usdRate ? (
+                {!paymentRate ? (
                   <p className="text-sm text-destructive flex items-center gap-1.5">
                     <AlertTriangle className="w-4 h-4" />
-                    Las órdenes del lote no tienen tasa de facturación; no se puede
-                    registrar el pago.
+                    El lote no tiene tasa de pago ni las órdenes tasa de facturación;
+                    no se puede registrar el pago.
                   </p>
                 ) : (
                   <>
@@ -1230,18 +1295,24 @@ function BatchDetail({ id }: { id: string }) {
                           rates={ratesForSelect}
                           selectedId={paymentRate?.id ?? ''}
                           currentRateId={currentRateId}
-                          onSelect={setPaymentRateId}
+                          onSelect={onSetExchangeRate}
+                          disabled={isPaid || busy || !canUpdate}
+                          lockNote={
+                            isPaid
+                              ? 'El lote está pagado: edita o quita un pago para cambiar la tasa.'
+                              : undefined
+                          }
                           label="Tasa de pago (USD/Bs)"
                         />
                         <p className="text-[11px] text-muted-foreground mt-1">
-                          Tasa por defecto de los pagos nuevos y de los pagos en
-                          divisas. Cada pago en Bs o EUR lleva su propia tasa en
-                          la fila. El neto del lote se mantiene a la tasa de
-                          facturación
-                          {usdRate
-                            ? ` (1 USD = ${formatMoney(usdRate.amountBs)} Bs.)`
+                          Tasa a la que se paga el lote: define el total Bs, la
+                          retención y el neto a pagar ({formatMoney(batch.grossUsd ?? 0)}{' '}
+                          USD × tasa). También es la tasa por defecto de los pagos
+                          nuevos y de los pagos en divisas; cada pago en Bs o EUR
+                          puede llevar su propia tasa en la fila.
+                          {!batchRate && usdRate
+                            ? ' Este lote no tiene tasa propia: usa la de facturación de sus órdenes hasta que elijas una.'
                             : ''}
-                          .
                         </p>
                       </div>
                     </div>

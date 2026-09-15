@@ -96,6 +96,17 @@ export const accountsPayableGateway = {
     );
     return data;
   },
+  /** Cambia la tasa de pago USD/Bs del lote (recalcula bruto Bs/retención/neto/estado). */
+  async setExchangeRate(
+    id: string,
+    exchangeRateId: string,
+  ): Promise<AccountsPayableBatch> {
+    const { data } = await api.patch<AccountsPayableBatch>(
+      `${BASE}/${id}/exchange-rate`,
+      { exchangeRateId },
+    );
+    return data;
+  },
   /** Activa/desactiva la retención de ISLR del lote (recalcula neto/estado). */
   async setRetention(
     id: string,
