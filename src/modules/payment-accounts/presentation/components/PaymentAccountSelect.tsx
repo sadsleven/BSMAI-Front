@@ -15,6 +15,9 @@ import {
   type PaymentAccountType,
 } from '../../domain/models/paymentAccount';
 
+/** Valor del ítem informativo (deshabilitado) cuando no hay cuentas. */
+const EMPTY_SENTINEL = '__no_payment_account__';
+
 export type PaymentAccountSelectProps = {
   /** ID de la cuenta seleccionada (string vacío = ninguna). */
   value: string;
@@ -88,6 +91,7 @@ export function PaymentAccountSelect({
     !!a.deletedAt || !a.isActive || a.type !== type;
 
   const handleChange = (id: string) => {
+    if (id === EMPTY_SENTINEL) return;
     const acc = items.find((a) => a.id === id);
     onChange(id, acc);
   };
@@ -135,9 +139,19 @@ export function PaymentAccountSelect({
       </SelectTrigger>
       <SelectContent>
         {items.length === 0 ? (
-          <div className="px-2 py-1.5 text-xs text-muted-foreground">
-            No hay cuentas disponibles para este tipo.
-          </div>
+          /*
+           * Debe ser un <SelectItem> (deshabilitado), no un <div>: con
+           * position="item-aligned" Radix necesita al menos un ítem para
+           * posicionar el menú; con cero ítems bloquea el scroll del body
+           * pero no pinta nada. El sentinel nunca llega a `onChange`.
+           */
+          <SelectItem value={EMPTY_SENTINEL} disabled>
+            <span className="text-xs text-muted-foreground">
+              {loading
+                ? 'Cargando…'
+                : `No tiene cuenta de ${PAYMENT_ACCOUNT_TYPE_LABEL[type]} registrada`}
+            </span>
+          </SelectItem>
         ) : (
           items.map((a) => {
             const stale = isStale(a);
