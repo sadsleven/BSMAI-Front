@@ -167,6 +167,17 @@ export type OrderPaymentFormProps = {
    */
   rateSelectable?: boolean;
   /**
+   * Con `rateSelectable`, bloquea el selector de tasa USD/Bs de las filas en
+   * Bs: la fila sigue guardando `exchangeRateId` (y las tasas se siguen
+   * cargando para mostrarla y convertir montos), pero el usuario no la cambia
+   * desde la fila; la decide el padre vía `usdRate` (p. ej. la tasa de pago
+   * del lote en cuentas por pagar). Las filas en EUR no tienen tasa del padre
+   * y conservan su selector EUR/Bs.
+   */
+  rateLocked?: boolean;
+  /** Texto de ayuda bajo el campo de tasa bloqueado (dónde se cambia). */
+  rateLockedNote?: string;
+  /**
    * Notifica las tasas cargadas por el selector para que el padre pueda
    * convertir montos de pagos que referencian tasas no vigentes.
    */
@@ -191,6 +202,14 @@ function rateDateLabel(effectiveDate: string): string {
     month: '2-digit',
     year: 'numeric',
   });
+}
+
+/** Etiqueta de una tasa: `1 USD = 500,00 Bs. · 17/08/2026 · vigente`. */
+function rateOptionLabel(r: ExchangeRate, currentRateId?: string | null): string {
+  const parts = [`1 ${r.currency} = ${formatMoney(r.amountBs)} Bs.`];
+  if (r.effectiveDate) parts.push(rateDateLabel(r.effectiveDate));
+  if (currentRateId && r.id === currentRateId) parts.push('vigente');
+  return parts.join(' · ');
 }
 
 function defaultsForType(
@@ -244,6 +263,8 @@ export function OrderPaymentForm({
   allowedTypes = ALL_TYPES,
   hideExchangeRate = false,
   rateSelectable = false,
+  rateLocked = false,
+  rateLockedNote,
   onRatesLoaded,
   remaining = null,
 }: OrderPaymentFormProps) {
@@ -525,7 +546,25 @@ export function OrderPaymentForm({
                   {!isUsd && !isOther && !isTransferUsd && !hideExchangeRate ? (
                     <div className="space-y-1">
                       <Label className="text-xs">Tasa de cambio</Label>
-                      {rateSelectable ? (
+                      {rateSelectable && rateLocked && !isEur ? (
+                        <>
+                          <Input
+                            readOnly
+                            value={
+                              rowRate ? rateOptionLabel(rowRate, rowCurrentRateId) : '—'
+                            }
+                            className={cn(
+                              'h-9 bg-muted/30',
+                              err.exchangeRateId && 'border-destructive',
+                            )}
+                          />
+                          {rateLockedNote ? (
+                            <p className="text-[11px] text-muted-foreground">
+                              {rateLockedNote}
+                            </p>
+                          ) : null}
+                        </>
+                      ) : rateSelectable ? (
                         <Select
                           value={p.exchangeRateId || ''}
                           onValueChange={(v) => update(i, { exchangeRateId: v })}
@@ -548,9 +587,7 @@ export function OrderPaymentForm({
                           <SelectContent>
                             {rowRateOptions.map((r) => (
                               <SelectItem key={r.id} value={r.id}>
-                                1 {r.currency} = {formatMoney(r.amountBs)} Bs. ·{' '}
-                                {rateDateLabel(r.effectiveDate)}
-                                {r.id === rowCurrentRateId ? ' · vigente' : ''}
+                                {rateOptionLabel(r, rowCurrentRateId)}
                               </SelectItem>
                             ))}
                           </SelectContent>

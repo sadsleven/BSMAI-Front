@@ -83,6 +83,18 @@ export interface AccountsPayableBatch {
    * obligación SENIAT al pagarlo. Usa `batchAppliesRetention(b)` (undefined ⇒ sí).
    */
   applyRetention?: boolean;
+  /**
+   * Tasa de pago USD/Bs del lote: define bruto Bs, retención y neto a pagar.
+   * null = tasa de facturación de cada orden (lotes previos).
+   */
+  exchangeRateId?: string | null;
+  exchangeRate?: {
+    id: string;
+    currency: string;
+    amountBs: string | number;
+    effectiveDate?: string;
+    isActive?: boolean;
+  } | null;
   status: AccountsPayableStatus;
   paidAt?: string | null;
   orders: AccountsPayableOrder[];
@@ -138,6 +150,8 @@ export interface CreateAccountsPayableBatchDto {
   taxUnitId?: string;
   /** ¿Descontar la retención de ISLR? Sin enviar = `true`. */
   applyRetention?: boolean;
+  /** Tasa de pago USD/Bs del lote. Sin enviar = tasa USD vigente. */
+  exchangeRateId?: string;
   internalOrderIds: string[];
 }
 
@@ -197,8 +211,13 @@ export function orderInternalNumber(o: AccountsPayableOrder): string {
 // helpers exponen los montos del lote (transient del BE) a nivel reporte.
 // ----------------------------------------------------------------------------
 
-/** Tasa USD/Bs de facturación de la primera orden del lote, si existe. */
-function batchBillingRateBs(b: AccountsPayableBatch): number | null {
+/**
+ * Tasa USD/Bs con la que el BE convierte el lote a Bs: la tasa de pago del
+ * lote y, si no tiene (lotes previos), la de facturación de la primera orden.
+ */
+export function batchRateBs(b: AccountsPayableBatch): number | null {
+  const own = Number(b.exchangeRate?.amountBs);
+  if (Number.isFinite(own) && own > 0) return own;
   const r = Number(
     b.orders?.[0]?.internalOrder?.order?.billingExchangeRate?.amountBs,
   );
@@ -206,7 +225,7 @@ function batchBillingRateBs(b: AccountsPayableBatch): number | null {
 }
 
 /**
- * Falta por pagar en USD del lote (= `pendingBs` / tasa de facturación). El
+ * Falta por pagar en USD del lote (= `pendingBs` / tasa del lote). El
  * segundo argumento se acepta por compatibilidad con el cálculo anterior pero
  * se ignora: el BE ya descuenta la retención SENIAT en `pendingBs`.
  */
@@ -215,7 +234,7 @@ export function pendingUsd(
   _taxUnitBs?: number | null,
 ): number {
   void _taxUnitBs;
-  const rate = batchBillingRateBs(b);
+  const rate = batchRateBs(b);
   const pBs = Number(b.pendingBs ?? 0);
   if (!rate || !Number.isFinite(pBs)) return 0;
   return Math.round((pBs / rate) * 100) / 100;
