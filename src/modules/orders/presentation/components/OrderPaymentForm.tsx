@@ -15,6 +15,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { bankGateway } from '@/modules/banks/infrastructure/bankGateway';
 import type { Bank } from '@/modules/banks/domain/models/bank';
 import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchangeRate';
+import { matchUsdRateForEur } from '@/modules/exchange-rates/domain/models/rateMatching';
 import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
 import { useRatesByCurrency } from '@/modules/exchange-rates/presentation/hooks/useUsdRates';
 import type { OrderPaymentValues } from '@/lib/validations/schemas';
@@ -486,6 +487,20 @@ export function OrderPaymentForm({
             })();
             const rowRateOptions = isEur ? ratesByCurrency.EUR : ratesByCurrency.USD;
             const rowCurrentRateId = isEur ? currentEurRateId : currentUsdRateId;
+            // Fila EUR: tasa USD/Bs del mismo día que la tasa EUR elegida (o la
+            // más cercana), con la que se cruza EUR → Bs → USD. Misma regla que
+            // el BE (`pickUsdRateForEur`).
+            const eurCross =
+              isEur && ratesEnabled ? matchUsdRateForEur(rowRate, ratesByCurrency.USD) : null;
+            const eurCrossPreview = (() => {
+              if (!isEur || !eurCross || !rowRate) return null;
+              const amount = Number(p.amountValue || 0);
+              const eurBs = Number(rowRate.amountBs);
+              const usdBs = Number(eurCross.rate.amountBs);
+              if (!(amount > 0) || !(eurBs > 0) || !(usdBs > 0)) return null;
+              const bs = amount * eurBs;
+              return { eurBs, usdBs, bs, usd: bs / usdBs };
+            })();
             // Cuentas registradas del beneficiario que aplican a esta fila.
             const recipientPickable =
               !!recipientMethods && !usePaymentAccount && (isMobileOrTransfer || isOther);
@@ -607,6 +622,37 @@ export function OrderPaymentForm({
                         <p className="text-xs text-destructive flex items-center gap-1">
                           <AlertTriangle className="w-3 h-3" />
                           {err.exchangeRateId}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {isEur && ratesEnabled && !hideExchangeRate ? (
+                    <div className="space-y-1">
+                      <Label className="text-xs">Tasa USD/Bs del día (para cruzar a USD)</Label>
+                      <Input
+                        readOnly
+                        value={
+                          eurCross
+                            ? rateOptionLabel(eurCross.rate, currentUsdRateId)
+                            : '—'
+                        }
+                        className="h-9 bg-muted/30"
+                      />
+                      <p className="text-[11px] text-muted-foreground">
+                        {!eurCross
+                          ? 'Sin tasa USD para cruzar: se usará la tasa USD de referencia.'
+                          : eurCross.sameDay
+                            ? 'Tasa USD de la misma fecha que la tasa EUR. Conversión EUR → Bs → USD.'
+                            : 'No hay tasa USD de esa fecha; se usa la más cercana. Conversión EUR → Bs → USD.'}
+                      </p>
+                      {eurCrossPreview ? (
+                        <p className="text-[11px] font-mono text-muted-foreground">
+                          {formatMoney(Number(p.amountValue || 0))} EUR ×{' '}
+                          {formatMoney(eurCrossPreview.eurBs)} = Bs{' '}
+                          {formatMoney(eurCrossPreview.bs)} ÷{' '}
+                          {formatMoney(eurCrossPreview.usdBs)} ={' '}
+                          {formatMoney(eurCrossPreview.usd)} USD
                         </p>
                       ) : null}
                     </div>
@@ -959,8 +1005,10 @@ function usdBsForPayment(
  * Convierte un pago a USD.
  * - USD → directo.
  * - BS  → amount / tasa USD/Bs del pago (o la de referencia si no tiene).
- * - EUR → (amount × eurRate.amountBs) / usdRate.amountBs; eurRate viene del
- *         snapshot del propio pago (exchangeRateId → rateLookup).
+ * - EUR → (amount × eurRate.amountBs) / usdBs; eurRate viene del snapshot del
+ *         propio pago (exchangeRateId → rateLookup) y usdBs es la tasa USD/Bs
+ *         del MISMO DÍA que esa tasa EUR (o la más cercana) entre `usdRates`;
+ *         sin candidatas, la de referencia `usdRate`. Misma regla que el BE.
  *
  * Devuelve 0 si falta tasa requerida (UI debe alertar).
  */
@@ -968,6 +1016,7 @@ export function paymentInUsd(
   p: OrderPaymentValues,
   usdRate: ExchangeRate | null | undefined,
   rateLookup: (id: string) => ExchangeRate | null,
+  usdRates: ReadonlyArray<ExchangeRate> = [],
 ): number {
   const amount = Number(p.amountValue || 0);
   if (!Number.isFinite(amount) || amount <= 0) return 0;
@@ -979,14 +1028,15 @@ export function paymentInUsd(
     return amount / usdBs;
   }
 
-  const usdBs = Number(usdRate?.amountBs ?? 0);
-  if (!usdBs || usdBs <= 0) return 0;
-
   // EUR
   const rateId = (p.exchangeRateId || '').trim();
   const eurRate = rateId ? rateLookup(rateId) : null;
   const eurBs = Number(eurRate?.amountBs ?? 0);
   if (!eurBs || eurBs <= 0) return 0;
+
+  const cross = matchUsdRateForEur(eurRate, usdRates)?.rate ?? usdRate;
+  const usdBs = Number(cross?.amountBs ?? 0);
+  if (!usdBs || usdBs <= 0) return 0;
   return (amount * eurBs) / usdBs;
 }
 

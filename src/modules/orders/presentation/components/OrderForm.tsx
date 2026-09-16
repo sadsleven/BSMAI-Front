@@ -655,14 +655,24 @@ export function OrderForm({
     );
   })();
 
+  // Candidatas USD/Bs para cruzar pagos en EUR (EUR → Bs → USD con la tasa
+  // USD del mismo día que la tasa EUR del pago; ver `matchUsdRateForEur`).
+  const usdRatesForCross = useMemo(
+    () => [
+      ...usdRates,
+      ...Object.values(ratesById).filter((r) => r.currency === 'USD'),
+    ],
+    [usdRates, ratesById],
+  );
+
   // Payments totals (USD).
   const totalPaid = useMemo(() => {
     if (!payments) return 0;
     return payments.reduce(
-      (acc, p) => acc + paymentInUsd(p, currentRate, lookupRate),
+      (acc, p) => acc + paymentInUsd(p, currentRate, lookupRate, usdRatesForCross),
       0,
     );
-  }, [payments, currentRate, ratesById]);
+  }, [payments, currentRate, ratesById, usdRatesForCross]);
 
   const priceAmount = useWatch({ control, name: 'priceAmount' }) as number | undefined;
   // Monto base (FE-only): suma de precios de catálogo con la que se compara el
