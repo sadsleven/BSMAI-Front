@@ -616,11 +616,12 @@ function BatchDetail({ id }: { id: string }) {
   const totalPaymentsUsd = useMemo(
     () =>
       watchedPayments.reduce(
-        (sum, p) => sum + paymentInUsd(p, selectedMarketRate, lookupRate),
+        // Pagos en EUR cruzan a USD con la tasa USD del mismo día que su tasa EUR.
+        (sum, p) => sum + paymentInUsd(p, selectedMarketRate, lookupRate, usdRates),
         0,
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [watchedPayments, selectedMarketRate, eurRatesById],
+    [watchedPayments, selectedMarketRate, eurRatesById, usdRates],
   );
   const totalPaymentsBs = useMemo(
     () =>
