@@ -722,9 +722,13 @@ function BatchDetail({ id }: { id: string }) {
         referenceNumber: p.referenceNumber || undefined,
         bankCode: p.bankCode || undefined,
         accountNumber: p.accountNumber || undefined,
-        // La tasa elegida en la fila manda (es la tasa a la que se pagó ese
-        // pago). Sin tasa propia (pagos en USD) cae a la tasa de pago del lote.
-        exchangeRateId: p.exchangeRateId || paymentRate?.id || undefined,
+        // Filas en Bs: siempre la tasa de pago del lote (la fila está
+        // bloqueada a ella). Filas en EUR llevan su tasa EUR/Bs; filas en USD
+        // sin tasa propia caen a la tasa de pago del lote.
+        exchangeRateId:
+          p.amountCurrency === 'BS'
+            ? paymentRate?.id || p.exchangeRateId || undefined
+            : p.exchangeRateId || paymentRate?.id || undefined,
         amountCurrency: p.amountCurrency,
         amountValue: p.amountValue,
       }));
@@ -754,8 +758,9 @@ function BatchDetail({ id }: { id: string }) {
     const p = batch?.payments?.find((x) => x.id === paymentId);
     if (!p) return;
     setEditingPaymentId(paymentId);
-    // La fila trae su propia tasa snapshot (exchangeRateId); la tasa de pago
-    // del lote no se toca al editar un pago.
+    // La tasa por fila está bloqueada a la tasa de pago del lote: un pago en Bs
+    // que se edita se realinea a ella (su monto en Bs no cambia). Pagos en
+    // USD/EUR conservan su tasa snapshot. La tasa de pago del lote no se toca.
     reset({
       payments: [
         {
@@ -764,7 +769,10 @@ function BatchDetail({ id }: { id: string }) {
           referenceNumber: p.referenceNumber ?? '',
           bankCode: p.bankCode ?? '',
           accountNumber: p.accountNumber ?? '',
-          exchangeRateId: p.exchangeRateId ?? '',
+          exchangeRateId:
+            p.amountCurrency === 'BS'
+              ? paymentRate?.id ?? p.exchangeRateId ?? ''
+              : p.exchangeRateId ?? '',
           amountCurrency: p.amountCurrency,
           amountValue: Number(p.amountValue) || 0,
         } as OrderPaymentValues,
@@ -861,12 +869,11 @@ function BatchDetail({ id }: { id: string }) {
 
   /**
    * Cambia la tasa de pago del lote (el BE recalcula bruto Bs/retención/neto).
-   * Las filas del form que estaban en la tasa anterior (o sin tasa) pasan a la
-   * nueva; las que el usuario fijó a otra tasa se respetan.
+   * La tasa por fila está bloqueada: todas las filas en Bs del form pasan a la
+   * nueva tasa (es la única tasa a la que se pagan los Bs del lote).
    */
   const onSetExchangeRate = async (exchangeRateId: string) => {
     if (!exchangeRateId || exchangeRateId === paymentRate?.id) return;
-    const prevRateId = paymentRate?.id ?? '';
     setBusy(true);
     try {
       setBatch(await accountsPayableGateway.setExchangeRate(id, exchangeRateId));
@@ -875,10 +882,7 @@ function BatchDetail({ id }: { id: string }) {
         setValue(
           'payments',
           rows.map((p) =>
-            p.amountCurrency === 'BS' &&
-            (!p.exchangeRateId || p.exchangeRateId === prevRateId)
-              ? { ...p, exchangeRateId }
-              : p,
+            p.amountCurrency === 'BS' ? { ...p, exchangeRateId } : p,
           ),
           { shouldDirty: true },
         );
@@ -1243,6 +1247,8 @@ function BatchDetail({ id }: { id: string }) {
                             )
                           }
                           rateSelectable
+                          rateLocked
+                          rateLockedNote="Fijada a la tasa de pago del lote; cámbiala abajo en «Tasa de pago (USD/Bs)»."
                           onRatesLoaded={(rates) =>
                             setEurRatesById((prev) => {
                               const missing = rates.filter((r) => !prev[r.id]);
@@ -1307,9 +1313,10 @@ function BatchDetail({ id }: { id: string }) {
                         <p className="text-[11px] text-muted-foreground mt-1">
                           Tasa a la que se paga el lote: define el total Bs, la
                           retención y el neto a pagar ({formatMoney(batch.grossUsd ?? 0)}{' '}
-                          USD × tasa). También es la tasa por defecto de los pagos
-                          nuevos y de los pagos en divisas; cada pago en Bs o EUR
-                          puede llevar su propia tasa en la fila.
+                          USD × tasa). Los pagos en Bs se registran a esta misma
+                          tasa (la fila la muestra bloqueada) y los pagos en USD la
+                          usan para su equivalente en Bs; los pagos en EUR eligen
+                          su tasa EUR/Bs en la fila.
                           {!batchRate && usdRate
                             ? ' Este lote no tiene tasa propia: usa la de facturación de sus órdenes hasta que elijas una.'
                             : ''}
