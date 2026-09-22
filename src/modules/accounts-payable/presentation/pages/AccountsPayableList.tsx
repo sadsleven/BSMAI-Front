@@ -579,7 +579,7 @@ export function AccountsPayableList() {
                           </div>
                         </TableCell>
                         <TableCell className="py-3.5 px-4 text-sm text-muted-foreground">
-                          {b.orders?.length ?? 0}
+                          {b.orderCount ?? b.orders?.length ?? 0}
                         </TableCell>
                         <TableCell className="py-3.5 px-4 text-sm font-mono">
                           {formatMoney(b.grossUsd ?? 0)} USD

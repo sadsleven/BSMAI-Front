@@ -263,8 +263,27 @@ export function OrderForm({
   const canCreateSpecialty = has(PERMISSIONS.SPECIALTIES.CREATE);
   const canCreatePathology = has(PERMISSIONS.PATHOLOGIES.CREATE);
   const canEditPatient = has(PERMISSIONS.PATIENTS.UPDATE);
-  // Orden finalizada → Paso 1 de sólo lectura (igual que Paso 2 y 4).
+  // Orden finalizada: el Paso 1 SIGUE editable (claves de servicio, datos,
+  // servicios, monto). Lo que lo congela es la plata ya movida — ver
+  // `batchLocked`.
   const isFinalized = savedOrder?.status === 'finalized';
+  /**
+   * Algún lote de cuentas por pagar/cobrar de la orden ya tiene pagos o cobros
+   * registrados: servicios y montos quedan congelados (espejo del guard BE).
+   * Un lote pendiente, sin pagos, no bloquea.
+   */
+  const editLocks = savedOrder?.editLocks;
+  const batchLocked = !!editLocks?.locked;
+  const lockedBatchText = [
+    editLocks?.payableBatches?.length
+      ? `cuentas por pagar ${editLocks.payableBatches.join(', ')}`
+      : null,
+    editLocks?.receivableBatches?.length
+      ? `cuentas por cobrar ${editLocks.receivableBatches.join(', ')}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(' y ');
   // Orden cancelada → todo el flujo congelado hasta reactivarla.
   const isCancelled = savedOrder?.status === 'cancelled';
   const { control, setValue, getValues, formState } = useFormContext<OrderValues>();
@@ -1333,7 +1352,7 @@ export function OrderForm({
 
       {!renderStep1 ? null : (
       <fieldset
-        disabled={isFinalized || isCancelled || step1ReadOnly}
+        disabled={isCancelled || step1ReadOnly || batchLocked}
         className="space-y-6 border-0 p-0 m-0 min-w-0"
       >
       {isCancelled ? (
@@ -1343,10 +1362,19 @@ export function OrderForm({
           {savedOrder?.cancelReason ? `: ${savedOrder.cancelReason}` : ''}. Reactívala
           desde el listado de órdenes para continuar el flujo.
         </div>
+      ) : batchLocked ? (
+        <div className="rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground flex items-start gap-2">
+          <ShieldCheck className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+          La orden ya tiene pagos registrados en el lote de {lockedBatchText}.
+          El Paso 1 queda de sólo lectura hasta que esos pagos se quiten o el
+          lote se anule.
+        </div>
       ) : isFinalized ? (
         <div className="rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground flex items-start gap-2">
           <ShieldCheck className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-          La orden está finalizada. Los datos del Paso 1 son de sólo lectura.
+          La orden está finalizada. Puedes corregir sus datos —clave de
+          servicio, paciente, servicios, monto— mientras sus cuentas por
+          pagar/cobrar sigan sin pagos registrados.
         </div>
       ) : step1ReadOnly ? (
         <div className="rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground flex items-start gap-2">
