@@ -286,6 +286,13 @@ export function OrderEdit() {
   // reactiva desde el listado de órdenes.
   const isCancelled = initialOrder?.status === 'cancelled';
 
+  /**
+   * Algún lote de cuentas por pagar/cobrar de la orden ya tiene pagos o cobros
+   * registrados: el Paso 1 queda de sólo lectura (espejo del guard BE). Un lote
+   * pendiente, sin pagos, no bloquea — el BE resincroniza sus snapshots.
+   */
+  const batchLocked = !!initialOrder?.editLocks?.locked;
+
   const step1Locked =
     !!initialOrder &&
     !!me &&
@@ -313,17 +320,19 @@ export function OrderEdit() {
       return;
     }
     try {
+      const wasDraft = initialOrder?.status === 'draft';
       await orderGateway.update(id, buildDto(values));
       notify.success('Orden actualizada');
-      // Tras guardar el Paso 1, avanzar al Paso 2 (Atención). Refresca la orden
-      // para que el paso refleje proveedores/servicios actualizados. Sin permiso
-      // de atención, vuelve al listado.
-      if (canAttention) {
-        await fetchOrder();
-        setCurrentStep('attention');
-      } else {
-        navigate('/orders');
-      }
+      await fetchOrder();
+      // Limpia el `dirty` sin perder lo escrito (si no, salir del paso dispara
+      // el diálogo de "descartar cambios" sobre datos ya guardados).
+      methods.reset(values, { keepValues: true });
+      // Borrador: guardar el Paso 1 encadena al Paso 2 (Atención); sin permiso
+      // de atención vuelve al listado. Una orden ya en flujo se queda donde
+      // está: la edición es una corrección puntual, no un avance de paso.
+      if (!wasDraft) return;
+      if (canAttention) setCurrentStep('attention');
+      else navigate('/orders');
     } catch (err) {
       notify.fromError(err, 'No se pudo actualizar la orden.');
     }
@@ -419,8 +428,9 @@ export function OrderEdit() {
             </p>
             <div className="flex items-center gap-2 flex-wrap">
               {currentStep === 'register' &&
-              initialOrder?.status === 'draft' &&
+              !!initialOrder &&
               !isCancelled &&
+              !batchLocked &&
               !step1Locked ? (
                 <Button type="submit" disabled={methods.formState.isSubmitting}>
                   {methods.formState.isSubmitting ? 'Guardando…' : 'Guardar cambios'}

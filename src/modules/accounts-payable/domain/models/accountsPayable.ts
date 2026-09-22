@@ -97,11 +97,14 @@ export interface AccountsPayableBatch {
   } | null;
   status: AccountsPayableStatus;
   paidAt?: string | null;
-  orders: AccountsPayableOrder[];
+  /** Sólo en el detalle (`getBatch`); el listado manda `orderCount`. */
+  orders?: AccountsPayableOrder[];
   payments: AccountsPayablePayment[];
   createdAt?: string;
   updatedAt?: string;
   // Transient (provistos por el BE).
+  /** Nº de órdenes del lote (agregado por el BE, no requiere `orders`). */
+  orderCount?: number;
   grossUsd?: number;
   grossBs?: number;
   retentionBs?: number;
@@ -218,6 +221,11 @@ export function orderInternalNumber(o: AccountsPayableOrder): string {
 export function batchRateBs(b: AccountsPayableBatch): number | null {
   const own = Number(b.exchangeRate?.amountBs);
   if (Number.isFinite(own) && own > 0) return own;
+  // El listado no trae el pivot: la tasa efectiva se deriva de los transient.
+  const gUsd = Number(b.grossUsd);
+  const gBs = Number(b.grossBs);
+  if (Number.isFinite(gUsd) && gUsd > 0 && Number.isFinite(gBs) && gBs > 0)
+    return gBs / gUsd;
   const r = Number(
     b.orders?.[0]?.internalOrder?.order?.billingExchangeRate?.amountBs,
   );

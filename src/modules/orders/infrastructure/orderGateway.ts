@@ -17,6 +17,7 @@ import type {
   ReportOrderDto,
   ServiceKeyAvailability,
   UpdateOrderDto,
+  UpdateProviderAmountsDto,
 } from '../domain/models/order';
 
 function buildParams(q: OrdersQuery): Record<string, string | undefined> {
@@ -213,6 +214,21 @@ export const orderGateway = {
   },
   async billing(id: string, dto: BillingOrderDto): Promise<Order> {
     const { data } = await api.patch<Order>(`/orders/${id}/billing`, dto);
+    return data;
+  },
+  /**
+   * Corrige los montos a proveedor de una orden YA finalizada sin
+   * re-facturarla. El BE lo rechaza si algún lote de CxP/CxC de la orden ya
+   * tiene pagos registrados.
+   */
+  async updateProviderAmounts(
+    id: string,
+    dto: UpdateProviderAmountsDto,
+  ): Promise<Order> {
+    const { data } = await api.patch<Order>(
+      `/orders/${id}/provider-amounts`,
+      dto,
+    );
     return data;
   },
 };

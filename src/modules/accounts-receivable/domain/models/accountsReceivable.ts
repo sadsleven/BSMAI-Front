@@ -105,7 +105,10 @@ export interface AccountsReceivableBatch {
   holder?: OrderRefSummary | null;
   status: AccountsReceivableStatus;
   collectedAt?: string | null;
-  orders: AccountsReceivableOrder[];
+  /** Sólo en el detalle (`getBatch`); el listado manda `orderCount`. */
+  orders?: AccountsReceivableOrder[];
+  /** Nº de órdenes del lote (agregado por el BE, no requiere `orders`). */
+  orderCount?: number;
   payments: AccountsReceivablePayment[];
   /**
    * Ajuste firmado del total a cobrar, en la moneda del lote (Bs si el lote es

@@ -109,6 +109,24 @@ export function OrderBillingStep({
   const canBilling = has(PERMISSIONS.ORDERS.STAGE_BILLING);
   const priceAmount = Number(order.priceAmount);
   const isFinalized = order.status === 'finalized';
+  /**
+   * Algún lote de cuentas por pagar/cobrar de la orden ya tiene pagos o cobros
+   * registrados: la liquidación queda congelada (espejo del guard BE). Mientras
+   * las cuentas sigan pendientes —sin lote, o en un lote sin pagos— los montos
+   * de una orden finalizada se pueden corregir sin re-facturarla.
+   */
+  const editLocks = order.editLocks;
+  const amountsLocked = !!editLocks?.locked;
+  const lockedBatchText = [
+    editLocks?.payableBatches?.length
+      ? `cuentas por pagar ${editLocks.payableBatches.join(', ')}`
+      : null,
+    editLocks?.receivableBatches?.length
+      ? `cuentas por cobrar ${editLocks.receivableBatches.join(', ')}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(' y ');
 
   // Tasa de la factura: seleccionable. Por defecto la tasa con la que más se
   // pagó en bolívares (contado/cashea) y, si no hubo pagos en Bs, la más
@@ -120,6 +138,7 @@ export function OrderBillingStep({
     order.invoiceExchangeRateId ?? null,
   );
   const [saving, setSaving] = useState(false);
+  const [savingAmounts, setSavingAmounts] = useState(false);
   const [downloadingFact, setDownloadingFact] = useState<null | 'xlsx' | 'pdf'>(null);
 
   const [providers, setProviders] = useState<ProviderRow[]>([]);
@@ -589,6 +608,52 @@ export function OrderBillingStep({
       notify.error(getHttpErrorMessage(err, 'No se pudo finalizar la orden'));
     } finally {
       setSaving(false);
+    }
+  };
+
+  /**
+   * Corrige los montos a proveedor de una orden YA finalizada sin re-facturarla:
+   * no toca la factura, la tasa ni el estado. El BE reescribe el pendiente de
+   * cada proveedor y resincroniza el lote de CxP donde ya esté encolado.
+   */
+  const handleSaveAmounts = async () => {
+    const invalidAmountProviders = providers.filter(
+      (p) => p.amount === undefined || p.amount <= 0,
+    );
+    if (invalidAmountProviders.length > 0) {
+      setAmountErrorsVisible(true);
+      notify.error(
+        invalidAmountProviders.length === 1
+          ? `Ingresa un monto a pagar mayor que cero para ${invalidAmountProviders[0].providerName}`
+          : `Ingresa un monto a pagar mayor que cero para: ${invalidAmountProviders
+              .map((p) => p.providerName)
+              .join(', ')}`,
+      );
+      return;
+    }
+    if (exceedsCap) {
+      notify.error('La suma de pagos supera el monto declarado de la orden');
+      return;
+    }
+    setSavingAmounts(true);
+    try {
+      await orderGateway.updateProviderAmounts(order.id, {
+        providers: providers.map((p) => ({
+          providerType: p.providerType,
+          doctorId: p.providerType === 'doctor' ? p.providerId : undefined,
+          careCenterId:
+            p.providerType === 'care_center' ? p.providerId : undefined,
+          amount: p.amount!,
+        })),
+      });
+      notify.success('Montos a proveedor actualizados');
+      onSaved();
+    } catch (err) {
+      notify.error(
+        getHttpErrorMessage(err, 'No se pudieron actualizar los montos'),
+      );
+    } finally {
+      setSavingAmounts(false);
     }
   };
 
@@ -1194,7 +1259,7 @@ export function OrderBillingStep({
                           updateProvider(idx, { amount: v, manuallyEdited: true })
                         }
                         currencyPrefix="USD"
-                        disabled={isFinalized}
+                        disabled={amountsLocked}
                         invalid={amountInvalid}
                       />
                       {amountInvalid && (
@@ -1389,24 +1454,43 @@ export function OrderBillingStep({
               </p>
             )}
 
+            {isFinalized && amountsLocked ? (
+              <p className="text-xs text-muted-foreground">
+                Los montos están congelados: la orden ya tiene pagos registrados
+                en el lote de {lockedBatchText}. Quita esos pagos o anula el lote
+                para poder corregirlos.
+              </p>
+            ) : isFinalized ? (
+              <p className="text-xs text-muted-foreground">
+                La orden está finalizada. Puedes corregir los montos mientras sus
+                cuentas por pagar sigan pendientes (sin pagos registrados); la
+                factura y su número no se tocan.
+              </p>
+            ) : null}
+
             <div className="flex justify-end">
-              <Button
-                type="button"
-                onClick={onSubmit}
-                disabled={
-                  saving ||
-                  isFinalized ||
-                  !invoiceRateId ||
-                  exceedsCap ||
-                  (invoiceEnabled && (!invoiceNumberOk || !invoiceDate))
-                }
-              >
-                {saving
-                  ? 'Guardando...'
-                  : isFinalized
-                    ? 'Orden finalizada'
-                    : 'Finalizar orden'}
-              </Button>
+              {isFinalized ? (
+                <Button
+                  type="button"
+                  onClick={handleSaveAmounts}
+                  disabled={savingAmounts || amountsLocked || exceedsCap}
+                >
+                  {savingAmounts ? 'Guardando...' : 'Guardar montos'}
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  onClick={onSubmit}
+                  disabled={
+                    saving ||
+                    !invoiceRateId ||
+                    exceedsCap ||
+                    (invoiceEnabled && (!invoiceNumberOk || !invoiceDate))
+                  }
+                >
+                  {saving ? 'Guardando...' : 'Finalizar orden'}
+                </Button>
+              )}
             </div>
           </div>
         )}

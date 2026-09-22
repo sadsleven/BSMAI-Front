@@ -263,6 +263,17 @@ export interface Order {
     email?: string | null;
   } | null;
   statusBeforeCancel?: OrderStatus | null;
+  /**
+   * Candado de edición derivado de los lotes de CxP/CxC de la orden (lo calcula
+   * el BE en el detalle). `locked` cuando algún lote suyo YA tiene pagos o
+   * cobros registrados: ahí los servicios del Paso 1 y la liquidación del Paso
+   * 4 quedan congelados. Un lote pendiente (sin pagos) no bloquea.
+   */
+  editLocks?: {
+    locked: boolean;
+    payableBatches: string[];
+    receivableBatches: string[];
+  };
   createdAt?: string;
   updatedAt?: string;
   deletedAt?: string | null;
@@ -450,6 +461,14 @@ export interface BillingProviderInput {
   doctorId?: string;
   careCenterId?: string;
   amount: number;
+}
+
+/**
+ * Corrección de la liquidación de una orden ya finalizada (Paso 4). Manda
+ * TODOS los proveedores de la orden; no toca factura, tasa ni estado.
+ */
+export interface UpdateProviderAmountsDto {
+  providers: BillingProviderInput[];
 }
 
 export interface BillingOrderDto {
@@ -712,6 +731,7 @@ export type OrderChangeAction =
   | 'attend'
   | 'report'
   | 'billing'
+  | 'provider_amounts'
   | 'payment_add'
   | 'payment_update'
   | 'payment_remove'
@@ -746,6 +766,7 @@ export const ORDER_LOG_ACTION_LABEL: Record<OrderChangeAction, string> = {
   attend: 'Atención del paciente',
   report: 'Informe médico y estudios',
   billing: 'Facturación y liquidación',
+  provider_amounts: 'Montos a proveedor corregidos',
   payment_add: 'Pago agregado',
   payment_update: 'Pago modificado',
   payment_remove: 'Pago eliminado',
