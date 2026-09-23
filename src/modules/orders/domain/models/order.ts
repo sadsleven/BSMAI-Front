@@ -432,6 +432,17 @@ export interface IssueOrderInvoiceDto {
   coveredOrderIds?: string[];
 }
 
+/**
+ * Corrección de una factura VIGENTE sin anularla (Paso 4): sólo la fecha
+ * impresa y la tasa USD/Bs del documento. El N° de factura y el de control no
+ * cambian, y la liquidación de CxP/CxC de la orden queda como está.
+ */
+export interface UpdateOrderInvoiceDto {
+  /** `YYYY-MM-DD`. */
+  invoiceDate?: string;
+  exchangeRateId?: string;
+}
+
 export interface AttendOrderDto {
   attended: boolean;
   attendedAt?: string;
@@ -740,6 +751,7 @@ export type OrderChangeAction =
   | 'cancel'
   | 'uncancel'
   | 'invoice_issue'
+  | 'invoice_update'
   | 'invoice_cancel';
 
 /** Fila del historial de cambios de la orden (mapea OrderChangeLog del BE). */
@@ -775,6 +787,7 @@ export const ORDER_LOG_ACTION_LABEL: Record<OrderChangeAction, string> = {
   cancel: 'Orden cancelada',
   uncancel: 'Cancelación revertida',
   invoice_issue: 'Factura emitida',
+  invoice_update: 'Factura corregida',
   invoice_cancel: 'Factura anulada',
 };
 

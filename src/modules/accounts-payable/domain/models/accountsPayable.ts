@@ -84,6 +84,11 @@ export interface AccountsPayableBatch {
    */
   applyRetention?: boolean;
   /**
+   * Monto MANUAL de la retención en Bs (reemplaza al cálculo automático). null
+   * = automático. Usa `batchCustomRetentionBs(b)`.
+   */
+  customRetentionBs?: string | number | null;
+  /**
    * Tasa de pago USD/Bs del lote: define bruto Bs, retención y neto a pagar.
    * null = tasa de facturación de cada orden (lotes previos).
    */
@@ -153,6 +158,8 @@ export interface CreateAccountsPayableBatchDto {
   taxUnitId?: string;
   /** ¿Descontar la retención de ISLR? Sin enviar = `true`. */
   applyRetention?: boolean;
+  /** Monto manual de la retención (Bs). Sin enviar = cálculo automático. */
+  customRetentionBs?: number;
   /** Tasa de pago USD/Bs del lote. Sin enviar = tasa USD vigente. */
   exchangeRateId?: string;
   internalOrderIds: string[];
@@ -186,6 +193,17 @@ export function pendingProviderName(p: PendingPayable): string {
 /** ¿El lote descuenta retención SENIAT? (espejo de BE `appliesRetention`; undefined ⇒ sí). */
 export function batchAppliesRetention(b: AccountsPayableBatch): boolean {
   return b.applyRetention !== false;
+}
+
+/**
+ * Monto manual de la retención del lote (Bs) o `null` = cálculo automático
+ * (espejo de BE `customRetentionBs`). Sólo aplica si el lote descuenta retención.
+ */
+export function batchCustomRetentionBs(b: AccountsPayableBatch): number | null {
+  if (!batchAppliesRetention(b)) return null;
+  if (b.customRetentionBs === null || b.customRetentionBs === undefined) return null;
+  const n = Number(b.customRetentionBs);
+  return Number.isFinite(n) ? n : null;
 }
 
 /** Régimen fiscal SENIAT del destinatario (espejo de BE `personTypeOf`). */

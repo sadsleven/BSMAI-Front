@@ -118,6 +118,20 @@ export const accountsPayableGateway = {
     );
     return data;
   },
+  /**
+   * Fija (número) o quita (`null` ⇒ automático) el monto manual de la retención
+   * del lote (recalcula neto/estado).
+   */
+  async setCustomRetention(
+    id: string,
+    customRetentionBs: number | null,
+  ): Promise<AccountsPayableBatch> {
+    const { data } = await api.patch<AccountsPayableBatch>(
+      `${BASE}/${id}/custom-retention`,
+      { customRetentionBs },
+    );
+    return data;
+  },
   async registerPayment(
     id: string,
     payments: AccountsPayablePaymentInput[],
