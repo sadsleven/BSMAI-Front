@@ -429,6 +429,16 @@ export function GuidePage() {
                 esté pagado.
               </p>
               <p>
+                Con la retención activa aparece el switch{' '}
+                <strong>"Monto de retención manual"</strong>: al encenderlo la
+                retención deja de calcularse automáticamente y retienes el monto
+                en Bs que indiques (casos especiales). El monto no puede superar
+                el bruto del lote; el desglose muestra el cálculo automático como
+                referencia. Apágalo (o desactiva la retención) para volver al
+                cálculo automático. Una retención manual no se recalcula por
+                ajuste de UT en Retenciones por pagar.
+              </p>
+              <p>
                 Estados: <code>unpaid</code> → <code>partially_paid</code> →{' '}
                 <code>paid</code>.
               </p>

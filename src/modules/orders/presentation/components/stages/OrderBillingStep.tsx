@@ -12,6 +12,7 @@ import {
   Minus,
   Plus,
   ReceiptText,
+  Save,
   Wallet,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -162,6 +163,7 @@ export function OrderBillingStep({
     useState<InvoiceNumberAvailability | null>(null);
   const [numberChecking, setNumberChecking] = useState(false);
   const [issuing, setIssuing] = useState(false);
+  const [savingInvoice, setSavingInvoice] = useState(false);
   const [invoiceToCancel, setInvoiceToCancel] = useState<OrderInvoice | null>(
     null,
   );
@@ -429,6 +431,25 @@ export function OrderBillingStep({
   const invoiceRate = rateOptions.find((r) => r.id === invoiceRateId) ?? null;
   const invoiceRateBs = invoiceRate ? Number(invoiceRate.amountBs) || 0 : 0;
 
+  /**
+   * Factura vigente CORREGIBLE: de una factura ya emitida se pueden cambiar
+   * sólo la fecha y la tasa con las que se imprime, sin anularla (el número y
+   * el de control quedan igual). Todo lo demás sigue bloqueado.
+   */
+  const canEditIssuedInvoice = invoiceLocked && canBilling;
+  const issuedDateDirty =
+    canEditIssuedInvoice &&
+    !!invoiceDate &&
+    invoiceDate !== invoiceActive?.invoiceDate;
+  const issuedRateDirty =
+    canEditIssuedInvoice &&
+    !!invoiceRateId &&
+    (invoiceActive?.exchangeRateId
+      ? invoiceRateId !== invoiceActive.exchangeRateId
+      : // Factura histórica sin tasa guardada: sólo cuenta si se eligió una.
+        pickedRateId !== null);
+  const issuedInvoiceDirty = issuedDateDirty || issuedRateDirty;
+
   const totalUsd = providers.reduce((s, p) => s + (p.amount ?? 0), 0);
   const totalSuggested = providers.reduce((s, p) => s + p.suggested, 0);
   const exceedsCap = totalUsd > priceAmount + 0.005;
@@ -694,6 +715,32 @@ export function OrderBillingStep({
     }
   };
 
+  /**
+   * Corrige la factura VIGENTE sin anularla: sólo la fecha y la tasa con las
+   * que se imprime. No toca el número, el de control, las órdenes agrupadas ni
+   * los montos de cuentas por pagar / por cobrar.
+   */
+  const handleSaveInvoice = async () => {
+    if (!invoiceActive) return;
+    if (!invoiceDate) {
+      notify.error('Selecciona la fecha de la factura');
+      return;
+    }
+    setSavingInvoice(true);
+    try {
+      await orderGateway.updateInvoice(order.id, invoiceActive.id, {
+        ...(issuedDateDirty ? { invoiceDate } : {}),
+        ...(issuedRateDirty ? { exchangeRateId: invoiceRateId } : {}),
+      });
+      notify.success('Factura actualizada');
+      onSaved();
+    } catch (err) {
+      notify.error(getHttpErrorMessage(err, 'No se pudo actualizar la factura'));
+    } finally {
+      setSavingInvoice(false);
+    }
+  };
+
   const handleDownloadFactura = async (fmt: 'xlsx' | 'pdf') => {
     setDownloadingFact(fmt);
     try {
@@ -737,6 +784,28 @@ export function OrderBillingStep({
           invoiceEnabled
             ? 'Descarga la factura única con todos los tipos de servicio de la orden, en Excel o PDF.'
             : 'Esta orden puede finalizarse sin factura. Activa la factura si necesitas emitirla.'
+        }
+        footer={
+          canEditIssuedInvoice ? (
+            <>
+              <p className="text-xs text-muted-foreground">
+                La factura N° {invoiceActive?.invoiceNumber} está emitida: puedes
+                corregir su <span className="font-medium">fecha</span> y su{' '}
+                <span className="font-medium">tasa</span> sin anularla. El N° de
+                factura, el de control, las órdenes agrupadas y los montos de
+                cuentas por pagar y por cobrar no cambian.
+              </p>
+              <Button
+                type="button"
+                className="shrink-0"
+                onClick={handleSaveInvoice}
+                disabled={savingInvoice || !issuedInvoiceDirty || !invoiceDate}
+              >
+                <Save className="w-4 h-4" />
+                {savingInvoice ? 'Guardando…' : 'Guardar cambios'}
+              </Button>
+            </>
+          ) : undefined
         }
       >
         {!isInsurance && !isFinalized ? (
@@ -902,11 +971,13 @@ export function OrderBillingStep({
               id="invoiceDate"
               value={invoiceDate || undefined}
               onChange={(v) => setInvoiceDate(v ?? '')}
-              disabled={invoiceLocked}
+              disabled={invoiceLocked && !canEditIssuedInvoice}
               invalid={!invoiceDate}
             />
             <p className="text-xs text-muted-foreground">
-              Es la fecha que se imprime en la factura. Por defecto es hoy.
+              {canEditIssuedInvoice
+                ? 'Es la fecha que se imprime en la factura. Cámbiala y guarda los cambios abajo: la factura no se anula.'
+                : 'Es la fecha que se imprime en la factura. Por defecto es hoy.'}
             </p>
           </div>
           </>
@@ -921,16 +992,18 @@ export function OrderBillingStep({
               selectedId={invoiceRateId}
               currentRateId={currentRateId}
               onSelect={setPickedRateId}
-              disabled={invoiceLocked}
+              disabled={invoiceLocked && !canEditIssuedInvoice}
               lockNote={
-                invoiceLocked
+                invoiceLocked && !canEditIssuedInvoice
                   ? 'La orden ya está facturada: la tasa quedó fija.'
                   : undefined
               }
               label="Tasa USD/Bs de la factura"
             />
             <p className="text-xs text-muted-foreground">
-              {order.useFixedRate
+              {canEditIssuedInvoice
+                ? 'Cambia sólo la tasa con la que se imprime la factura; las conversiones ya calculadas de cuentas por pagar y por cobrar no se tocan.'
+                : order.useFixedRate
                 ? 'Con esta tasa se imprime la factura y queda fija en bolívares la cuenta por cobrar del seguro no indexado.'
                 : !invoiceEnabled
                   ? 'Convierte a bolívares los montos de cuentas por pagar, retenciones y reportes.'

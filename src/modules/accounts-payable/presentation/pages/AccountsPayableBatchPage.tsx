@@ -30,6 +30,7 @@ import {
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { FormSection } from '@/components/ui/form-section';
 import { FormSwitch } from '@/components/ui/form-switch';
+import { CurrencyAmountInput } from '@/components/ui/currency-amount-input';
 import { notify } from '@/lib/notifications/toast';
 import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { getHttpErrorMessage } from '@/lib/api';
@@ -59,6 +60,7 @@ import {
 import { accountsPayableGateway } from '../../infrastructure/accountsPayableGateway';
 import {
   batchAppliesRetention,
+  batchCustomRetentionBs,
   orderInternalNumber,
   pendingProviderId,
   pendingProviderName,
@@ -151,6 +153,11 @@ export function AccountsPayableBatchPage() {
   const batchTaxUnit = selectedTaxUnit ?? currentTaxUnit;
   // Retención SENIAT del lote: opcional, activada por defecto.
   const [applyRetention, setApplyRetention] = useState(true);
+  // Monto manual de la retención (Bs): reemplaza al cálculo automático.
+  const [customRetention, setCustomRetention] = useState(false);
+  const [customRetentionBs, setCustomRetentionBs] = useState<number | undefined>(
+    undefined,
+  );
   // Tasa de pago USD/Bs del lote: por defecto la vigente; define el neto en Bs.
   const { usdRates: createRates, currentRateId: createCurrentRateId } = useUsdRates();
   const [createRateId, setCreateRateId] = useState<string | null>(null);
@@ -233,7 +240,14 @@ export function AccountsPayableBatchPage() {
     [selectedRows, providerKey],
   );
 
-  const canCreate = selectedRows.length >= 1 && !!activeProvider && sameProvider;
+  // Con monto manual activo hay que indicar el monto.
+  const customRetentionReady =
+    !applyRetention || !customRetention || customRetentionBs !== undefined;
+  const canCreate =
+    selectedRows.length >= 1 &&
+    !!activeProvider &&
+    sameProvider &&
+    customRetentionReady;
 
   // Resultados del buscador: sólo al escribir, excluye las ya agregadas y
   // (con proveedor activo) restringe a ese mismo doctor/centro.
@@ -284,6 +298,8 @@ export function AccountsPayableBatchPage() {
             : undefined,
         taxUnitId: batchTaxUnit?.id,
         applyRetention,
+        customRetentionBs:
+          applyRetention && customRetention ? customRetentionBs : undefined,
         exchangeRateId: createRate?.id,
         internalOrderIds: selectedRows.map((r) => r.internalOrderId),
       });
@@ -332,6 +348,23 @@ export function AccountsPayableBatchPage() {
             checked={applyRetention}
             onCheckedChange={setApplyRetention}
           />
+          {applyRetention ? (
+            <CustomRetentionControls
+              className="mt-4 pt-4 border-t"
+              enabled={customRetention}
+              onEnabledChange={(next) => {
+                setCustomRetention(next);
+                if (!next) setCustomRetentionBs(undefined);
+              }}
+              amount={customRetentionBs}
+              onAmountChange={setCustomRetentionBs}
+              hint={
+                customRetention
+                  ? 'El monto se aplica al crear el lote y no puede superar el bruto en Bs.'
+                  : undefined
+              }
+            />
+          ) : null}
         </FormSection>
 
         <FormSection
@@ -867,6 +900,44 @@ function BatchDetail({ id }: { id: string }) {
     }
   };
 
+  // Monto manual de retención: el switch es local hasta que se guarda el monto
+  // (un PATCH por tecla sería ruidoso); apagarlo con monto guardado ⇒ PATCH null.
+  const savedCustomRetention = batch ? batchCustomRetentionBs(batch) : null;
+  const [customOn, setCustomOn] = useState(false);
+  const [customDraft, setCustomDraft] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    setCustomOn(savedCustomRetention !== null);
+    setCustomDraft(savedCustomRetention ?? undefined);
+  }, [savedCustomRetention]);
+
+  const onSetCustomRetention = async (next: number | null) => {
+    setBusy(true);
+    try {
+      setBatch(await accountsPayableGateway.setCustomRetention(id, next));
+      notify.success(
+        next === null
+          ? 'Retención automática restablecida'
+          : 'Monto de retención guardado',
+      );
+    } catch (e) {
+      notify.fromError(e, 'No se pudo cambiar el monto de la retención');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onToggleCustomRetention = (next: boolean) => {
+    if (!next) {
+      setCustomOn(false);
+      setCustomDraft(undefined);
+      if (savedCustomRetention !== null) void onSetCustomRetention(null);
+      return;
+    }
+    setCustomOn(true);
+    // Punto de partida: la retención actual del lote (la automática).
+    setCustomDraft(savedCustomRetention ?? batch?.retentionBs ?? undefined);
+  };
+
   /**
    * Cambia la tasa de pago del lote (el BE recalcula bruto Bs/retención/neto).
    * La tasa por fila está bloqueada: todas las filas en Bs del form pasan a la
@@ -956,6 +1027,32 @@ function BatchDetail({ id }: { id: string }) {
           onCheckedChange={onSetRetention}
           disabled={isPaid || busy || !canUpdate}
         />
+        {appliesRetention ? (
+          <CustomRetentionControls
+            className="mt-4 pt-4 border-t"
+            enabled={customOn}
+            onEnabledChange={onToggleCustomRetention}
+            amount={customDraft}
+            onAmountChange={setCustomDraft}
+            disabled={isPaid || busy || !canUpdate}
+            onSave={() => {
+              if (customDraft !== undefined) void onSetCustomRetention(customDraft);
+            }}
+            saveDisabled={
+              customDraft === undefined || customDraft === savedCustomRetention
+            }
+            saving={busy}
+            hint={
+              !customOn
+                ? undefined
+                : savedCustomRetention === null
+                  ? `Cálculo automático actual: ${formatMoney(batch.retentionBs ?? 0)} Bs. Guarda el monto para aplicarlo al lote.`
+                  : seniatBreakdown
+                    ? `Cálculo automático de referencia: ${formatMoney(seniatBreakdown.taxAmountBs)} Bs.`
+                    : undefined
+            }
+          />
+        ) : null}
         {isPaid ? (
           <p className="text-xs text-muted-foreground mt-2">
             El lote está pagado: edita o quita un pago para cambiar la retención.
@@ -972,7 +1069,9 @@ function BatchDetail({ id }: { id: string }) {
         title="Resumen"
         description={`${
           appliesRetention
-            ? 'Bruto, retención de ISLR (Decreto 1.808) y el neto a pagar al proveedor.'
+            ? savedCustomRetention !== null
+              ? 'Bruto, retención de ISLR fijada manualmente y el neto a pagar al proveedor.'
+              : 'Bruto, retención de ISLR (Decreto 1.808) y el neto a pagar al proveedor.'
             : 'Bruto y neto a pagar al proveedor. Este lote no descuenta retención de ISLR.'
         }${
           paymentRate
@@ -984,7 +1083,11 @@ function BatchDetail({ id }: { id: string }) {
           <SummaryTile label="TotalUSD" value={`${formatMoney(batch.grossUsd ?? 0)} USD`} />
           <SummaryTile label="TotalBs." value={`${formatMoney(batch.grossBs ?? 0)} Bs.`} />
           <SummaryTile
-            label="Retención SENIAT"
+            label={
+              savedCustomRetention !== null
+                ? 'Retención SENIAT (manual)'
+                : 'Retención SENIAT'
+            }
             value={
               appliesRetention ? `${formatMoney(batch.retentionBs ?? 0)} Bs.` : 'No aplica'
             }
@@ -1009,6 +1112,7 @@ function BatchDetail({ id }: { id: string }) {
               retentionBs={batch.retentionBs ?? 0}
               taxUnitBs={taxUnitBs}
               result={seniatBreakdown}
+              customRetentionBs={savedCustomRetention}
             />
 
             <Can permission={PERMISSIONS.ACCOUNTS_PAYABLE.UPDATE}>
@@ -1498,12 +1602,15 @@ function SeniatBreakdown({
   retentionBs,
   taxUnitBs,
   result,
+  customRetentionBs,
 }: {
   personType: SeniatPersonType;
   grossBs: number;
   retentionBs: number;
   taxUnitBs: number | null;
   result: RetentionResult | null;
+  /** Monto manual del lote (Bs); null = la retención es el cálculo automático. */
+  customRetentionBs: number | null;
 }) {
   const isLegal = personType === 'legal_entity';
   const regimen = isLegal
@@ -1522,15 +1629,20 @@ function SeniatBreakdown({
         value: `${formatMoney(result.thresholdBs)} Bs.`,
       });
     }
-    tiles.push(
-      result.belowThreshold
-        ? { label: 'Retención', value: 'Exento', tone: 'warning' }
-        : {
-            label: 'Retención',
-            value: `${formatMoney(result.taxAmountBs)} Bs.`,
-            tone: 'warning',
-          },
-    );
+    const autoValue = result.belowThreshold
+      ? 'Exento'
+      : `${formatMoney(result.taxAmountBs)} Bs.`;
+    if (customRetentionBs !== null) {
+      // Monto manual: el cálculo automático queda sólo como referencia.
+      tiles.push({ label: 'Cálculo automático', value: autoValue });
+      tiles.push({
+        label: 'Retención (manual)',
+        value: `${formatMoney(customRetentionBs)} Bs.`,
+        tone: 'warning',
+      });
+    } else {
+      tiles.push({ label: 'Retención', value: autoValue, tone: 'warning' });
+    }
   }
 
   return (
@@ -1554,6 +1666,82 @@ function SeniatBreakdown({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Switch "Monto de retención manual" + input del monto (create + detalle). En
+ * el detalle el monto se confirma con "Guardar" (`onSave`); en create se manda
+ * al crear el lote.
+ */
+function CustomRetentionControls({
+  enabled,
+  onEnabledChange,
+  amount,
+  onAmountChange,
+  disabled,
+  onSave,
+  saveDisabled,
+  saving,
+  hint,
+  className,
+}: {
+  enabled: boolean;
+  onEnabledChange: (next: boolean) => void;
+  amount: number | undefined;
+  onAmountChange: (value: number | undefined) => void;
+  disabled?: boolean;
+  /** Detalle: botón "Guardar monto". Sin `onSave` (create) no se muestra. */
+  onSave?: () => void;
+  saveDisabled?: boolean;
+  saving?: boolean;
+  hint?: string;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      <FormSwitch
+        label="Monto de retención manual"
+        description={
+          enabled
+            ? 'La retención NO se calcula automáticamente: se retiene el monto en Bs que indiques (casos especiales).'
+            : 'La retención se calcula automáticamente según el Decreto 1.808 (tasa, UT y sustraendo).'
+        }
+        checked={enabled}
+        onCheckedChange={onEnabledChange}
+        disabled={disabled}
+      />
+      {enabled ? (
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <div className="w-full max-w-xs space-y-1">
+            <label
+              htmlFor="ap-custom-retention"
+              className="text-xs font-medium text-muted-foreground"
+            >
+              Monto a retener (Bs.)
+            </label>
+            <CurrencyAmountInput
+              id="ap-custom-retention"
+              value={amount}
+              onChange={onAmountChange}
+              disabled={disabled}
+              invalid={amount === undefined}
+            />
+          </div>
+          {onSave ? (
+            <Button
+              type="button"
+              size="sm"
+              onClick={onSave}
+              disabled={disabled || saveDisabled}
+            >
+              {saving ? 'Guardando…' : 'Guardar monto'}
+            </Button>
+          ) : null}
+          {hint ? <p className="w-full text-xs text-muted-foreground">{hint}</p> : null}
+        </div>
+      ) : null}
     </div>
   );
 }

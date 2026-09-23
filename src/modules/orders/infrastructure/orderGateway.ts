@@ -17,6 +17,7 @@ import type {
   ReportOrderDto,
   ServiceKeyAvailability,
   UpdateOrderDto,
+  UpdateOrderInvoiceDto,
   UpdateProviderAmountsDto,
 } from '../domain/models/order';
 
@@ -170,6 +171,21 @@ export const orderGateway = {
   /** Emite una factura nueva en una orden finalizada sin factura vigente. */
   async issueInvoice(id: string, dto: IssueOrderInvoiceDto): Promise<Order> {
     const { data } = await api.post<Order>(`/orders/${id}/invoices`, dto);
+    return data;
+  },
+  /**
+   * Corrige una factura VIGENTE sin anularla: sólo fecha y tasa del documento
+   * (el N° de factura y el de control no cambian).
+   */
+  async updateInvoice(
+    id: string,
+    invoiceId: string,
+    dto: UpdateOrderInvoiceDto,
+  ): Promise<Order> {
+    const { data } = await api.patch<Order>(
+      `/orders/${id}/invoices/${invoiceId}`,
+      dto,
+    );
     return data;
   },
   /** Anula una factura de la orden (la orden sigue activa). */
