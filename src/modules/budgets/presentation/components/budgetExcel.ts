@@ -1,0 +1,526 @@
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
+import { formatDateOnly } from '@/lib/dates';
+import { bankGateway } from '@/modules/banks/infrastructure/bankGateway';
+import type { Budget, BudgetTemplate } from '../../domain/models/budget';
+import {
+  APS_ATTACHMENTS_NOTE,
+  BUDGET_COMPANY,
+  buildBudgetDoc,
+  budgetBankLines,
+  budgetCompanyHeaderText,
+  budgetFileBaseName,
+  type BudgetDocData,
+} from './budgetDocument';
+
+const AFMI_BLUE = 'FF002060';
+const APS_BLUE = 'FF003895';
+
+/** Carga el logo AFMI desde public/. Null si falla (el documento sale sin él). */
+async function loadLogoBuffer(): Promise<ArrayBuffer | null> {
+  try {
+    const resp = await fetch(`${import.meta.env.BASE_URL}excel-image.png`);
+    if (!resp.ok) return null;
+    return await resp.arrayBuffer();
+  } catch {
+    return null;
+  }
+}
+
+/** Nombre del banco de la cuenta del presupuesto, desde el catálogo. */
+async function resolveBankName(budget: Budget): Promise<string> {
+  const code = budget.paymentAccount?.bankCode;
+  if (!code) return '';
+  try {
+    const banks = await bankGateway.list();
+    return banks.find((b) => b.code === code)?.name ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function saveWorkbook(
+  wb: ExcelJS.Workbook,
+  budget: Budget,
+  template: BudgetTemplate,
+): Promise<void> {
+  return wb.xlsx.writeBuffer().then((buf) => {
+    saveAs(
+      new Blob([buf], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }),
+      `${budgetFileBaseName(budget, template)}.xlsx`,
+    );
+  });
+}
+
+/** Escribe valor + estilo en una celda, de forma compacta. */
+function put(
+  ws: ExcelJS.Worksheet,
+  addr: string,
+  value: ExcelJS.CellValue,
+  font: Partial<ExcelJS.Font>,
+  align?: Partial<ExcelJS.Alignment>,
+  numFmt?: string,
+): ExcelJS.Cell {
+  const c = ws.getCell(addr);
+  c.value = value;
+  c.font = font;
+  if (align) c.alignment = align;
+  if (numFmt) c.numFmt = numFmt;
+  return c;
+}
+
+/** Línea horizontal (borde inferior) a lo ancho de A..`toCol` de una fila. */
+function rule(ws: ExcelJS.Worksheet, row: number, toCol: number): void {
+  for (let c = 1; c <= toCol; c++) {
+    ws.getCell(row, c).border = {
+      bottom: { style: 'thin', color: { argb: 'FF000000' } },
+    };
+  }
+}
+
+/**
+ * Cabecera común de las plantillas PACIENTE y SEGUROS: logo AFMI anclado a A1
+ * y el bloque de razón social / RIF / dirección / teléfonos mergeado en C1:C2,
+ * calcando el `PRESUPUESTO_EXCEL.xlsx` de la administración.
+ */
+async function writeCompanyHeader(ws: ExcelJS.Worksheet): Promise<void> {
+  ws.getRow(1).height = 84;
+  const logo = await loadLogoBuffer();
+  if (logo) {
+    const imageId = ws.workbook.addImage({ buffer: logo, extension: 'png' });
+    ws.addImage(imageId, {
+      tl: { col: 0, row: 0 },
+      ext: { width: 214, height: 88 },
+    } as ExcelJS.ImagePosition);
+  }
+  ws.mergeCells('C1:C2');
+  put(
+    ws,
+    'C1',
+    budgetCompanyHeaderText(),
+    { name: 'Calibri', size: 11, bold: true, color: { argb: 'FF000000' } },
+    { horizontal: 'center', vertical: 'middle', wrapText: true },
+  );
+}
+
+/** Título "PRESUPUESTO DE SERVICIOS." centrado en C, en el azul del formato. */
+function writeTitle(ws: ExcelJS.Worksheet, row: number): void {
+  ws.getRow(row).height = 19.5;
+  put(
+    ws,
+    `C${row}`,
+    'PRESUPUESTO DE SERVICIOS.',
+    { name: 'Tahoma', size: 16, bold: true, color: { argb: AFMI_BLUE } },
+    { horizontal: 'center', vertical: 'middle' },
+  );
+}
+
+/**
+ * Pie común: "Elaborado por" (el usuario que creó el presupuesto) y el espacio
+ * de "FIRMA Y SELLO". El sello va en blanco a propósito: el documento se firma
+ * y sella a mano, no se estampa una firma escaneada desde el sistema.
+ */
+function writeFooter(
+  ws: ExcelJS.Worksheet,
+  row: number,
+  doc: BudgetDocData,
+): void {
+  put(
+    ws,
+    `A${row}`,
+    `Elaborado por: ${doc.preparedBy}`,
+    { name: 'Tahoma', size: 10 },
+    { vertical: 'middle' },
+  );
+  put(
+    ws,
+    `C${row + 1}`,
+    'FIRMA Y SELLO',
+    { name: 'Calibri', size: 11 },
+    { horizontal: 'center' },
+  );
+}
+
+/**
+ * Plantilla PACIENTE — el presupuesto que se le entrega al paciente: montos en
+ * BOLÍVARES, con el total en $ y la tasa BCV con que se convirtieron al pie.
+ *
+ * Sin tasa resoluble (`rateBs = 0`) los montos salen en USD sin convertir y la
+ * fila de la tasa se omite: es preferible a imprimir ceros.
+ */
+export async function downloadBudgetPatientXlsx(budget: Budget): Promise<void> {
+  const doc = await buildBudgetDoc(budget);
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'AFMI';
+  const ws = wb.addWorksheet('PACIENTE');
+
+  // Anchos exactos del template.
+  ws.columns = [
+    { width: 9.71 }, // A
+    { width: 16.57 }, // B — etiquetas
+    { width: 48.71 }, // C — valores / nombre del procedimiento
+    { width: 14.29 }, // D — montos
+  ];
+
+  const LABEL: Partial<ExcelJS.Font> = { name: 'Calibri', size: 12, bold: true };
+  const VALUE: Partial<ExcelJS.Font> = { name: 'Calibri', size: 11 };
+  const BOLD11: Partial<ExcelJS.Font> = {
+    name: 'Calibri',
+    size: 11,
+    bold: true,
+  };
+  const TOTAL: Partial<ExcelJS.Font> = { name: 'Calibri', size: 10, bold: true };
+  const left: Partial<ExcelJS.Alignment> = { vertical: 'middle' };
+  const right: Partial<ExcelJS.Alignment> = {
+    horizontal: 'right',
+    vertical: 'middle',
+  };
+  const centerMid: Partial<ExcelJS.Alignment> = {
+    horizontal: 'center',
+    vertical: 'middle',
+  };
+
+  await writeCompanyHeader(ws);
+  writeTitle(ws, 3);
+
+  // R5 — Fecha del presupuesto
+  ws.getRow(5).height = 15.75;
+  put(ws, 'C5', 'FECHA DEL PRESUPUESTO:', LABEL, right);
+  put(ws, 'D5', formatDateOnly(budget.budgetDate), VALUE, right, '@');
+
+  // R7..R10 — Datos del paciente
+  const data: Array<[string, string, string | undefined]> = [
+    ['PACIENTE:', doc.patientName, undefined],
+    ['CEDULA :', doc.patientId, undefined],
+    ['DIAGNOSTICO:', doc.diagnosis, undefined],
+    ['TELEFONO:', doc.patientPhone, '@'],
+  ];
+  data.forEach(([label, value, fmt], i) => {
+    const r = 7 + i;
+    ws.getRow(r).height = 15.75;
+    put(ws, `B${r}`, label, LABEL, left);
+    put(ws, `C${r}`, value, VALUE, { vertical: 'middle', wrapText: true }, fmt);
+  });
+
+  // R12/R13 — Encabezado de la tabla de procedimientos
+  put(ws, 'C12', ' PROCEDIMIENTOS A REALIZAR :', BOLD11, left);
+  put(
+    ws,
+    'D13',
+    doc.rateBs > 0 ? 'COSTO BS' : 'COSTO $',
+    BOLD11,
+    centerMid,
+  );
+  rule(ws, 14, 4);
+
+  // Detalle — una fila por procedimiento, convertida con la tasa del documento.
+  const detailStart = 15;
+  doc.lines.forEach((line, i) => {
+    const r = detailStart + i;
+    put(ws, `B${r}`, line.name, VALUE, { vertical: 'middle', wrapText: true });
+    put(
+      ws,
+      `D${r}`,
+      doc.rateBs > 0 ? +(line.totalUsd * doc.rateBs).toFixed(2) : line.totalUsd,
+      VALUE,
+      centerMid,
+      '#,##0.00',
+    );
+  });
+  // Cierre de la tabla: mínimo 2 filas de aire, como en el formato original.
+  const detailEnd = detailStart + Math.max(doc.lines.length, 1);
+  rule(ws, detailEnd + 1, 4);
+
+  // Totales — BS / $ / tasa. Sin tasa sólo sale el total en $.
+  let r = detailEnd + 4;
+  // Con ajuste global el documento imprime SUBTOTAL + DESCUENTO/RECARGO antes
+  // del total: de lo contrario las líneas no suman lo que se cobra y el
+  // presupuesto no se sostiene frente al paciente.
+  const adjustmentUsd = +(doc.totalUsd - doc.linesTotalUsd).toFixed(2);
+  const toBs = (usd: number): number =>
+    doc.rateBs > 0 ? +(usd * doc.rateBs).toFixed(2) : usd;
+  if (adjustmentUsd !== 0) {
+    put(ws, `B${r}`, doc.rateBs > 0 ? 'SUB-TOTAL BS' : 'SUB-TOTAL $', BOLD11, left);
+    put(ws, `D${r}`, toBs(doc.linesTotalUsd), VALUE, right, '#,##0.00');
+    r += 1;
+    put(
+      ws,
+      `B${r}`,
+      adjustmentUsd < 0 ? 'DESCUENTO' : 'RECARGO',
+      BOLD11,
+      left,
+    );
+    put(ws, `D${r}`, toBs(adjustmentUsd), VALUE, right, '#,##0.00');
+    r += 1;
+  }
+  if (doc.rateBs > 0) {
+    put(ws, `B${r}`, 'TOTAL BS', BOLD11, left);
+    put(ws, `D${r}`, toBs(doc.totalUsd), TOTAL, right, '#,##0.00');
+    r += 1;
+  }
+  put(ws, `B${r}`, 'TOTAL $', BOLD11, left);
+  put(ws, `D${r}`, doc.totalUsd, TOTAL, right, '#,##0.00');
+  if (doc.rateBs > 0) {
+    r += 1;
+    put(ws, `B${r}`, 'TASA Bcv', BOLD11, left);
+    put(ws, `D${r}`, doc.rateBs, VALUE, right, '#,##0.00');
+  }
+
+  writeFooter(ws, r + 4, doc);
+  await saveWorkbook(wb, budget, 'patient');
+}
+
+/**
+ * Plantilla SEGUROS — el presupuesto dirigido a la compañía: montos en DÓLARES
+ * y, al pie, la cuenta donde el seguro paga. Sin cuenta elegida el bloque
+ * bancario se omite en vez de imprimir datos inventados.
+ */
+export async function downloadBudgetInsuranceXlsx(
+  budget: Budget,
+): Promise<void> {
+  const doc = await buildBudgetDoc(budget);
+  const bankName = await resolveBankName(budget);
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'AFMI';
+  const ws = wb.addWorksheet('SEGUROS');
+
+  ws.columns = [
+    { width: 9.71 }, // A — etiquetas del bloque "PARA"
+    { width: 14.29 }, // B
+    { width: 48.71 }, // C — valores / nombre del estudio
+    { width: 14.29 }, // D — montos
+  ];
+
+  const LABEL12: Partial<ExcelJS.Font> = {
+    name: 'Calibri',
+    size: 12,
+    bold: true,
+  };
+  const BOLD11: Partial<ExcelJS.Font> = {
+    name: 'Calibri',
+    size: 11,
+    bold: true,
+  };
+  const VALUE: Partial<ExcelJS.Font> = { name: 'Calibri', size: 11 };
+  const left: Partial<ExcelJS.Alignment> = { vertical: 'middle' };
+  const centerMid: Partial<ExcelJS.Alignment> = {
+    horizontal: 'center',
+    vertical: 'middle',
+  };
+
+  await writeCompanyHeader(ws);
+
+  // R3..R5 — A quién va dirigido.
+  const header: Array<[string, string]> = [
+    ['FECHA:', formatDateOnly(budget.budgetDate)],
+    ['PARA: ', (budget.insurance?.name ?? '').toUpperCase()],
+    ['RIF:', budget.insurance?.rif ?? ''],
+  ];
+  header.forEach(([label, value], i) => {
+    const r = 3 + i;
+    ws.getRow(r).height = 15.75;
+    put(ws, `A${r}`, label, LABEL12, left);
+    put(ws, `B${r}`, value, LABEL12, { horizontal: 'left', vertical: 'middle' });
+  });
+
+  writeTitle(ws, 7);
+
+  // R9..R11 — Datos del paciente.
+  const data: Array<[string, string, string | undefined]> = [
+    ['PACIENTE:', doc.patientName, undefined],
+    ['CEDULA :', doc.patientId, undefined],
+    ['TELEFONO:', doc.patientPhone, '@'],
+  ];
+  data.forEach(([label, value, fmt], i) => {
+    const r = 9 + i;
+    put(ws, `B${r}`, label, BOLD11, left);
+    put(ws, `C${r}`, value, VALUE, { vertical: 'middle', wrapText: true }, fmt);
+  });
+
+  // R13..R15 — Encabezado de la tabla.
+  put(ws, 'C13', ' PROCEDIMIENTOS A REALIZAR :', BOLD11, left);
+  rule(ws, 14, 4);
+  put(ws, 'B15', 'ESTUDIOS ', BOLD11, left);
+  put(ws, 'D15', 'COSTOS $', BOLD11, centerMid);
+
+  const detailStart = 17;
+  doc.lines.forEach((line, i) => {
+    const r = detailStart + i;
+    put(ws, `B${r}`, line.name, VALUE, { vertical: 'middle', wrapText: true });
+    put(ws, `D${r}`, line.totalUsd, VALUE, centerMid, '#,##0.00');
+  });
+  const detailEnd = detailStart + Math.max(doc.lines.length, 1);
+  rule(ws, detailEnd, 4);
+
+  // Con ajuste global, el documento muestra SUB-TOTAL + DESCUENTO/RECARGO: el
+  // seguro tiene que poder sumar las líneas y llegar al total.
+  let totalRow = detailEnd + 2;
+  const adjustmentUsd = +(doc.totalUsd - doc.linesTotalUsd).toFixed(2);
+  if (adjustmentUsd !== 0) {
+    put(ws, `B${totalRow}`, 'SUB-TOTAL $', BOLD11, left);
+    put(ws, `D${totalRow}`, doc.linesTotalUsd, VALUE, centerMid, '#,##0.00');
+    totalRow += 1;
+    put(
+      ws,
+      `B${totalRow}`,
+      adjustmentUsd < 0 ? 'DESCUENTO $' : 'RECARGO $',
+      BOLD11,
+      left,
+    );
+    put(ws, `D${totalRow}`, adjustmentUsd, VALUE, centerMid, '#,##0.00');
+    totalRow += 1;
+  }
+  put(ws, `B${totalRow}`, 'TOTAL $', BOLD11, left);
+  put(ws, `D${totalRow}`, doc.totalUsd, VALUE, centerMid, '#,##0.00');
+
+  // Bloque bancario (sólo si el presupuesto tiene cuenta elegida).
+  const bankLines = budgetBankLines(budget, bankName);
+  bankLines.forEach((text, i) => {
+    put(ws, `B${totalRow + 3 + i}`, text, BOLD11, left);
+  });
+
+  const footerRow = totalRow + 3 + Math.max(bankLines.length, 1) + 4;
+  writeFooter(ws, footerRow, doc);
+  await saveWorkbook(wb, budget, 'insurance');
+}
+
+/**
+ * Plantilla APS — "SOLICITUD SERVICIO APS", el formulario que pide el seguro
+ * (formato Altamira). No es un presupuesto: es la solicitud que lo acompaña,
+ * con titular, paciente, diagnóstico, servicio solicitado y costo total.
+ */
+export async function downloadBudgetApsXlsx(budget: Budget): Promise<void> {
+  const doc = await buildBudgetDoc(budget);
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'AFMI';
+  const ws = wb.addWorksheet('APS');
+
+  ws.columns = [
+    { width: 4.71 }, // A
+    { width: 36.71 }, // B — etiquetas
+    { width: 45.43 }, // C — valores
+    { width: 8 }, // D
+  ];
+
+  const BLACK = { argb: 'FF000000' };
+  const T: Partial<ExcelJS.Border> = { style: 'thin', color: BLACK };
+  const box: Partial<ExcelJS.Borders> = {
+    top: T,
+    bottom: T,
+    left: T,
+    right: T,
+  };
+  const LABEL: Partial<ExcelJS.Font> = { name: 'Arial', size: 10, bold: true };
+  const LABEL_BLUE: Partial<ExcelJS.Font> = {
+    name: 'Arial',
+    size: 10,
+    bold: true,
+    color: { argb: APS_BLUE },
+  };
+  const VALUE: Partial<ExcelJS.Font> = {
+    name: 'Arial',
+    size: 10,
+    color: { argb: 'FF000000' },
+  };
+  const VALUE_BOLD: Partial<ExcelJS.Font> = { ...VALUE, bold: true };
+  const labelAlign: Partial<ExcelJS.Alignment> = {
+    horizontal: 'left',
+    vertical: 'top',
+    wrapText: true,
+  };
+  const valueAlign: Partial<ExcelJS.Alignment> = {
+    horizontal: 'left',
+    vertical: 'middle',
+    wrapText: true,
+  };
+
+  const boxRow = (row: number): void => {
+    for (let c = 2; c <= 3; c++) ws.getCell(row, c).border = { ...box };
+  };
+
+  // R1 — Logo del seguro a la izquierda (si se llegara a cargar) + título.
+  ws.getRow(1).height = 38.25;
+  put(
+    ws,
+    'C1',
+    'SOLICITUD SERVICIO APS',
+    { name: 'Tahoma', size: 14.5, bold: true, color: { argb: APS_BLUE } },
+    { horizontal: 'center', vertical: 'top', wrapText: true },
+  );
+  boxRow(1);
+  ws.getRow(2).height = 25.5;
+  ws.mergeCells('B2:C2');
+  boxRow(2);
+
+  // R3..R14 — Un par etiqueta/valor por fila, en el orden del formulario.
+  const servicio = doc.lines.map((l) => l.name).join(' + ');
+  const referring = [budget.referringDoctorName, budget.referringSpecialtyName]
+    .map((s) => (s ?? '').trim())
+    .filter(Boolean)
+    .join(' — ');
+  // El formulario del seguro pide el costo en dólares, sin desglose.
+  const costo = `$${doc.totalUsd.toFixed(2)}`;
+
+  const fields: Array<{ label: string; value: string; bold?: boolean; blue?: boolean }> =
+    [
+      { label: 'NOMBRE DEL TITULAR:', value: doc.holderName },
+      { label: 'NUMERO DE CI:', value: doc.holderId },
+      { label: 'NOMBRE DEL PACIENTE', value: doc.patientName },
+      { label: 'NUMERO DE CI:', value: doc.patientId },
+      { label: 'NO. TELEFONICO DEL PACIENTE', value: doc.patientPhone },
+      { label: 'DIAGNOSTICO/SINTOMATOLOGIA', value: doc.diagnosis },
+      { label: 'SERVICIO SOLICITADO:', value: servicio },
+      {
+        label: 'NOMBRE Y ESPECIALIDAD DEL MEDICO QUE REFIERE:',
+        value: referring,
+      },
+      { label: 'COSTO DE LA ATENCION:', value: costo, blue: true },
+      { label: 'COMENTARIO/OBSERVACIONES', value: budget.observations ?? '' },
+      { label: 'OPERADOR/CLINICA', value: doc.preparedBy, bold: true },
+      {
+        label: 'TELEFONO DIRECTO CLINICA:',
+        value: BUDGET_COMPANY.directPhone,
+        bold: true,
+      },
+    ];
+
+  fields.forEach((f, i) => {
+    const r = 3 + i;
+    ws.getRow(r).height = 25.5;
+    put(ws, `B${r}`, f.label, f.blue ? LABEL_BLUE : LABEL, labelAlign);
+    put(ws, `C${r}`, f.value, f.bold ? VALUE_BOLD : VALUE, valueAlign);
+    boxRow(r);
+  });
+
+  // Última fila — recaudos a anexar, mergeada a lo ancho del formulario.
+  const noteRow = 3 + fields.length;
+  ws.getRow(noteRow).height = 25.5;
+  ws.mergeCells(`B${noteRow}:C${noteRow}`);
+  put(
+    ws,
+    `B${noteRow}`,
+    APS_ATTACHMENTS_NOTE,
+    { name: 'Tahoma', size: 7, bold: true },
+    labelAlign,
+  );
+  boxRow(noteRow);
+
+  await saveWorkbook(wb, budget, 'aps');
+}
+
+/** Descarga la plantilla pedida en Excel. */
+export function downloadBudgetXlsx(
+  budget: Budget,
+  template: BudgetTemplate,
+): Promise<void> {
+  switch (template) {
+    case 'patient':
+      return downloadBudgetPatientXlsx(budget);
+    case 'insurance':
+      return downloadBudgetInsuranceXlsx(budget);
+    case 'aps':
+      return downloadBudgetApsXlsx(budget);
+  }
+}

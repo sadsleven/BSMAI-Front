@@ -72,6 +72,17 @@ export const PERMISSIONS = {
     CUSTOM_NUMBER: 'orders.custom-number',
     SET_PROVIDER_AMOUNT: 'orders.set-provider-amount',
   },
+  BUDGETS: {
+    LIST: 'budgets.list',
+    CREATE: 'budgets.create',
+    UPDATE: 'budgets.update',
+    CHANGE_STATUS: 'budgets.change-status',
+    CONVERT: 'budgets.convert',
+    EDIT_AMOUNT: 'budgets.edit-amount',
+    SOFT_DELETE: 'budgets.soft-delete',
+    HARD_DELETE: 'budgets.hard-delete',
+    RESTORE: 'budgets.restore',
+  },
   ACCOUNTS_PAYABLE: {
     LIST: 'accounts-payable.list',
     CREATE: 'accounts-payable.create',

@@ -524,7 +524,7 @@ export function ServiceProviderTable({
  * Mismo patrón que `ProviderSearchSelect`/`ChipMultiSelect`: trigger + dropdown
  * en portal anclado (evita recorte dentro del overflow de la tabla) + filtro local.
  */
-function SearchableSelect({
+export function SearchableSelect({
   value,
   options,
   onChange,
@@ -731,7 +731,7 @@ function SearchableSelect({
  * escribiéndolo (opción "Usar «…»" o Enter). Mismo patrón de portal anclado que
  * `SearchableSelect` para evitar recortes dentro del overflow de la tabla.
  */
-function CustomNameSelect({
+export function CustomNameSelect({
   value,
   suggestions,
   onChange,

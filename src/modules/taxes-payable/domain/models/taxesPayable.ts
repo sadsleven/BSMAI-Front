@@ -84,6 +84,13 @@ export interface TaxObligation {
   taxPaymentBatchId?: string | null;
   /** Números de orden interna del lote AP de origen (transient, lo provee el BE). */
   internalNumbers?: string[];
+  /** Abono de Cuentas por pagar que practicó la retención (1 obligación por abono). */
+  sourceSettlementId?: string | null;
+  /**
+   * Fecha del abono que practicó la retención (transient): define su período
+   * fiscal. Un lote AP pagado en dos meses genera dos obligaciones, una por mes.
+   */
+  settlementDate?: string | null;
   /** Retención recalculada con la UT de ajuste del lote (transient, sólo con ajuste). */
   adjustedTaxAmountBs?: number;
   /** Sustraendo recalculado con la UT de ajuste del lote (transient). */

@@ -992,6 +992,7 @@ export function OrderBillingStep({
               selectedId={invoiceRateId}
               currentRateId={currentRateId}
               onSelect={setPickedRateId}
+              allowCreate
               disabled={invoiceLocked && !canEditIssuedInvoice}
               lockNote={
                 invoiceLocked && !canEditIssuedInvoice

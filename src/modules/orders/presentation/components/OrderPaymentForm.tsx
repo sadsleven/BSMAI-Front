@@ -16,8 +16,14 @@ import { bankGateway } from '@/modules/banks/infrastructure/bankGateway';
 import type { Bank } from '@/modules/banks/domain/models/bank';
 import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchangeRate';
 import { matchUsdRateForEur } from '@/modules/exchange-rates/domain/models/rateMatching';
-import { exchangeRateGateway } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
+import {
+  exchangeRateGateway,
+  loadActiveRates,
+} from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
 import { useRatesByCurrency } from '@/modules/exchange-rates/presentation/hooks/useUsdRates';
+import { QuickExchangeRateModal } from '@/modules/exchange-rates/presentation/components/QuickExchangeRateModal';
+import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
+import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import type { OrderPaymentValues } from '@/lib/validations/schemas';
 import {
   PAYMENT_TYPE_LABEL,
@@ -282,15 +288,14 @@ export function OrderPaymentForm({
       .catch(() => setBanks([]));
   }, []);
 
-  // Carga tasa EUR vigente para snapshot de pagos cash_eur.
+  // Tasa EUR vigente para el snapshot de pagos cash_eur (del caché compartido).
   useEffect(() => {
     let cancelled = false;
-    exchangeRateGateway
-      .getCurrent('EUR')
-      .then((r) => {
-        if (cancelled) return;
-        setEurRate(r);
-        onEurRateLoaded?.(r);
+    loadActiveRates('EUR')
+      .then(({ current }) => {
+        if (cancelled || !current) return;
+        setEurRate(current);
+        onEurRateLoaded?.(current);
       })
       .catch(() => !cancelled && setEurRate(null));
     return () => {
@@ -334,6 +339,13 @@ export function OrderPaymentForm({
     useRatesByCurrency('USD', ratesEnabled);
   const { rates: eurRates, currentRateId: currentEurRateId } =
     useRatesByCurrency('EUR', ratesEnabled);
+
+  // Alta rápida de tasa desde la fila: los pagos suelen liquidarse a la tasa
+  // del día con otros decimales y hay que crearla sin perder lo ya cargado.
+  const { has } = usePermissions();
+  const canCreateRate =
+    ratesEnabled && !disabled && has(PERMISSIONS.EXCHANGE_RATES.CREATE);
+  const [rateModalRow, setRateModalRow] = useState<number | null>(null);
 
   // Tasas referenciadas por pagos ya guardados que no están en las listas
   // (viejas o deshabilitadas): se cargan por id para no perder la selección.
@@ -580,33 +592,48 @@ export function OrderPaymentForm({
                           ) : null}
                         </>
                       ) : rateSelectable ? (
-                        <Select
-                          value={p.exchangeRateId || ''}
-                          onValueChange={(v) => update(i, { exchangeRateId: v })}
-                          disabled={disabled || rowRateOptions.length === 0}
-                        >
-                          <SelectTrigger
-                            className={cn(
-                              'h-9',
-                              err.exchangeRateId && 'border-destructive',
-                            )}
+                        <div className="flex items-center gap-1.5">
+                          <Select
+                            value={p.exchangeRateId || ''}
+                            onValueChange={(v) => update(i, { exchangeRateId: v })}
+                            disabled={disabled || rowRateOptions.length === 0}
                           >
-                            <SelectValue
-                              placeholder={
-                                rowRateOptions.length === 0
-                                  ? 'Sin tasas disponibles'
-                                  : 'Selecciona la tasa'
-                              }
-                            />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {rowRateOptions.map((r) => (
-                              <SelectItem key={r.id} value={r.id}>
-                                {rateOptionLabel(r, rowCurrentRateId)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                            <SelectTrigger
+                              className={cn(
+                                'h-9 flex-1 min-w-0',
+                                err.exchangeRateId && 'border-destructive',
+                              )}
+                            >
+                              <SelectValue
+                                placeholder={
+                                  rowRateOptions.length === 0
+                                    ? 'Sin tasas disponibles'
+                                    : 'Selecciona la tasa'
+                                }
+                              />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {rowRateOptions.map((r) => (
+                                <SelectItem key={r.id} value={r.id}>
+                                  {rateOptionLabel(r, rowCurrentRateId)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {canCreateRate ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-9 w-9 p-0 shrink-0"
+                              title={`Nueva tasa ${isEur ? 'EUR' : 'USD'}/Bs`}
+                              aria-label={`Nueva tasa ${isEur ? 'EUR' : 'USD'}/Bs`}
+                              onClick={() => setRateModalRow(i)}
+                            >
+                              <Plus className="w-4 h-4" />
+                            </Button>
+                          ) : null}
+                        </div>
                       ) : (
                         <Input
                           readOnly
@@ -960,6 +987,35 @@ export function OrderPaymentForm({
           })}
         </div>
       )}
+
+      {canCreateRate && rateModalRow !== null
+        ? (() => {
+            const row = payments[rateModalRow];
+            if (!row) return null;
+            const rowCurrency = row.type === 'cash_eur' ? 'EUR' : 'USD';
+            const rowRate =
+              (row.exchangeRateId ?? '').trim()
+                ? ratesByCurrency[rowCurrency].find(
+                    (r) => r.id === row.exchangeRateId,
+                  ) ?? null
+                : (rowCurrency === 'EUR' ? eurRate : usdRate) ?? null;
+            return (
+              <QuickExchangeRateModal
+                open
+                onOpenChange={(v) => {
+                  if (!v) setRateModalRow(null);
+                }}
+                currency={rowCurrency}
+                defaultAmountBs={rowRate ? Number(rowRate.amountBs) : undefined}
+                defaultEffectiveDate={rowRate?.effectiveDate || undefined}
+                onCreated={(rate) => {
+                  update(rateModalRow, { exchangeRateId: rate.id });
+                  setRateModalRow(null);
+                }}
+              />
+            );
+          })()
+        : null}
 
       {hideAddButtons ? null : (
         <div className="flex flex-wrap gap-2">
