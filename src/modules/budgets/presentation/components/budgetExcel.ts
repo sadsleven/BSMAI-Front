@@ -6,9 +6,12 @@ import type { Budget, BudgetTemplate } from '../../domain/models/budget';
 import {
   APS_ATTACHMENTS_NOTE,
   BUDGET_COMPANY,
+  BUDGET_HEADER_FONT,
+  BUDGET_HEADER_LINE_BREAK,
   buildBudgetDoc,
   budgetBankLines,
-  budgetCompanyHeaderText,
+  budgetCompanyHeaderBodyText,
+  budgetCompanyHeaderLines,
   budgetFileBaseName,
   type BudgetDocData,
 } from './budgetDocument';
@@ -83,7 +86,10 @@ const EMU_PER_PX = 9525;
 /** Archivos de imagen del formato, extraídos del Excel original de AFMI. */
 const IMG = {
   logo: 'presupuesto-logo-afmi.png',
-  signature: 'presupuesto-firma-sello.jpg',
+  // PNG con el fondo gris del escaneo ya transparente. El original lo logra
+  // con un `clrChange` en el XML del dibujo, que ExcelJS no sabe escribir;
+  // resolverlo en la imagen sirve igual para el Excel y para el PDF.
+  signature: 'presupuesto-firma-sello.png',
   altamira: 'presupuesto-logo-altamira.jpg',
 } as const;
 
@@ -131,11 +137,14 @@ function put(
   return c;
 }
 
-/** Línea horizontal (borde inferior) a lo ancho de A..`toCol` de una fila. */
+/**
+ * Línea horizontal a lo ancho de A..`toCol`. Punteada, como las que encierran
+ * la tabla de procedimientos en el formato original.
+ */
 function rule(ws: ExcelJS.Worksheet, row: number, toCol: number): void {
   for (let c = 1; c <= toCol; c++) {
     ws.getCell(row, c).border = {
-      bottom: { style: 'thin', color: { argb: 'FF000000' } },
+      bottom: { style: 'dotted', color: { argb: 'FF000000' } },
     };
   }
 }
@@ -145,27 +154,51 @@ function rule(ws: ExcelJS.Worksheet, row: number, toCol: number): void {
  * izquierda y el bloque de razón social / RIF / dirección / teléfonos mergeado
  * en C1:C2, calcando el `PRESUPUESTO EXCEL.xlsx` de la administración.
  *
- * El logo va con anclaje de dos celdas y los mismos offsets del original: se
- * estira de A1 a B2 (≈148×82 px), no al tamaño nativo del archivo.
- * `logoColOff` es lo único que cambia entre hojas (las columnas difieren).
+ * El logo va con anclaje de DOS celdas: su tamaño sale de las dos esquinas,
+ * no de `ext`. Las esquinas se copian de la hoja correspondiente del original
+ * y NO son iguales entre hojas (la columna B mide distinto en cada una), así
+ * que cada plantilla pasa las suyas; reutilizar las de PACIENTE en SEGUROS
+ * estira el logo a lo alto.
  */
 async function writeCompanyHeader(
   ws: ExcelJS.Worksheet,
-  logoAnchor: { colOff: number; rowOff: number },
+  logoAnchor: {
+    tl: { colOff: number; rowOff: number };
+    br: { col: number; colOff: number; row: number; rowOff: number };
+  },
 ): Promise<void> {
   ws.getRow(1).height = 84;
   await placeImage(ws, IMG.logo, 'png', {
-    tl: { col: 0, colOff: logoAnchor.colOff, row: 0, rowOff: logoAnchor.rowOff },
-    br: { col: 1, colOff: 849696, row: 1, rowOff: 38101 },
+    tl: { col: 0, colOff: logoAnchor.tl.colOff, row: 0, rowOff: logoAnchor.tl.rowOff },
+    br: logoAnchor.br,
   });
+  // Texto enriquecido de dos tramos, como el original: razón social grande y
+  // el resto más chico (ver BUDGET_HEADER_FONT).
   ws.mergeCells('C1:C2');
-  put(
-    ws,
-    'C1',
-    budgetCompanyHeaderText(),
-    { name: 'Calibri', size: 11, bold: true, color: { argb: 'FF000000' } },
-    { horizontal: 'center', vertical: 'middle', wrapText: true },
-  );
+  const c1 = ws.getCell('C1');
+  c1.value = {
+    richText: [
+      {
+        text: budgetCompanyHeaderLines()[0],
+        font: {
+          name: BUDGET_HEADER_FONT.name,
+          size: BUDGET_HEADER_FONT.title,
+          bold: true,
+          color: { argb: 'FF000000' },
+        },
+      },
+      {
+        text: BUDGET_HEADER_LINE_BREAK + budgetCompanyHeaderBodyText(),
+        font: {
+          name: BUDGET_HEADER_FONT.name,
+          size: BUDGET_HEADER_FONT.body,
+          bold: true,
+          color: { argb: 'FF000000' },
+        },
+      },
+    ],
+  };
+  c1.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
 }
 
 /** Título "PRESUPUESTO DE SERVICIOS." centrado en C, en el azul del formato. */
@@ -200,7 +233,7 @@ async function writeFooter(
   doc: BudgetDocData,
   signatureColOff: number,
 ): Promise<void> {
-  await placeImage(ws, IMG.signature, 'jpeg', {
+  await placeImage(ws, IMG.signature, 'png', {
     tl: {
       col: 2,
       colOff: signatureColOff,
@@ -264,8 +297,11 @@ export async function downloadBudgetPatientXlsx(budget: Budget): Promise<void> {
     vertical: 'middle',
   };
 
-  // Offsets del logo en la hoja PACIENTE del original.
-  await writeCompanyHeader(ws, { colOff: 85725, rowOff: 323851 });
+  // Esquinas del logo en la hoja PACIENTE del original.
+  await writeCompanyHeader(ws, {
+    tl: { colOff: 85725, rowOff: 323851 },
+    br: { col: 1, colOff: 849696, row: 1, rowOff: 38101 },
+  });
   writeTitle(ws, 3);
 
   // R5 — Fecha del presupuesto
@@ -302,7 +338,10 @@ export async function downloadBudgetPatientXlsx(budget: Budget): Promise<void> {
   const detailStart = 15;
   doc.lines.forEach((line, i) => {
     const r = detailStart + i;
-    put(ws, `B${r}`, line.name, VALUE, { vertical: 'middle', wrapText: true });
+    // Sin `wrapText`: el nombre del procedimiento desborda hacia la columna C
+    // (vacía) en una sola línea, como en el original. Con ajuste de texto la
+    // columna B es demasiado angosta y cada nombre se parte en 2-3 renglones.
+    put(ws, `B${r}`, line.name, VALUE, { vertical: 'middle' });
     put(
       ws,
       `D${r}`,
@@ -394,8 +433,12 @@ export async function downloadBudgetInsuranceXlsx(
     vertical: 'middle',
   };
 
-  // Offsets del logo en la hoja SEGUROS del original (columna B más angosta).
-  await writeCompanyHeader(ws, { colOff: 38100, rowOff: 142876 });
+  // Esquinas del logo en la hoja SEGUROS del original: la columna B es más
+  // angosta y el borde inferior cae dentro de la fila 1, no de la 2.
+  await writeCompanyHeader(ws, {
+    tl: { colOff: 38100, rowOff: 142876 },
+    br: { col: 1, colOff: 802071, row: 0, rowOff: 923926 },
+  });
 
   // R3..R5 — A quién va dirigido.
   const header: Array<[string, string]> = [
@@ -433,7 +476,10 @@ export async function downloadBudgetInsuranceXlsx(
   const detailStart = 17;
   doc.lines.forEach((line, i) => {
     const r = detailStart + i;
-    put(ws, `B${r}`, line.name, VALUE, { vertical: 'middle', wrapText: true });
+    // Sin `wrapText`: el nombre del procedimiento desborda hacia la columna C
+    // (vacía) en una sola línea, como en el original. Con ajuste de texto la
+    // columna B es demasiado angosta y cada nombre se parte en 2-3 renglones.
+    put(ws, `B${r}`, line.name, VALUE, { vertical: 'middle' });
     put(ws, `D${r}`, line.totalUsd, VALUE, centerMid, '#,##0.00');
   });
   const detailEnd = detailStart + Math.max(doc.lines.length, 1);

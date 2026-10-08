@@ -10,6 +10,8 @@ import {
   BUDGET_COMPANY,
   buildBudgetDoc,
   budgetBankLines,
+  BUDGET_HEADER_FONT,
+  budgetCompanyHeaderLines,
   budgetFileBaseName,
   type BudgetDocData,
 } from './budgetDocument';
@@ -20,10 +22,11 @@ const APS_BLUE: [number, number, number] = [0, 56, 149];
 /** Las mismas imágenes del Excel original de AFMI, servidas desde public/. */
 const IMG = {
   logo: { file: 'presupuesto-logo-afmi.png', type: 'PNG', mime: 'image/png' },
+  // PNG: lleva el fondo gris del escaneo ya transparente.
   signature: {
-    file: 'presupuesto-firma-sello.jpg',
-    type: 'JPEG',
-    mime: 'image/jpeg',
+    file: 'presupuesto-firma-sello.png',
+    type: 'PNG',
+    mime: 'image/png',
   },
   altamira: {
     file: 'presupuesto-logo-altamira.jpg',
@@ -103,19 +106,13 @@ async function drawCompanyHeader(doc: jsPDF, marginL: number): Promise<number> {
   const cx = pageW / 2 + 15;
   let y = 14;
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
   doc.setTextColor(0, 0, 0);
-  const lines = [
-    BUDGET_COMPANY.name,
-    `RIF ${BUDGET_COMPANY.rif}`,
-    BUDGET_COMPANY.addressLine1,
-    BUDGET_COMPANY.addressLine2,
-    `Teléfonos: ${BUDGET_COMPANY.phones}`,
-  ];
-  for (const line of lines) {
+  // Las mismas cinco líneas y los mismos dos tamaños que la celda del Excel.
+  budgetCompanyHeaderLines().forEach((line, i) => {
+    doc.setFontSize(i === 0 ? BUDGET_HEADER_FONT.title : BUDGET_HEADER_FONT.body);
     doc.text(line, cx, y, { align: 'center', maxWidth: pageW - cx - marginL + 40 });
-    y += 4;
-  }
+    y += i === 0 ? 5 : 4;
+  });
   return Math.max(y, 30);
 }
 
@@ -149,6 +146,21 @@ async function drawFooter(
   doc.setTextColor(0, 0, 0);
   doc.text(`Elaborado por: ${data.preparedBy}`, marginL, y);
   doc.text('FIRMA Y SELLO', pageW / 2 + 20, y + 6, { align: 'center' });
+}
+
+/**
+ * Línea horizontal punteada, como las que encierran la tabla de
+ * procedimientos en el Excel. `autoTable` sólo sabe hacer bordes sólidos, así
+ * que las reglas se dibujan aparte y las celdas van sin borde.
+ */
+function dottedRule(doc: jsPDF, y: number, x0: number, x1: number): void {
+  doc.saveGraphicsState();
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.2);
+  doc.setLineDashPattern([0.5, 0.7], 0);
+  doc.line(x0, y, x1, y);
+  doc.setLineDashPattern([], 0);
+  doc.restoreGraphicsState();
 }
 
 /** Etiqueta + valor en una línea, con la etiqueta en negrita. */
@@ -222,22 +234,18 @@ export async function downloadBudgetPatientPdf(budget: Budget): Promise<void> {
       cellPadding: { top: 1.4, bottom: 1.4, left: 1.4, right: 1.4 },
       lineColor: [0, 0, 0],
     },
-    headStyles: {
-      fontStyle: 'bold',
-      halign: 'center',
-      lineWidth: { bottom: 0.2 },
-      lineColor: [0, 0, 0],
-    },
+    headStyles: { fontStyle: 'bold', halign: 'center' },
     columnStyles: {
       0: { cellWidth: pageW - marginL * 2 - 40 },
       1: { cellWidth: 40, halign: 'center' },
     },
-    // Línea de cierre bajo la última fila, como el formato original.
-    didParseCell: (cell) => {
-      if (cell.section === 'body' && cell.row.index === data.lines.length - 1) {
-        cell.cell.styles.lineWidth = { bottom: 0.2 };
-        cell.cell.styles.lineColor = [0, 0, 0];
-      }
+    // Reglas punteadas arriba del encabezado y debajo de la última fila,
+    // como el formato original.
+    didDrawPage: (data_) => {
+      const t = data_.table;
+      dottedRule(doc, t.body[0].cells[0].y, marginL, pageW - marginL);
+      const last = t.body[t.body.length - 1].cells[0];
+      dottedRule(doc, last.y + last.height, marginL, pageW - marginL);
     },
   });
 
@@ -329,12 +337,7 @@ export async function downloadBudgetInsurancePdf(budget: Budget): Promise<void> 
       cellPadding: { top: 1.4, bottom: 1.4, left: 1.4, right: 1.4 },
       lineColor: [0, 0, 0],
     },
-    headStyles: {
-      fontStyle: 'bold',
-      halign: 'left',
-      lineWidth: { bottom: 0.2 },
-      lineColor: [0, 0, 0],
-    },
+    headStyles: { fontStyle: 'bold', halign: 'left' },
     columnStyles: {
       0: { cellWidth: pageW - marginL * 2 - 40 },
       1: { cellWidth: 40, halign: 'center' },
@@ -343,10 +346,13 @@ export async function downloadBudgetInsurancePdf(budget: Budget): Promise<void> 
       if (cell.section === 'head' && cell.column.index === 1) {
         cell.cell.styles.halign = 'center';
       }
-      if (cell.section === 'body' && cell.row.index === data.lines.length - 1) {
-        cell.cell.styles.lineWidth = { bottom: 0.2 };
-        cell.cell.styles.lineColor = [0, 0, 0];
-      }
+    },
+    // Reglas punteadas arriba del encabezado y debajo de la última fila.
+    didDrawPage: (data_) => {
+      const t = data_.table;
+      dottedRule(doc, t.head[0].cells[0].y, marginL, pageW - marginL);
+      const last = t.body[t.body.length - 1].cells[0];
+      dottedRule(doc, last.y + last.height, marginL, pageW - marginL);
     },
   });
 
@@ -395,15 +401,6 @@ export async function downloadBudgetApsPdf(budget: Budget): Promise<void> {
   const pageW = doc.internal.pageSize.getWidth();
   const marginL = 18;
 
-  // El formulario es de Seguros Altamira y lleva su marca, no la de AFMI.
-  await drawImage(doc, IMG.altamira, marginL, 12, 20.9, 13.5);
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
-  doc.setTextColor(...APS_BLUE);
-  doc.text('SOLICITUD SERVICIO APS', pageW / 2 + 15, 21, { align: 'center' });
-  doc.setTextColor(0, 0, 0);
-
   const servicio = data.lines.map((l) => l.name).join(' + ');
   const referring = [budget.referringDoctorName, budget.referringSpecialtyName]
     .map((s) => (s ?? '').trim())
@@ -426,11 +423,19 @@ export async function downloadBudgetApsPdf(budget: Budget): Promise<void> {
     ['TELEFONO DIRECTO CLINICA:', BUDGET_COMPANY.directPhone],
   ];
   const costRowIndex = rows.findIndex(([l]) => l === 'COSTO DE LA ATENCION:');
+  // Operador y teléfono de la clínica van en negrita, como en el Excel.
+  const boldValueRows = new Set([rows.length - 2, rows.length - 1]);
+  // Fila del título: logo del seguro a la izquierda y el título a la derecha,
+  // dentro del recuadro — igual que la primera fila de la hoja del Excel.
+  const TITLE_ROW_H = 14;
 
   autoTable(doc, {
-    startY: 30,
+    startY: 18,
     margin: { left: marginL, right: marginL },
     body: [
+      ['', 'SOLICITUD SERVICIO APS'],
+      // Fila en blanco entre el título y los datos, como la hoja del Excel.
+      ['', ''],
       ...rows,
       [{ content: APS_ATTACHMENTS_NOTE, colSpan: 2, styles: { fontSize: 7 } }],
     ],
@@ -449,12 +454,30 @@ export async function downloadBudgetApsPdf(budget: Budget): Promise<void> {
       1: { cellWidth: pageW - marginL * 2 - 72 },
     },
     didParseCell: (cell) => {
+      if (cell.row.index === 0) {
+        cell.cell.styles.minCellHeight = TITLE_ROW_H;
+        if (cell.column.index === 1) {
+          cell.cell.styles.fontSize = 14;
+          cell.cell.styles.fontStyle = 'bold';
+          cell.cell.styles.halign = 'center';
+          cell.cell.styles.textColor = APS_BLUE;
+        }
+        return;
+      }
+      // Las filas de datos arrancan tras el título y la fila en blanco.
+      const i = cell.row.index - 2;
       // "COSTO DE LA ATENCION" va en azul, como en el formulario del seguro.
-      if (cell.row.index === costRowIndex && cell.column.index === 0) {
+      if (i === costRowIndex && cell.column.index === 0) {
         cell.cell.styles.textColor = APS_BLUE;
+      }
+      if (boldValueRows.has(i) && cell.column.index === 1) {
+        cell.cell.styles.fontStyle = 'bold';
       }
     },
   });
+
+  // El logo del seguro se dibuja encima de la celda del título, ya medida.
+  await drawImage(doc, IMG.altamira, marginL + 3, 19.5, 20.9, 13.5);
 
   saveAs(doc.output('blob'), `${budgetFileBaseName(budget, 'aps')}.pdf`);
 }
