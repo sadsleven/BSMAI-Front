@@ -88,16 +88,16 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
       items: [
         { icon: Home, label: 'Inicio', href: '/', show: !isProvider },
         {
-          icon: ClipboardList,
-          label: 'Órdenes',
-          href: '/orders',
-          show: has(PERMISSIONS.ORDERS.LIST),
-        },
-        {
           icon: ClipboardCheck,
           label: 'Presupuestos',
           href: '/budgets',
           show: has(PERMISSIONS.BUDGETS.LIST),
+        },
+        {
+          icon: ClipboardList,
+          label: 'Órdenes',
+          href: '/orders',
+          show: has(PERMISSIONS.ORDERS.LIST),
         },
         {
           icon: Wallet,

@@ -46,6 +46,13 @@
     --success: oklch(0.62 0.14 155);
     --success-soft: oklch(0.96 0.04 155);
 
+    /* Marcas de los formatos de descarga: verde de Excel y rojo de Acrobat.
+       Van aparte de success/destructive, que ya significan otra cosa. */
+    --excel: oklch(0.495 0.106 155);
+    --excel-soft: oklch(0.95 0.016 161);
+    --pdf: oklch(0.485 0.195 30);
+    --pdf-soft: oklch(0.948 0.02 25);
+
     --sidebar: oklch(1 0 0);
     --sidebar-foreground: oklch(0.205 0 0);
     --sidebar-primary: var(--brand-blue);
@@ -72,6 +79,10 @@
     --accent: oklch(0.371 0 0);
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.704 0.191 22.216);
+    --excel: oklch(0.72 0.14 155);
+    --excel-soft: oklch(0.30 0.05 155);
+    --pdf: oklch(0.70 0.19 30);
+    --pdf-soft: oklch(0.30 0.07 28);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
     --ring: oklch(0.556 0 0);
@@ -128,6 +139,10 @@
     --color-destructive-soft: var(--destructive-soft);
     --color-warning-soft: var(--warning-soft);
     --color-success-soft: var(--success-soft);
+    --color-excel: var(--excel);
+    --color-excel-soft: var(--excel-soft);
+    --color-pdf: var(--pdf);
+    --color-pdf-soft: var(--pdf-soft);
     --color-brand-blue: var(--brand-blue);
     --color-brand-blue-strong: var(--brand-blue-strong);
     --color-brand-blue-soft: var(--brand-blue-soft);

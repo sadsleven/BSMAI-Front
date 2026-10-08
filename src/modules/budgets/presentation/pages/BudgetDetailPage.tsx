@@ -43,7 +43,7 @@ import {
   budgetRowTotalUsd,
   type Budget,
 } from '../../domain/models/budget';
-import { BudgetExportMenu } from '../components/BudgetExportMenu';
+import { BudgetDownloadCard } from '../components/BudgetDownloadCard';
 
 export function BudgetDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -123,9 +123,6 @@ export function BudgetDetailPage() {
           >
             <ChevronLeft className="h-3.5 w-3.5" /> Volver
           </Link>
-          <Can permission={PERMISSIONS.BUDGETS.LIST}>
-            <BudgetExportMenu budget={budget} variant="outline" />
-          </Can>
           {editable ? (
             <Can permission={PERMISSIONS.BUDGETS.UPDATE}>
               <Link to={`/budgets/edit/${budget.id}`}>
@@ -175,6 +172,10 @@ export function BudgetDetailPage() {
           </>
         )}
       </div>
+
+      <Can permission={PERMISSIONS.BUDGETS.LIST}>
+        <BudgetDownloadCard budget={budget} />
+      </Can>
 
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-xl border bg-card p-4 shadow-xs">
