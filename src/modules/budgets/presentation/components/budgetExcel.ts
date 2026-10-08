@@ -16,16 +16,76 @@ import {
 const AFMI_BLUE = 'FF002060';
 const APS_BLUE = 'FF003895';
 
-/** Carga el logo AFMI desde public/. Null si falla (el documento sale sin él). */
-async function loadLogoBuffer(): Promise<ArrayBuffer | null> {
-  try {
-    const resp = await fetch(`${import.meta.env.BASE_URL}excel-image.png`);
-    if (!resp.ok) return null;
-    return await resp.arrayBuffer();
-  } catch {
-    return null;
+/**
+ * Imagen de `public/` como buffer. Null si falla: el documento sale sin ella
+ * antes que no salir. Se cachea porque un mismo archivo se pide varias veces
+ * (logo + sello) y por descarga.
+ */
+const imageCache = new Map<string, Promise<ArrayBuffer | null>>();
+function loadImage(file: string): Promise<ArrayBuffer | null> {
+  let hit = imageCache.get(file);
+  if (!hit) {
+    hit = (async () => {
+      try {
+        const resp = await fetch(`${import.meta.env.BASE_URL}${file}`);
+        if (!resp.ok) return null;
+        return await resp.arrayBuffer();
+      } catch {
+        return null;
+      }
+    })();
+    imageCache.set(file, hit);
   }
+  return hit;
 }
+
+/**
+ * Inserta una imagen en la hoja con el anclaje EXACTO del
+ * `PRESUPUESTO EXCEL.xlsx` de la administración: `nativeCol*`/`nativeRow*` van
+ * tal cual al XML (en EMU, 1 px = 9525), así que copiar los valores del
+ * original reproduce posición y tamaño al pixel.
+ *
+ * Con `br` el anclaje es de dos celdas (la imagen se estira entre ambas
+ * esquinas, como el logo del original); sin él es de una celda y manda `ext`.
+ */
+async function placeImage(
+  ws: ExcelJS.Worksheet,
+  file: string,
+  extension: 'png' | 'jpeg',
+  anchor: {
+    tl: { col: number; colOff: number; row: number; rowOff: number };
+    br?: { col: number; colOff: number; row: number; rowOff: number };
+    /** Tamaño en EMU cuando el anclaje es de una celda. */
+    ext?: { cx: number; cy: number };
+  },
+): Promise<void> {
+  const buffer = await loadImage(file);
+  if (!buffer) return;
+  const imageId = ws.workbook.addImage({ buffer, extension });
+  const native = (p: { col: number; colOff: number; row: number; rowOff: number }) => ({
+    nativeCol: p.col,
+    nativeColOff: p.colOff,
+    nativeRow: p.row,
+    nativeRowOff: p.rowOff,
+  });
+  ws.addImage(imageId, {
+    tl: native(anchor.tl),
+    ...(anchor.br ? { br: native(anchor.br) } : {}),
+    ...(anchor.ext
+      ? { ext: { width: anchor.ext.cx / EMU_PER_PX, height: anchor.ext.cy / EMU_PER_PX } }
+      : {}),
+  } as unknown as ExcelJS.ImagePosition);
+}
+
+/** English Metric Units por pixel — la unidad del XML de dibujos de Excel. */
+const EMU_PER_PX = 9525;
+
+/** Archivos de imagen del formato, extraídos del Excel original de AFMI. */
+const IMG = {
+  logo: 'presupuesto-logo-afmi.png',
+  signature: 'presupuesto-firma-sello.jpg',
+  altamira: 'presupuesto-logo-altamira.jpg',
+} as const;
 
 /** Nombre del banco de la cuenta del presupuesto, desde el catálogo. */
 async function resolveBankName(budget: Budget): Promise<string> {
@@ -81,20 +141,23 @@ function rule(ws: ExcelJS.Worksheet, row: number, toCol: number): void {
 }
 
 /**
- * Cabecera común de las plantillas PACIENTE y SEGUROS: logo AFMI anclado a A1
- * y el bloque de razón social / RIF / dirección / teléfonos mergeado en C1:C2,
- * calcando el `PRESUPUESTO_EXCEL.xlsx` de la administración.
+ * Cabecera común de las plantillas PACIENTE y SEGUROS: logo AFMI arriba a la
+ * izquierda y el bloque de razón social / RIF / dirección / teléfonos mergeado
+ * en C1:C2, calcando el `PRESUPUESTO EXCEL.xlsx` de la administración.
+ *
+ * El logo va con anclaje de dos celdas y los mismos offsets del original: se
+ * estira de A1 a B2 (≈148×82 px), no al tamaño nativo del archivo.
+ * `logoColOff` es lo único que cambia entre hojas (las columnas difieren).
  */
-async function writeCompanyHeader(ws: ExcelJS.Worksheet): Promise<void> {
+async function writeCompanyHeader(
+  ws: ExcelJS.Worksheet,
+  logoAnchor: { colOff: number; rowOff: number },
+): Promise<void> {
   ws.getRow(1).height = 84;
-  const logo = await loadLogoBuffer();
-  if (logo) {
-    const imageId = ws.workbook.addImage({ buffer: logo, extension: 'png' });
-    ws.addImage(imageId, {
-      tl: { col: 0, row: 0 },
-      ext: { width: 214, height: 88 },
-    } as ExcelJS.ImagePosition);
-  }
+  await placeImage(ws, IMG.logo, 'png', {
+    tl: { col: 0, colOff: logoAnchor.colOff, row: 0, rowOff: logoAnchor.rowOff },
+    br: { col: 1, colOff: 849696, row: 1, rowOff: 38101 },
+  });
   ws.mergeCells('C1:C2');
   put(
     ws,
@@ -118,15 +181,34 @@ function writeTitle(ws: ExcelJS.Worksheet, row: number): void {
 }
 
 /**
- * Pie común: "Elaborado por" (el usuario que creó el presupuesto) y el espacio
- * de "FIRMA Y SELLO". El sello va en blanco a propósito: el documento se firma
- * y sella a mano, no se estampa una firma escaneada desde el sistema.
+ * Alto de la firma y sello en filas de 15 pt (≈93 px): lo que hay que dejar
+ * libre encima del pie para que la imagen no pise los totales.
  */
-function writeFooter(
+const SIGNATURE_ROWS = 5;
+
+/**
+ * Pie común: la firma y sello escaneados de AFMI, "Elaborado por" (el usuario
+ * que creó el presupuesto) y la leyenda "FIRMA Y SELLO".
+ *
+ * La imagen se ancla en la columna C con el mismo offset del original, y ocupa
+ * las {@link SIGNATURE_ROWS} filas anteriores a `row`: por eso el caller deja
+ * ese hueco entre los totales y el pie.
+ */
+async function writeFooter(
   ws: ExcelJS.Worksheet,
   row: number,
   doc: BudgetDocData,
-): void {
+  signatureColOff: number,
+): Promise<void> {
+  await placeImage(ws, IMG.signature, 'jpeg', {
+    tl: {
+      col: 2,
+      colOff: signatureColOff,
+      row: row - 1 - SIGNATURE_ROWS,
+      rowOff: 184100,
+    },
+    ext: { cx: 1457325, cy: 885825 },
+  });
   put(
     ws,
     `A${row}`,
@@ -182,7 +264,8 @@ export async function downloadBudgetPatientXlsx(budget: Budget): Promise<void> {
     vertical: 'middle',
   };
 
-  await writeCompanyHeader(ws);
+  // Offsets del logo en la hoja PACIENTE del original.
+  await writeCompanyHeader(ws, { colOff: 85725, rowOff: 323851 });
   writeTitle(ws, 3);
 
   // R5 — Fecha del presupuesto
@@ -268,7 +351,8 @@ export async function downloadBudgetPatientXlsx(budget: Budget): Promise<void> {
     put(ws, `D${r}`, doc.rateBs, VALUE, right, '#,##0.00');
   }
 
-  writeFooter(ws, r + 4, doc);
+  // +SIGNATURE_ROWS: hueco para la firma y sello, que va encima del pie.
+  await writeFooter(ws, r + 2 + SIGNATURE_ROWS, doc, 1092389);
   await saveWorkbook(wb, budget, 'patient');
 }
 
@@ -310,7 +394,8 @@ export async function downloadBudgetInsuranceXlsx(
     vertical: 'middle',
   };
 
-  await writeCompanyHeader(ws);
+  // Offsets del logo en la hoja SEGUROS del original (columna B más angosta).
+  await writeCompanyHeader(ws, { colOff: 38100, rowOff: 142876 });
 
   // R3..R5 — A quién va dirigido.
   const header: Array<[string, string]> = [
@@ -381,8 +466,9 @@ export async function downloadBudgetInsuranceXlsx(
     put(ws, `B${totalRow + 3 + i}`, text, BOLD11, left);
   });
 
-  const footerRow = totalRow + 3 + Math.max(bankLines.length, 1) + 4;
-  writeFooter(ws, footerRow, doc);
+  const footerRow =
+    totalRow + 3 + Math.max(bankLines.length, 1) + 2 + SIGNATURE_ROWS;
+  await writeFooter(ws, footerRow, doc, 2337399);
   await saveWorkbook(wb, budget, 'insurance');
 }
 
@@ -440,8 +526,13 @@ export async function downloadBudgetApsXlsx(budget: Budget): Promise<void> {
     for (let c = 2; c <= 3; c++) ws.getCell(row, c).border = { ...box };
   };
 
-  // R1 — Logo del seguro a la izquierda (si se llegara a cargar) + título.
+  // R1 — Logo de Seguros Altamira a la izquierda + título, con el mismo
+  // anclaje del original (el formulario es de ellos y lleva su marca).
   ws.getRow(1).height = 38.25;
+  await placeImage(ws, IMG.altamira, 'jpeg', {
+    tl: { col: 1, colOff: 342899, row: 0, rowOff: 1 },
+    ext: { cx: 752475, cy: 487048 },
+  });
   put(
     ws,
     'C1',

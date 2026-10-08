@@ -42,7 +42,6 @@ import {
   type Budget,
   type BudgetType,
 } from '../../domain/models/budget';
-import { BudgetExportMenu } from '../components/BudgetExportMenu';
 
 type SortBy =
   | 'budgetNumber'
@@ -450,15 +449,6 @@ export function BudgetList() {
                               </Button>
                             </Link>
                           </Can>
-                          {!isDeleted ? (
-                            <Can permission={PERMISSIONS.BUDGETS.LIST}>
-                              <BudgetExportMenu
-                                budget={budget}
-                                variant="ghost"
-                                size="icon"
-                              />
-                            </Can>
-                          ) : null}
                           {!isDeleted && editable ? (
                             <Can permission={PERMISSIONS.BUDGETS.UPDATE}>
                               <Link to={`/budgets/edit/${budget.id}`}>

@@ -17,28 +17,66 @@ import {
 const AFMI_BLUE: [number, number, number] = [0, 32, 96];
 const APS_BLUE: [number, number, number] = [0, 56, 149];
 
+/** Las mismas imágenes del Excel original de AFMI, servidas desde public/. */
+const IMG = {
+  logo: { file: 'presupuesto-logo-afmi.png', type: 'PNG', mime: 'image/png' },
+  signature: {
+    file: 'presupuesto-firma-sello.jpg',
+    type: 'JPEG',
+    mime: 'image/jpeg',
+  },
+  altamira: {
+    file: 'presupuesto-logo-altamira.jpg',
+    type: 'JPEG',
+    mime: 'image/jpeg',
+  },
+} as const;
+
+type BudgetImage = (typeof IMG)[keyof typeof IMG];
+
 /**
- * Carga el logo AFMI desde public/ como dataURL. Null si falla (el documento
- * sale sin logo antes que no salir). Convierte los bytes a base64 a mano en
- * vez de usar `FileReader`: evita el baile de callbacks y funciona igual fuera
- * del navegador, lo que permite generar el PDF en pruebas.
+ * Carga una imagen de public/ como dataURL. Null si falla (el documento sale
+ * sin ella antes que no salir). Convierte los bytes a base64 a mano en vez de
+ * usar `FileReader`: evita el baile de callbacks y funciona igual fuera del
+ * navegador, lo que permite generar el PDF en pruebas.
  */
-async function loadLogoDataUrl(): Promise<string | null> {
-  try {
-    const resp = await fetch(`${import.meta.env.BASE_URL}excel-image.png`);
-    if (!resp.ok) return null;
-    const bytes = new Uint8Array(await resp.arrayBuffer());
-    let binary = '';
-    // Por trozos: `String.fromCharCode(...bytes)` desborda la pila con imágenes
-    // de más de ~100 KB.
-    const CHUNK = 0x8000;
-    for (let i = 0; i < bytes.length; i += CHUNK) {
-      binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-    }
-    return `data:image/png;base64,${btoa(binary)}`;
-  } catch {
-    return null;
+const imageCache = new Map<string, Promise<string | null>>();
+function loadImageDataUrl(img: BudgetImage): Promise<string | null> {
+  let hit = imageCache.get(img.file);
+  if (!hit) {
+    hit = (async () => {
+      try {
+        const resp = await fetch(`${import.meta.env.BASE_URL}${img.file}`);
+        if (!resp.ok) return null;
+        const bytes = new Uint8Array(await resp.arrayBuffer());
+        let binary = '';
+        // Por trozos: `String.fromCharCode(...bytes)` desborda la pila con
+        // imágenes de más de ~100 KB.
+        const CHUNK = 0x8000;
+        for (let i = 0; i < bytes.length; i += CHUNK) {
+          binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+        }
+        return `data:${img.mime};base64,${btoa(binary)}`;
+      } catch {
+        return null;
+      }
+    })();
+    imageCache.set(img.file, hit);
   }
+  return hit;
+}
+
+/** Dibuja una imagen del formato si se pudo cargar. Medidas en mm. */
+async function drawImage(
+  doc: jsPDF,
+  img: BudgetImage,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): Promise<void> {
+  const dataUrl = await loadImageDataUrl(img);
+  if (dataUrl) doc.addImage(dataUrl, img.type, x, y, w, h);
 }
 
 async function resolveBankName(budget: Budget): Promise<string> {
@@ -59,8 +97,8 @@ async function resolveBankName(budget: Budget): Promise<string> {
  */
 async function drawCompanyHeader(doc: jsPDF, marginL: number): Promise<number> {
   const pageW = doc.internal.pageSize.getWidth();
-  const logo = await loadLogoDataUrl();
-  if (logo) doc.addImage(logo, 'PNG', marginL, 12, 45, 15);
+  // Mismo tamaño que en el Excel (148×82 px → mm).
+  await drawImage(doc, IMG.logo, marginL, 12, 39.2, 21.7);
 
   const cx = pageW / 2 + 15;
   let y = 14;
@@ -93,16 +131,24 @@ function drawTitle(doc: jsPDF, y: number): number {
 }
 
 /**
- * Pie: "Elaborado por" y el espacio de FIRMA Y SELLO. El sello va en blanco a
- * propósito — el documento se firma y sella a mano.
+ * Pie: la firma y sello escaneados de AFMI, "Elaborado por" y la leyenda
+ * "FIRMA Y SELLO" debajo. La imagen va al mismo tamaño que en el Excel
+ * (153×93 px → mm) y `y` es la línea de "Elaborado por", así que el sello se
+ * dibuja encima.
  */
-function drawFooter(doc: jsPDF, y: number, data: BudgetDocData, marginL: number): void {
+async function drawFooter(
+  doc: jsPDF,
+  y: number,
+  data: BudgetDocData,
+  marginL: number,
+): Promise<void> {
   const pageW = doc.internal.pageSize.getWidth();
+  await drawImage(doc, IMG.signature, pageW / 2 + 20 - 40.5 / 2, y - 28, 40.5, 24.6);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
   doc.setTextColor(0, 0, 0);
   doc.text(`Elaborado por: ${data.preparedBy}`, marginL, y);
-  doc.text('FIRMA Y SELLO', pageW / 2 + 20, y + 22, { align: 'center' });
+  doc.text('FIRMA Y SELLO', pageW / 2 + 20, y + 6, { align: 'center' });
 }
 
 /** Etiqueta + valor en una línea, con la etiqueta en negrita. */
@@ -228,7 +274,7 @@ export async function downloadBudgetPatientPdf(budget: Budget): Promise<void> {
     y += 6;
   }
 
-  drawFooter(doc, y + 16, data, marginL);
+  await drawFooter(doc, y + 36, data, marginL);
   saveAs(doc.output('blob'), `${budgetFileBaseName(budget, 'patient')}.pdf`);
 }
 
@@ -335,7 +381,7 @@ export async function downloadBudgetInsurancePdf(budget: Budget): Promise<void> 
     y += 5;
   }
 
-  drawFooter(doc, y + 16, data, marginL);
+  await drawFooter(doc, y + 36, data, marginL);
   saveAs(doc.output('blob'), `${budgetFileBaseName(budget, 'insurance')}.pdf`);
 }
 
@@ -349,8 +395,8 @@ export async function downloadBudgetApsPdf(budget: Budget): Promise<void> {
   const pageW = doc.internal.pageSize.getWidth();
   const marginL = 18;
 
-  const logo = await loadLogoDataUrl();
-  if (logo) doc.addImage(logo, 'PNG', marginL, 12, 40, 13);
+  // El formulario es de Seguros Altamira y lleva su marca, no la de AFMI.
+  await drawImage(doc, IMG.altamira, marginL, 12, 20.9, 13.5);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14);

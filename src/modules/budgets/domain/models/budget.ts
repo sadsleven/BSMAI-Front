@@ -231,13 +231,30 @@ export function budgetDiagnosisText(budget: Budget): string {
 }
 
 /**
- * Plantillas que tienen sentido para un presupuesto. La de SEGUROS y la de APS
- * sólo aplican a presupuestos de tipo seguro; la de PACIENTE siempre.
+ * La "SOLICITUD SERVICIO APS" es un formulario de **Seguros Altamira**: lleva
+ * su logo y sus recaudos, y ningún otro seguro lo pide. Se detecta por nombre
+ * porque el seguro no tiene una marca para esto; si algún día hay más
+ * aseguradoras con formulario propio, esto pasa a ser un campo del seguro y
+ * sólo cambia esta función.
+ */
+function usesApsForm(budget: Budget): boolean {
+  const name = `${budget.insurance?.name ?? ''} ${budget.insurance?.shortName ?? ''}`;
+  return name
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .includes('altamira');
+}
+
+/**
+ * Plantillas que tienen sentido para un presupuesto. La de PACIENTE siempre;
+ * la de SEGUROS sólo con seguro; la de APS sólo con Seguros Altamira.
  */
 export function budgetTemplatesFor(budget: Budget): BudgetTemplate[] {
-  return budget.type === 'insurance'
-    ? ['insurance', 'patient', 'aps']
-    : ['patient'];
+  if (budget.type !== 'insurance') return ['patient'];
+  const out: BudgetTemplate[] = ['insurance', 'patient'];
+  if (usesApsForm(budget)) out.push('aps');
+  return out;
 }
 
 /**
