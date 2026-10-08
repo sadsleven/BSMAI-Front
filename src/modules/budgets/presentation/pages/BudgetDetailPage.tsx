@@ -19,13 +19,10 @@ import { PageLoader } from '@/components/ui/spinner';
 import { EmptyState } from '@/components/ui/empty-state';
 import {
   ArrowRight,
-  CheckCircle2,
   ChevronLeft,
   Pencil,
-  Send,
   TrendingDown,
   TrendingUp,
-  XCircle,
 } from 'lucide-react';
 import { formatDateOnly, formatCreatedDateTime } from '@/lib/dates';
 import { formatMoney } from '@/lib/format/money';
@@ -38,7 +35,6 @@ import {
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { budgetGateway } from '../../infrastructure/budgetGateway';
 import {
-  BUDGET_STATUS_LABEL,
   BUDGET_TYPE_LABEL,
   budgetAdjustment,
   budgetDiagnosisText,
@@ -46,20 +42,8 @@ import {
   budgetLinesTotalUsd,
   budgetRowTotalUsd,
   type Budget,
-  type BudgetStatus,
 } from '../../domain/models/budget';
 import { BudgetExportMenu } from '../components/BudgetExportMenu';
-import { BudgetStatusModal } from '../components/BudgetStatusModal';
-
-const STATUS_TONE: Record<
-  BudgetStatus,
-  'success' | 'warning' | 'destructive' | 'info' | 'neutral'
-> = {
-  draft: 'neutral',
-  sent: 'info',
-  approved: 'success',
-  rejected: 'destructive',
-};
 
 export function BudgetDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -67,7 +51,6 @@ export function BudgetDetailPage() {
   const [budget, setBudget] = useState<Budget | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [statusTarget, setStatusTarget] = useState<BudgetStatus | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -124,9 +107,6 @@ export function BudgetDetailPage() {
             <h1 className="text-[26px] font-bold leading-tight tracking-[-0.02em]">
               Presupuesto {budget.budgetNumber}
             </h1>
-            <DetailBadge tone={STATUS_TONE[budget.status]}>
-              {BUDGET_STATUS_LABEL[budget.status]}
-            </DetailBadge>
             {budget.expired ? (
               <DetailBadge tone="warning">Vencido</DetailBadge>
             ) : null}
@@ -159,7 +139,7 @@ export function BudgetDetailPage() {
         </div>
       </div>
 
-      {/* Acciones de estado y conversión a orden */}
+      {/* Enlace con la orden: el único hito del presupuesto. */}
       <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card p-4 shadow-xs">
         {budget.convertedOrder ? (
           <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -180,38 +160,10 @@ export function BudgetDetailPage() {
           </div>
         ) : (
           <>
-            <Can permission={PERMISSIONS.BUDGETS.CHANGE_STATUS}>
-              {budget.status === 'draft' ? (
-                <Button
-                  variant="outline"
-                  className="gap-1.5"
-                  onClick={() => setStatusTarget('sent')}
-                >
-                  <Send className="h-4 w-4" />
-                  Marcar enviado
-                </Button>
-              ) : null}
-              {budget.status !== 'approved' ? (
-                <Button
-                  variant="outline"
-                  className="gap-1.5 text-success hover:bg-success-soft hover:text-success"
-                  onClick={() => setStatusTarget('approved')}
-                >
-                  <CheckCircle2 className="h-4 w-4" />
-                  Aprobar
-                </Button>
-              ) : null}
-              {budget.status !== 'rejected' ? (
-                <Button
-                  variant="outline"
-                  className="gap-1.5 text-destructive hover:bg-destructive-soft hover:text-destructive"
-                  onClick={() => setStatusTarget('rejected')}
-                >
-                  <XCircle className="h-4 w-4" />
-                  Rechazar
-                </Button>
-              ) : null}
-            </Can>
+            <p className="text-sm text-muted-foreground">
+              Descarga el presupuesto para entregarlo. Si lo aceptan, crea la
+              orden con estos mismos datos.
+            </p>
             <Can permission={PERMISSIONS.BUDGETS.CONVERT}>
               <Link to={`/orders/create?budget=${budget.id}`} className="ml-auto">
                 <Button className="gap-1.5">
@@ -223,13 +175,6 @@ export function BudgetDetailPage() {
           </>
         )}
       </div>
-
-      {budget.status === 'rejected' && budget.rejectReason ? (
-        <div className="rounded-xl border border-destructive/40 bg-destructive-soft px-4 py-3 text-sm text-destructive">
-          <span className="font-semibold">Motivo del rechazo:</span>{' '}
-          {budget.rejectReason}
-        </div>
-      ) : null}
 
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-xl border bg-card p-4 shadow-xs">
@@ -433,17 +378,6 @@ export function BudgetDetailPage() {
         </div>
       ) : null}
 
-      <BudgetStatusModal
-        key={`${budget.id}:${statusTarget ?? ''}`}
-        open={!!statusTarget}
-        onOpenChange={(open) => !open && setStatusTarget(null)}
-        budget={budget}
-        target={statusTarget ?? 'sent'}
-        onDone={(updated) => {
-          setBudget(updated);
-          setStatusTarget(null);
-        }}
-      />
     </div>
   );
 }

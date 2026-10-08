@@ -15,8 +15,6 @@ interface BudgetState {
   setQuery: (q: Partial<BudgetsQuery>) => void;
   fetch: () => Promise<void>;
   remove: (id: string) => void;
-  /** Reemplaza una fila ya cargada (cambio de estado sin recargar la página). */
-  upsert: (budget: Budget) => void;
 }
 
 export const useBudgetStore = create<BudgetState>((set, get) => ({
@@ -39,6 +37,4 @@ export const useBudgetStore = create<BudgetState>((set, get) => ({
     }
   },
   remove: (id) => set({ budgets: get().budgets.filter((b) => b.id !== id) }),
-  upsert: (budget) =>
-    set({ budgets: get().budgets.map((b) => (b.id === budget.id ? budget : b)) }),
 }));

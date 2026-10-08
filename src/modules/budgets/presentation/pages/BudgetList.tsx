@@ -23,20 +23,9 @@ import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Eye,
-  Pencil,
-  Plus,
-  Send,
-  Trash2,
-  Undo2,
-  XCircle,
-} from 'lucide-react';
+import { AlertTriangle, Eye, Pencil, Plus, Trash2, Undo2 } from 'lucide-react';
 import { formatDateOnly } from '@/lib/dates';
 import { formatMoney } from '@/lib/format/money';
-import { cn } from '@/lib/utils';
 import { notify } from '@/lib/notifications/toast';
 import { Can } from '@/modules/auth/presentation/components/Can';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
@@ -47,52 +36,39 @@ import { holderDisplayName } from '@/modules/orders/domain/models/order';
 import { useBudgetStore } from '../../domain/store/budgetStore';
 import { budgetGateway } from '../../infrastructure/budgetGateway';
 import {
-  BUDGET_STATUS_LABEL,
-  BUDGET_STATUS_ORDER,
   BUDGET_TYPE_LABEL,
   BUDGET_TYPE_ORDER,
   budgetIsEditable,
   type Budget,
-  type BudgetStatus,
   type BudgetType,
 } from '../../domain/models/budget';
 import { BudgetExportMenu } from '../components/BudgetExportMenu';
-import { BudgetStatusModal } from '../components/BudgetStatusModal';
 
 type SortBy =
   | 'budgetNumber'
   | 'budgetDate'
   | 'validUntilDate'
   | 'priceAmount'
-  | 'status'
   | 'createdAt';
 type DeletionFilter = 'active' | 'deleted' | 'all';
 
-const STATUS_COLOR: Record<BudgetStatus, string> = {
-  draft: 'bg-muted text-muted-foreground',
-  sent: 'bg-brand-blue-soft text-brand-blue-strong',
-  approved: 'bg-success-soft text-success',
-  rejected: 'bg-destructive-soft text-destructive',
-};
-
-function StatusBadge({ budget }: { budget: Budget }) {
+/**
+ * El presupuesto no tiene estados: lo único que se señala es si venció y si ya
+ * generó su orden. Sin ninguna de las dos, la celda queda vacía a propósito.
+ */
+function BudgetFlags({ budget }: { budget: Budget }) {
+  if (!budget.expired && !budget.convertedOrder) {
+    return <span className="text-sm text-muted-foreground">—</span>;
+  }
   return (
     <div className="flex flex-wrap items-center gap-1">
-      <span
-        className={cn(
-          'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-          STATUS_COLOR[budget.status],
-        )}
-      >
-        {BUDGET_STATUS_LABEL[budget.status]}
-      </span>
       {budget.expired ? (
         <span className="inline-flex items-center rounded-full bg-warning-soft px-2 py-0.5 text-xs font-medium text-warning">
           Vencido
         </span>
       ) : null}
       {budget.convertedOrder ? (
-        <span className="inline-flex items-center rounded-full bg-brand-cyan-soft px-2 py-0.5 text-xs font-medium text-brand-cyan-strong">
+        <span className="inline-flex items-center rounded-full bg-success-soft px-2 py-0.5 text-xs font-medium text-success">
           Orden N° {budget.convertedOrder.orderNumber}
         </span>
       ) : null}
@@ -105,7 +81,6 @@ function readQuery(sp: URLSearchParams) {
     page: Number(sp.get('page') ?? 1) || 1,
     limit: Number(sp.get('limit') ?? 10) || 10,
     search: sp.get('search') ?? '',
-    status: (sp.get('status') as BudgetStatus | '') || '',
     type: (sp.get('type') as BudgetType | '') || '',
     branchId: sp.get('branchId') ?? '',
     converted: sp.get('converted') ?? '',
@@ -116,7 +91,7 @@ function readQuery(sp: URLSearchParams) {
 }
 
 export function BudgetList() {
-  const { budgets, metadata, isLoading, error, setQuery, fetch, remove, upsert } =
+  const { budgets, metadata, isLoading, error, setQuery, fetch, remove } =
     useBudgetStore();
   const { has } = usePermissions();
   const me = useAuthStore((s) => s.user);
@@ -133,7 +108,6 @@ export function BudgetList() {
       page: filters.page,
       limit: filters.limit,
       search: filters.search || undefined,
-      status: (filters.status || undefined) as BudgetStatus | undefined,
       type: (filters.type || undefined) as BudgetType | undefined,
       branchId: filters.branchId || undefined,
       converted:
@@ -148,7 +122,6 @@ export function BudgetList() {
     filters.page,
     filters.limit,
     filters.search,
-    filters.status,
     filters.type,
     filters.branchId,
     filters.converted,
@@ -190,7 +163,6 @@ export function BudgetList() {
 
   const hasActiveFilters =
     Boolean(filters.search) ||
-    Boolean(filters.status) ||
     Boolean(filters.type) ||
     Boolean(filters.branchId) ||
     Boolean(filters.converted) ||
@@ -202,10 +174,6 @@ export function BudgetList() {
   };
 
   // --- Acciones ---
-  const [statusTarget, setStatusTarget] = useState<{
-    budget: Budget;
-    status: BudgetStatus;
-  } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Budget | null>(null);
   const [hardConfirmStep, setHardConfirmStep] = useState(0);
   const [restoreTarget, setRestoreTarget] = useState<Budget | null>(null);
@@ -297,25 +265,6 @@ export function BudgetList() {
           onClear={clearFilters}
           filters={
             <>
-              <Select
-                value={filters.status || 'all'}
-                onValueChange={(v) =>
-                  updateParam({ status: v === 'all' ? undefined : v })
-                }
-              >
-                <SelectTrigger className="h-9 w-44">
-                  <SelectValue placeholder="Estado" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Estado: todos</SelectItem>
-                  {BUDGET_STATUS_ORDER.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {BUDGET_STATUS_LABEL[s]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
               <Select
                 value={filters.type || 'all'}
                 onValueChange={(v) =>
@@ -421,7 +370,7 @@ export function BudgetList() {
                   Tipo / Seguro
                 </TableHead>
                 <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                  Estado
+                  Orden / vigencia
                 </TableHead>
                 <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                   <SortableHeader<SortBy>
@@ -524,49 +473,6 @@ export function BudgetList() {
                               </Link>
                             </Can>
                           ) : null}
-                          {!isDeleted && !budget.convertedOrderId ? (
-                            <Can permission={PERMISSIONS.BUDGETS.CHANGE_STATUS}>
-                              {budget.status === 'draft' ? (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  title="Marcar como enviado"
-                                  className="h-8 w-8"
-                                  onClick={() =>
-                                    setStatusTarget({ budget, status: 'sent' })
-                                  }
-                                >
-                                  <Send className="h-4 w-4" />
-                                </Button>
-                              ) : null}
-                              {budget.status !== 'approved' ? (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  title="Marcar como aprobado"
-                                  className="h-8 w-8 text-success hover:bg-success-soft hover:text-success"
-                                  onClick={() =>
-                                    setStatusTarget({ budget, status: 'approved' })
-                                  }
-                                >
-                                  <CheckCircle2 className="h-4 w-4" />
-                                </Button>
-                              ) : null}
-                              {budget.status !== 'rejected' ? (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  title="Marcar como rechazado"
-                                  className="h-8 w-8 text-destructive hover:bg-destructive-soft hover:text-destructive"
-                                  onClick={() =>
-                                    setStatusTarget({ budget, status: 'rejected' })
-                                  }
-                                >
-                                  <XCircle className="h-4 w-4" />
-                                </Button>
-                              ) : null}
-                            </Can>
-                          ) : null}
                           {isDeleted ? (
                             <Can permission={PERMISSIONS.BUDGETS.RESTORE}>
                               <Button
@@ -631,7 +537,7 @@ export function BudgetList() {
                         </div>
                       </TableCell>
                       <TableCell className="px-4 py-3.5">
-                        <StatusBadge budget={budget} />
+                        <BudgetFlags budget={budget} />
                       </TableCell>
                       <TableCell className="px-4 py-3.5 text-sm tabular-nums">
                         ${formatMoney(budget.priceAmount)}
@@ -662,18 +568,6 @@ export function BudgetList() {
           itemLabel="presupuestos"
         />
       </div>
-
-      <BudgetStatusModal
-        key={`${statusTarget?.budget.id ?? 'none'}:${statusTarget?.status ?? ''}`}
-        open={!!statusTarget}
-        onOpenChange={(open) => !open && setStatusTarget(null)}
-        budget={statusTarget?.budget ?? null}
-        target={statusTarget?.status ?? 'sent'}
-        onDone={(updated) => {
-          upsert(updated);
-          setStatusTarget(null);
-        }}
-      />
 
       <ConfirmDialog
         open={!!restoreTarget}

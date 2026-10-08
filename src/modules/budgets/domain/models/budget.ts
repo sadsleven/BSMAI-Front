@@ -6,8 +6,6 @@ import type {
 
 export type { OrderRefSummary, ProviderType, InsuranceSource };
 
-export type BudgetStatus = 'draft' | 'sent' | 'approved' | 'rejected';
-
 /**
  * De dónde sale el precio de catálogo de cada servicio, igual que el Paso 1:
  * `particular` → `particularPriceUsd`; `insurance` → baremo del seguro.
@@ -23,20 +21,6 @@ export const BUDGET_TYPE_LABEL: Record<BudgetType, string> = {
 };
 
 export const BUDGET_TYPE_ORDER: BudgetType[] = ['insurance', 'particular'];
-
-export const BUDGET_STATUS_LABEL: Record<BudgetStatus, string> = {
-  draft: 'Borrador',
-  sent: 'Enviado',
-  approved: 'Aprobado',
-  rejected: 'Rechazado',
-};
-
-export const BUDGET_STATUS_ORDER: BudgetStatus[] = [
-  'draft',
-  'sent',
-  'approved',
-  'rejected',
-];
 
 export const BUDGET_TEMPLATE_LABEL: Record<BudgetTemplate, string> = {
   patient: 'Paciente (Bs)',
@@ -74,7 +58,6 @@ export interface Budget {
   branchId: string;
   branch?: { id: string; name: string };
   type: BudgetType;
-  status: BudgetStatus;
   holderId: string;
   holder?: OrderRefSummary;
   patientId: string;
@@ -122,9 +105,6 @@ export interface Budget {
     accountHolderName?: string | null;
     idDocument?: string | null;
   } | null;
-  sentAt?: string | null;
-  decidedAt?: string | null;
-  rejectReason?: string | null;
   convertedOrderId?: string | null;
   convertedOrder?: { id: string; orderNumber: string } | null;
   convertedAt?: string | null;
@@ -140,7 +120,7 @@ export interface Budget {
   createdAt: string;
   updatedAt: string;
   deletedAt?: string | null;
-  /** Derivado en el BE: vigencia pasada y todavía sin decidir. */
+  /** Derivado en el BE: vigencia pasada y todavía sin generar su orden. */
   expired?: boolean;
 }
 
@@ -180,11 +160,6 @@ export interface CreateBudgetDto {
 
 export type UpdateBudgetDto = Partial<CreateBudgetDto>;
 
-export interface ChangeBudgetStatusDto {
-  status: BudgetStatus;
-  rejectReason?: string;
-}
-
 export interface PaginatedResponse<T> {
   data: T[];
   metadata: { total: number; page: number; lastPage: number };
@@ -194,7 +169,6 @@ export interface BudgetsQuery {
   page?: number;
   limit?: number;
   search?: string;
-  status?: BudgetStatus;
   type?: BudgetType;
   branchId?: string;
   insuranceId?: string;
@@ -266,7 +240,10 @@ export function budgetTemplatesFor(budget: Budget): BudgetTemplate[] {
     : ['patient'];
 }
 
-/** El presupuesto se puede editar mientras no haya generado su orden. */
+/**
+ * El presupuesto se puede editar mientras no haya generado su orden: después,
+ * lo que vale es la orden y tocar el presupuesto sólo desalinearía los dos.
+ */
 export function budgetIsEditable(budget: Budget): boolean {
   return !budget.convertedOrderId && !budget.deletedAt;
 }

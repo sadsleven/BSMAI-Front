@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { Controller, FormProvider, useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
 import {
   AlertTriangle,
   ChevronDown,
@@ -16,6 +13,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   AlertDialog,
@@ -32,19 +37,16 @@ import { FormSection } from '@/components/ui/form-section';
 import { FormSwitch } from '@/components/ui/form-switch';
 import { CurrencyAmountInput } from '@/components/ui/currency-amount-input';
 import { notify } from '@/lib/notifications/toast';
-import { notifyFormErrors } from '@/lib/notifications/formErrors';
 import { getHttpErrorMessage } from '@/lib/api';
 import { formatMoney } from '@/lib/format/money';
 import { formatDateOnly } from '@/lib/dates';
 import { PageLoader } from '@/components/ui/spinner';
 import { DatePicker } from '@/components/ui/date-picker';
-import { egressPaymentSchema, type OrderPaymentValues } from '@/lib/validations/schemas';
-import {
-  OrderPaymentForm,
-  paymentInBs,
-  type PaymentItemErrors,
-} from '@/modules/orders/presentation/components/OrderPaymentForm';
+import type { RecipientPaymentMethod } from '@/modules/orders/presentation/components/OrderPaymentForm';
+import { bankGateway } from '@/modules/banks/infrastructure/bankGateway';
+import { selectableBanks, type Bank } from '@/modules/banks/domain/models/bank';
 import type { ExchangeRate } from '@/modules/exchange-rates/domain/models/exchangeRate';
+import { loadActiveRates } from '@/modules/exchange-rates/infrastructure/exchangeRateGateway';
 import { UsdRateSelect } from '@/modules/exchange-rates/presentation/components/UsdRateSelect';
 import { useUsdRates } from '@/modules/exchange-rates/presentation/hooks/useUsdRates';
 import { useTaxUnit } from '@/lib/taxes/useTaxUnit';
@@ -79,17 +81,12 @@ import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 
-/** Texto bajo el switch de retención según su estado (create + detalle). */
+/** Texto bajo el switch de retención (modo creación). */
 function retentionSwitchDescription(applies: boolean): string {
   return applies
-    ? 'Cada abono retiene la parte de ISLR (Decreto 1.808) que le toca por la porción que cubre, y genera su obligación con el SENIAT.'
+    ? 'Cada pago retiene la parte de ISLR (Decreto 1.808) que le toca por la porción que cubre, y genera su obligación con el SENIAT.'
     : 'Sin retención: el proveedor recibe el bruto completo y no se genera obligación con el SENIAT.';
 }
-
-const paymentSchema = z.object({
-  payments: z.array(egressPaymentSchema).min(1, 'Registra al menos un pago'),
-});
-type PaymentFormValues = z.infer<typeof paymentSchema>;
 
 const STANDARD_TYPES: OrderPaymentType[] = [
   'mobile_payment',
@@ -112,26 +109,6 @@ type CreateProvider = {
   providerId: string;
   providerName: string;
 };
-
-function buildPaymentErrors(
-  raw: unknown,
-): PaymentItemErrors[] | undefined {
-  if (!Array.isArray(raw)) return undefined;
-  return (raw as Array<Record<string, { message?: string } | undefined> | undefined>).map(
-    (e) =>
-      e
-        ? {
-            type: e.type?.message,
-            paymentDate: e.paymentDate?.message,
-            referenceNumber: e.referenceNumber?.message,
-            bankCode: e.bankCode?.message,
-            exchangeRateId: e.exchangeRateId?.message,
-            amountCurrency: e.amountCurrency?.message,
-            amountValue: e.amountValue?.message,
-          }
-        : {},
-  );
-}
 
 export function AccountsPayableBatchPage() {
   const navigate = useNavigate();
@@ -330,7 +307,7 @@ export function AccountsPayableBatchPage() {
 
         <FormSection
           title="Retención SENIAT"
-          description="Define si este lote descuenta la retención de ISLR al proveedor. Puedes cambiarlo después mientras no tenga abonos."
+          description="Define si este lote descuenta la retención de ISLR al proveedor. Puedes cambiarlo después mientras no tenga pagos."
         >
           <FormSwitch
             label="Aplicar retención de ISLR"
@@ -458,7 +435,7 @@ export function AccountsPayableBatchPage() {
 
         <FormSection
           title="Tasa de pago"
-          description="Tasa USD/Bs por defecto del lote: la que se propone al primer abono y con la que se proyecta el saldo en Bs. Cada abono fija la suya al registrarse."
+          description="Tasa USD/Bs que se propone al primer pago. Cada pago fija la suya al registrarse."
         >
           <UsdRateSelect
             className="max-w-md"
@@ -474,7 +451,7 @@ export function AccountsPayableBatchPage() {
         {applyRetention ? (
           <FormSection
             title="Unidad Tributaria"
-            description="UT con la que se calcula la retención de los abonos del lote. Por defecto la vigente; puedes seleccionar otra."
+            description="UT con la que se calcula la retención de los pagos del lote. Por defecto la vigente; puedes seleccionar otra."
           >
             <TaxUnitSelect
               className="max-w-md"
@@ -507,6 +484,33 @@ export function AccountsPayableBatchPage() {
 // =============================================================================
 // Detail (existing batch).
 // =============================================================================
+type PaymentDraft = {
+  type: OrderPaymentType;
+  date: string;
+  bankCode: string;
+  referenceNumber: string;
+  accountNumber: string;
+  /** Cuenta registrada del proveedor elegida ('' = manual). */
+  recipientMethodId: string;
+  coveredUsd: number | undefined;
+  rateId: string | null;
+  customOn: boolean;
+  customRetentionBs: number | undefined;
+};
+
+const emptyDraft = (date: string): PaymentDraft => ({
+  type: 'bank_transfer',
+  date,
+  bankCode: '',
+  referenceNumber: '',
+  accountNumber: '',
+  recipientMethodId: '',
+  coveredUsd: undefined,
+  rateId: null,
+  customOn: false,
+  customRetentionBs: undefined,
+});
+
 function BatchDetail({ id }: { id: string }) {
   const navigate = useNavigate();
   const { taxUnit } = useTaxUnit();
@@ -514,7 +518,8 @@ function BatchDetail({ id }: { id: string }) {
   const canUpdate = hasPermission(PERMISSIONS.ACCOUNTS_PAYABLE.UPDATE);
   const [batch, setBatch] = useState<AccountsPayableBatch | null>(null);
   const [loading, setLoading] = useState(true);
-  const [eurRatesById, setEurRatesById] = useState<Record<string, ExchangeRate>>({});
+  const [banks, setBanks] = useState<Bank[]>([]);
+  const [eurRate, setEurRate] = useState<ExchangeRate | null>(null);
 
   // Add-orders popover.
   const [candidates, setCandidates] = useState<PendingPayable[]>([]);
@@ -523,10 +528,8 @@ function BatchDetail({ id }: { id: string }) {
   const [candidateSel, setCandidateSel] = useState<Set<string>>(new Set());
 
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [confirmSettlementDelete, setConfirmSettlementDelete] = useState<string | null>(
-    null,
-  );
-  const [editingSettlementId, setEditingSettlementId] = useState<string | null>(null);
+  const [confirmPaymentDelete, setConfirmPaymentDelete] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -544,17 +547,24 @@ function BatchDetail({ id }: { id: string }) {
     load();
   }, [load]);
 
+  useEffect(() => {
+    bankGateway
+      .list()
+      .then(setBanks)
+      .catch(() => setBanks([]));
+    loadActiveRates('EUR')
+      .then(({ current }) => setEurRate(current))
+      .catch(() => setEurRate(null));
+  }, []);
+
   const providerId =
     batch?.recipientType === 'doctor' ? batch?.doctorId : batch?.careCenterId;
-
-  // Cuentas registradas del proveedor (para precargar banco/cuenta en el pago).
-  // Llegan anidadas en el lote, así que no hay un segundo request encadenado.
+  // Cuentas registradas del proveedor: vienen anidadas en el lote.
   const recipientMethods = useMemo(
     () => (batch ? providerPaymentMethods(batch) : []),
     [batch],
   );
 
-  // Candidatos para agregar: pendientes del mismo proveedor.
   const loadCandidates = useCallback(async () => {
     if (!batch || !providerId) return;
     try {
@@ -568,14 +578,22 @@ function BatchDetail({ id }: { id: string }) {
       setCandidates([]);
     }
   }, [batch, providerId, candidateSearch]);
-
   useEffect(() => {
     if (candidatesOpen) loadCandidates();
   }, [candidatesOpen, loadCandidates]);
 
-  // Tasa de facturación (USD/Bs) de la primera orden: fallback para lotes
-  // previos sin tasa de pago propia (el BE aplica la misma regla).
-  const usdRate = useMemo<ExchangeRate | null>(() => {
+  // Tasa por defecto del lote (la del último pago, o la de facturación).
+  const defaultRate = useMemo<ExchangeRate | null>(() => {
+    const er = batch?.exchangeRate;
+    if (er) {
+      return {
+        id: er.id,
+        currency: er.currency,
+        amountBs: String(er.amountBs),
+        effectiveDate: er.effectiveDate ?? '',
+        isActive: er.isActive ?? true,
+      } as ExchangeRate;
+    }
     const fr = batch?.orders?.[0]?.internalOrder?.order?.billingExchangeRate;
     if (!fr) return null;
     return {
@@ -587,30 +605,13 @@ function BatchDetail({ id }: { id: string }) {
     } as ExchangeRate;
   }, [batch]);
 
-  // Tasa por defecto del lote: la que se propone al próximo abono y con la que
-  // el BE proyecta el saldo pendiente en Bs. Los abonos ya hechos tienen la suya.
-  const batchRate = useMemo<ExchangeRate | null>(() => {
-    const er = batch?.exchangeRate;
-    if (!er) return null;
-    return {
-      id: er.id,
-      currency: er.currency,
-      amountBs: String(er.amountBs),
-      effectiveDate: er.effectiveDate ?? '',
-      isActive: er.isActive ?? true,
-    } as ExchangeRate;
-  }, [batch]);
-  const defaultRate = batchRate ?? usdRate;
-
   const { usdRates, currentRateId } = useUsdRates();
   const ratesForSelect = useMemo<ExchangeRate[]>(() => {
     const list = [...usdRates];
     const push = (r: ExchangeRate | null) => {
       if (r && !list.some((x) => x.id === r.id)) list.push(r);
     };
-    push(batchRate);
-    push(usdRate);
-    // Tasas ya snapshoteadas en abonos del lote (para prefijar al editar).
+    push(defaultRate);
     for (const s of batch?.settlements ?? []) {
       const er = s.exchangeRate;
       if (er && er.currency === 'USD') {
@@ -624,248 +625,164 @@ function BatchDetail({ id }: { id: string }) {
       }
     }
     return list;
-  }, [usdRates, batchRate, usdRate, batch]);
+  }, [usdRates, defaultRate, batch]);
 
-  // ---------------- Abono en edición/alta ----------------
+  // ---------------- Formulario de pago ----------------
   const todayIso = new Date().toISOString().slice(0, 10);
-  const [settlementDate, setSettlementDate] = useState(todayIso);
-  const [coveredUsd, setCoveredUsd] = useState<number | undefined>(undefined);
-  const [formRateId, setFormRateId] = useState<string | null>(null);
-  const [customOn, setCustomOn] = useState(false);
-  const [customRetentionBs, setCustomRetentionBs] = useState<number | undefined>(
-    undefined,
-  );
-
-  const methods = useForm<PaymentFormValues>({
-    resolver: zodResolver(paymentSchema),
-    mode: 'onBlur',
-    defaultValues: { payments: [] },
-  });
-  const { handleSubmit, formState, control, setValue, getValues, reset } = methods;
+  const [draft, setDraft] = useState<PaymentDraft>(() => emptyDraft(todayIso));
+  const patch = (p: Partial<PaymentDraft>) => setDraft((d) => ({ ...d, ...p }));
 
   const appliesRetention = batch ? batchAppliesRetention(batch) : true;
   const grossUsd = batch?.grossUsd ?? 0;
-  const editingSettlement = useMemo(
-    () =>
-      (batch?.settlements ?? []).find((s) => s.id === editingSettlementId) ?? null,
-    [batch, editingSettlementId],
-  );
-  // Saldo disponible para el abono: lo que falta (más lo que libera el abono
-  // que se está editando, que se reemplaza por completo).
+  const payments = batch?.settlements ?? [];
+  const editing = payments.find((s) => s.id === editingId) ?? null;
+  // Saldo disponible: lo que falta más lo que libera el pago en edición.
   const availableUsd = round2(
-    (batch?.pendingUsd ?? 0) + Number(editingSettlement?.coveredUsd ?? 0),
+    (batch?.pendingUsd ?? 0) + Number(editing?.coveredUsd ?? 0),
   );
+  const coveredUsd = draft.coveredUsd ?? availableUsd;
+  const rateId = draft.rateId ?? defaultRate?.id ?? null;
+  const rate = ratesForSelect.find((r) => r.id === rateId) ?? null;
+  const rateBs = Number(rate?.amountBs ?? 0);
 
-  const formRate = useMemo<ExchangeRate | null>(
-    () => ratesForSelect.find((r) => r.id === formRateId) ?? null,
-    [ratesForSelect, formRateId],
-  );
-  const formRateBs = Number(formRate?.amountBs ?? 0);
-
-  // Valores por defecto del formulario: cubrir TODO el saldo a la tasa del lote.
-  const resetSettlementForm = useCallback(() => {
-    setEditingSettlementId(null);
-    setSettlementDate(todayIso);
-    setCoveredUsd(undefined);
-    setFormRateId(null);
-    setCustomOn(false);
-    setCustomRetentionBs(undefined);
-    reset({ payments: [] });
-  }, [reset, todayIso]);
-
-  // Alta: precargar saldo y tasa del lote en cuanto se conocen.
-  useEffect(() => {
-    if (editingSettlementId) return;
-    setCoveredUsd((prev) =>
-      prev === undefined && (batch?.pendingUsd ?? 0) > 0 ? batch?.pendingUsd : prev,
-    );
-    setFormRateId((prev) => prev ?? defaultRate?.id ?? null);
-  }, [batch?.pendingUsd, defaultRate?.id, editingSettlementId]);
-
-  const seniatPersonType: SeniatPersonType = batch
-    ? personTypeOf(batch)
-    : 'natural';
+  const personType: SeniatPersonType = batch ? personTypeOf(batch) : 'natural';
   const effectiveTaxUnit = batch?.taxUnit ?? taxUnit;
   const taxUnitBs = effectiveTaxUnit ? Number(effectiveTaxUnit.amountBs) : 0;
-
-  // Retención prorrateada del abono: la del bruto TOTAL a esta tasa, por la
-  // porción que cubre. Espejo exacto del cálculo del BE.
   const slice: SliceRetentionResult | null =
     appliesRetention && taxUnitBs > 0
       ? calcSliceRetention({
-          sliceUsd: coveredUsd ?? 0,
+          sliceUsd: coveredUsd,
           totalUsd: grossUsd,
-          rateBs: formRateBs,
-          personType: seniatPersonType,
+          rateBs,
+          personType,
           taxUnitBs,
         })
       : null;
   const autoRetentionBs = slice?.taxAmountBs ?? 0;
-  const settlementGrossBs = round2((coveredUsd ?? 0) * formRateBs);
+  const grossBs = round2(coveredUsd * rateBs);
   const retentionBs = !appliesRetention
     ? 0
-    : customOn
-      ? (customRetentionBs ?? 0)
+    : draft.customOn
+      ? (draft.customRetentionBs ?? 0)
       : autoRetentionBs;
-  const settlementNetBs = round2(settlementGrossBs - retentionBs);
+  const netBs = round2(grossBs - retentionBs);
 
-  const lookupRate = useCallback(
-    (rid: string): ExchangeRate | null =>
-      eurRatesById[rid] ?? ratesForSelect.find((r) => r.id === rid) ?? null,
-    [eurRatesById, ratesForSelect],
+  // Moneda y monto del movimiento, derivados del neto.
+  const currency: 'BS' | 'USD' | 'EUR' =
+    draft.type === 'cash_usd' || draft.type === 'other'
+      ? 'USD'
+      : draft.type === 'cash_eur'
+        ? 'EUR'
+        : 'BS';
+  const eurBs = Number(eurRate?.amountBs ?? 0);
+  const amount =
+    currency === 'BS'
+      ? netBs
+      : currency === 'USD'
+        ? rateBs > 0
+          ? round2(netBs / rateBs)
+          : 0
+        : eurBs > 0
+          ? round2(netBs / eurBs)
+          : 0;
+
+  const needsBank = draft.type === 'mobile_payment' || draft.type === 'bank_transfer';
+  const needsRef = needsBank || draft.type === 'other';
+  const bankOptions = useMemo(
+    () => selectableBanks(banks, draft.bankCode || null),
+    [banks, draft.bankCode],
+  );
+  const methodsForType = useMemo(
+    () => recipientMethods.filter((m) => m.type === draft.type),
+    [recipientMethods, draft.type],
   );
 
-  const watchedPayments = methods.watch('payments') ?? [];
-  const rowsBs = useMemo(
-    () =>
-      round2(
-        watchedPayments.reduce(
-          (sum, p) => sum + paymentInBs(p, formRate, lookupRate),
-          0,
-        ),
-      ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [watchedPayments, formRate, eurRatesById],
-  );
-  const rowsDiff = round2(settlementNetBs - rowsBs);
-  const rowsBalanced = Math.abs(rowsDiff) <= 0.01;
-  const coveredValid =
-    (coveredUsd ?? 0) > 0 && (coveredUsd ?? 0) - availableUsd <= 0.01;
-  const canSubmitSettlement =
+  const coveredValid = coveredUsd > 0 && coveredUsd - availableUsd <= 0.01;
+  const canSubmit =
     coveredValid &&
-    formRateBs > 0 &&
-    settlementNetBs > 0 &&
-    rowsBalanced &&
-    watchedPayments.length > 0 &&
-    (!customOn || customRetentionBs !== undefined);
+    rateBs > 0 &&
+    netBs > 0 &&
+    amount > 0 &&
+    !!draft.date &&
+    (!needsBank || !!draft.bankCode) &&
+    (!needsRef || !!draft.referenceNumber.trim()) &&
+    (currency !== 'EUR' || eurBs > 0) &&
+    (!draft.customOn || draft.customRetentionBs !== undefined);
 
-  const paymentDefaults = (type: OrderPaymentType): OrderPaymentValues => {
-    const base = {
-      type,
-      paymentDate: settlementDate || todayIso,
-      referenceNumber: '',
-      bankCode: '',
-      exchangeRateId: '',
-      accountNumber: '',
-      amountValue: 0,
-    };
-    if (type === 'mobile_payment' || type === 'bank_transfer' || type === 'cash_bs') {
-      return { ...base, exchangeRateId: formRate?.id ?? '', amountCurrency: 'BS' };
-    }
-    if (type === 'cash_usd') return { ...base, amountCurrency: 'USD' };
-    if (type === 'cash_eur') return { ...base, amountCurrency: 'EUR' };
-    return { ...base, amountCurrency: 'USD' };
-  };
+  const resetForm = useCallback(() => {
+    setEditingId(null);
+    setDraft(emptyDraft(todayIso));
+  }, [todayIso]);
 
-  const addPayment = (type: OrderPaymentType) => {
-    setValue('payments', [...(getValues('payments') ?? []), paymentDefaults(type)], {
-      shouldDirty: true,
-    });
-  };
-  const removePaymentAt = (idx: number) => {
-    setValue(
-      'payments',
-      (getValues('payments') ?? []).filter((_, i) => i !== idx),
-      { shouldDirty: true },
-    );
-  };
-
-  /** Cambiar la tasa del abono realinea las filas en Bs (van siempre a esa tasa). */
-  const onSelectFormRate = (rateId: string) => {
-    setFormRateId(rateId);
-    const rows = getValues('payments') ?? [];
-    if (rows.length) {
-      setValue(
-        'payments',
-        rows.map((p) =>
-          p.amountCurrency === 'BS' ? { ...p, exchangeRateId: rateId } : p,
-        ),
-        { shouldDirty: true },
-      );
-    }
-  };
-
-  const onSubmitSettlement = async (values: PaymentFormValues) => {
-    if (!formRate) return;
+  const onSubmit = async () => {
+    if (!rate || !canSubmit) return;
     setBusy(true);
     try {
       const dto = {
-        settlementDate,
-        coveredUsd: round2(coveredUsd ?? 0),
-        exchangeRateId: formRate.id,
+        settlementDate: draft.date,
+        coveredUsd: round2(coveredUsd),
+        exchangeRateId: rate.id,
         taxUnitId: effectiveTaxUnit?.id,
         customRetentionBs:
-          appliesRetention && customOn ? (customRetentionBs ?? 0) : null,
-        payments: values.payments.map((p) => ({
-          type: p.type,
-          paymentDate: p.paymentDate,
-          referenceNumber: p.referenceNumber || undefined,
-          bankCode: p.bankCode || undefined,
-          accountNumber: p.accountNumber || undefined,
-          // Filas en Bs: la tasa del abono (están bloqueadas a ella). Filas en
-          // EUR llevan su tasa EUR/Bs; las de USD caen a la del abono.
-          exchangeRateId:
-            p.amountCurrency === 'BS'
-              ? formRate.id
-              : p.exchangeRateId || formRate.id,
-          amountCurrency: p.amountCurrency,
-          amountValue: p.amountValue,
-        })),
+          appliesRetention && draft.customOn ? (draft.customRetentionBs ?? 0) : null,
+        payments: [
+          {
+            type: draft.type,
+            paymentDate: draft.date,
+            referenceNumber: draft.referenceNumber.trim() || undefined,
+            bankCode: needsBank ? draft.bankCode : undefined,
+            accountNumber:
+              draft.type === 'other' ? draft.accountNumber.trim() || undefined : undefined,
+            exchangeRateId: currency === 'EUR' ? eurRate?.id : rate.id,
+            amountCurrency: currency,
+            amountValue: amount,
+          },
+        ],
       };
-      const updated = editingSettlementId
-        ? await accountsPayableGateway.editSettlement(id, editingSettlementId, dto)
+      const updated = editingId
+        ? await accountsPayableGateway.editSettlement(id, editingId, dto)
         : await accountsPayableGateway.registerSettlement(id, dto);
-      notify.success(editingSettlementId ? 'Abono actualizado' : 'Abono registrado');
+      notify.success(editingId ? 'Pago actualizado' : 'Pago registrado');
       setBatch(updated);
-      resetSettlementForm();
+      resetForm();
     } catch (e) {
-      notify.fromError(e, 'No se pudo registrar el abono');
+      notify.fromError(e, 'No se pudo registrar el pago');
     } finally {
       setBusy(false);
     }
   };
 
-  const startEditSettlement = (settlementId: string) => {
-    const s = (batch?.settlements ?? []).find((x) => x.id === settlementId);
+  const startEdit = (settlementId: string) => {
+    const s = payments.find((x) => x.id === settlementId);
     if (!s) return;
-    setEditingSettlementId(settlementId);
-    setSettlementDate(s.settlementDate?.slice(0, 10) || todayIso);
-    setCoveredUsd(Number(s.coveredUsd) || 0);
-    setFormRateId(s.exchangeRateId);
-    setCustomOn(!!s.isCustomRetention);
-    setCustomRetentionBs(s.isCustomRetention ? Number(s.retentionBs) : undefined);
-    reset({
-      payments: (s.payments ?? []).map(
-        (p) =>
-          ({
-            type: p.type,
-            paymentDate: p.paymentDate?.slice(0, 10) || todayIso,
-            referenceNumber: p.referenceNumber ?? '',
-            bankCode: p.bankCode ?? '',
-            accountNumber: p.accountNumber ?? '',
-            exchangeRateId:
-              p.amountCurrency === 'BS'
-                ? s.exchangeRateId
-                : (p.exchangeRateId ?? ''),
-            amountCurrency: p.amountCurrency,
-            amountValue: Number(p.amountValue) || 0,
-          }) as OrderPaymentValues,
-      ),
+    const p = s.payments?.[0];
+    setEditingId(settlementId);
+    setDraft({
+      type: p?.type ?? 'bank_transfer',
+      date: s.settlementDate?.slice(0, 10) || todayIso,
+      bankCode: p?.bankCode ?? '',
+      referenceNumber: p?.referenceNumber ?? '',
+      accountNumber: p?.accountNumber ?? '',
+      recipientMethodId: '',
+      coveredUsd: Number(s.coveredUsd) || 0,
+      rateId: s.exchangeRateId,
+      customOn: !!s.isCustomRetention,
+      customRetentionBs: s.isCustomRetention ? Number(s.retentionBs) : undefined,
     });
-    document.getElementById('ap-settlement-form')?.scrollIntoView({ behavior: 'smooth' });
+    document.getElementById('ap-payment-form')?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const onDeleteSettlement = async (settlementId: string) => {
+  const onDeletePayment = async (settlementId: string) => {
     setBusy(true);
     try {
       setBatch(await accountsPayableGateway.deleteSettlement(id, settlementId));
-      notify.success('Abono eliminado');
-      if (editingSettlementId === settlementId) resetSettlementForm();
+      notify.success('Pago eliminado');
+      if (editingId === settlementId) resetForm();
     } catch (e) {
-      notify.fromError(e, 'No se pudo eliminar el abono');
+      notify.fromError(e, 'No se pudo eliminar el pago');
     } finally {
       setBusy(false);
-      setConfirmSettlementDelete(null);
+      setConfirmPaymentDelete(null);
     }
   };
 
@@ -927,9 +844,7 @@ function BatchDetail({ id }: { id: string }) {
     setBusy(true);
     try {
       setBatch(await accountsPayableGateway.setRetention(id, next));
-      notify.success(
-        next ? 'Retención de ISLR activada' : 'Retención de ISLR desactivada',
-      );
+      notify.success(next ? 'Retención de ISLR activada' : 'Retención de ISLR desactivada');
     } catch (e) {
       notify.fromError(e, 'No se pudo cambiar la retención');
     } finally {
@@ -949,10 +864,9 @@ function BatchDetail({ id }: { id: string }) {
     return <PageLoader label="Cargando lote…" />;
   }
 
-  const settlements = batch.settlements ?? [];
-  const hasSettlements = settlements.length > 0;
   const pendingUsdValue = batch.pendingUsd ?? 0;
-  const showSettlementForm = canUpdate && (editingSettlementId || availableUsd > 0.01);
+  const showForm = canUpdate && (editingId || availableUsd > 0.01);
+  const isLegal = personType === 'legal_entity';
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -977,95 +891,66 @@ function BatchDetail({ id }: { id: string }) {
         </button>
       </div>
 
-      {/* Retención (opcional por lote) */}
-      <FormSection
-        title="Retención SENIAT"
-        description="Define si este lote descuenta la retención de ISLR al proveedor. Cada abono practica su propia retención."
-      >
-        <FormSwitch
-          label="Aplicar retención de ISLR"
-          description={retentionSwitchDescription(appliesRetention)}
-          checked={appliesRetention}
-          onCheckedChange={onSetRetention}
-          disabled={hasSettlements || busy || !canUpdate}
-        />
-        {hasSettlements ? (
-          <p className="text-xs text-muted-foreground mt-2">
-            El lote ya tiene abonos: para cambiar el régimen de retención, elimina
-            sus abonos primero.
-          </p>
-        ) : null}
-      </FormSection>
-
-      {/* Totales */}
+      {/* Resumen */}
       <FormSection
         title="Resumen"
-        description={`El saldo del lote se lleva en USD: cada abono cubre una porción a su propia tasa y con su propia retención. Los Bs del saldo pendiente son una proyección${
-          defaultRate
-            ? ` a la tasa por defecto del lote (1 USD = ${formatMoney(defaultRate.amountBs)} Bs.)`
-            : ''
-        }.`}
+        description="El saldo se lleva en USD. Cada pago se registra a su propia tasa y retiene su propia parte de ISLR."
       >
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-          <SummaryTile label="Bruto del lote" value={`${formatMoney(grossUsd)} USD`} />
+          <SummaryTile label="Total del lote" value={`${formatMoney(grossUsd)} USD`} />
           <SummaryTile
-            label="Abonado"
+            label="Pagado"
             value={`${formatMoney(batch.coveredUsd ?? 0)} USD`}
+            sub={`${formatMoney(batch.paidBs ?? 0)} Bs. entregados`}
           />
           <SummaryTile
             label="Falta por pagar"
             value={`${formatMoney(pendingUsdValue)} USD`}
+            sub={
+              pendingUsdValue > 0.01 && defaultRate
+                ? `≈ ${formatMoney(batch.pendingBs ?? 0)} Bs. a ${formatMoney(defaultRate.amountBs)}`
+                : undefined
+            }
             tone={pendingUsdValue > 0.01 ? 'warning' : 'success'}
           />
           <SummaryTile
-            label="Entregado al proveedor"
-            value={`${formatMoney(batch.paidBs ?? 0)} Bs.`}
-            tone="success"
-          />
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mt-3">
-          <SummaryTile
-            label="Retención practicada"
+            label="Retención ISLR"
             value={
               appliesRetention
                 ? `${formatMoney(batch.settledRetentionBs ?? 0)} Bs.`
                 : 'No aplica'
             }
-            tone={appliesRetention ? 'warning' : undefined}
-          />
-          <SummaryTile
-            label="Bruto abonado"
-            value={`${formatMoney(batch.settledGrossBs ?? 0)} Bs.`}
-          />
-          <SummaryTile
-            label="Saldo proyectado"
-            value={`${formatMoney(batch.pendingBs ?? 0)} Bs.`}
-          />
-          <SummaryTile
-            label="Total estimado del lote"
-            value={`${formatMoney(batch.netBs ?? 0)} Bs.`}
+            sub={appliesRetention ? 'retenida hasta ahora' : undefined}
           />
         </div>
 
-        {appliesRetention ? (
-          <Can permission={PERMISSIONS.ACCOUNTS_PAYABLE.UPDATE}>
-            <div className="mt-4">
+        <Can permission={PERMISSIONS.ACCOUNTS_PAYABLE.UPDATE}>
+          <div className="mt-4 pt-4 border-t grid gap-4 sm:grid-cols-2 items-start">
+            <FormSwitch
+              label="Aplicar retención de ISLR"
+              description={
+                payments.length > 0
+                  ? 'Con pagos registrados no se puede cambiar.'
+                  : appliesRetention
+                    ? 'Cada pago retiene su parte y genera su obligación SENIAT.'
+                    : 'El proveedor recibe el bruto completo.'
+              }
+              checked={appliesRetention}
+              onCheckedChange={onSetRetention}
+              disabled={payments.length > 0 || busy}
+            />
+            {appliesRetention ? (
               <TaxUnitSelect
-                className="max-w-md"
-                label="Unidad Tributaria del lote"
-                placeholder="UT vigente al calcular"
+                label="Unidad Tributaria"
+                placeholder="UT vigente"
                 selectedId={batch.taxUnitId ?? null}
                 selectedFallback={batch.taxUnit ?? null}
                 onSelect={(ut) => onSetTaxUnit(ut.id)}
                 disabled={busy}
               />
-              <p className="text-xs text-muted-foreground mt-1.5">
-                UT con la que se calcula la retención de los PRÓXIMOS abonos. Los
-                abonos ya registrados conservan la suya.
-              </p>
-            </div>
-          </Can>
-        ) : null}
+            ) : null}
+          </div>
+        </Can>
       </FormSection>
 
       {/* Órdenes */}
@@ -1155,9 +1040,7 @@ function BatchDetail({ id }: { id: string }) {
               key={o.internalOrderId}
               className="flex items-center justify-between py-2 first:pt-0 last:pb-0 gap-3"
             >
-              <span className="font-mono font-medium">
-                N° {orderInternalNumber(o)}
-              </span>
+              <span className="font-mono font-medium">N° {orderInternalNumber(o)}</span>
               <div className="flex items-center gap-3 shrink-0">
                 <span className="font-mono">{formatMoney(o.grossUsd)} USD</span>
                 <Can permission={PERMISSIONS.ACCOUNTS_PAYABLE.UPDATE}>
@@ -1179,284 +1062,308 @@ function BatchDetail({ id }: { id: string }) {
         </ul>
       </FormSection>
 
-      {/* Abonos registrados */}
+      {/* Pagos registrados */}
       <FormSection
-        title={`Abonos registrados (${settlements.length})`}
-        description="Cada abono cubre una porción del lote en USD, a su tasa, con su retención y su obligación con el SENIAT."
+        title={`Pagos registrados (${payments.length})`}
+        description="Cada pago lleva su tasa, su retención de ISLR y su obligación con el SENIAT."
       >
-        {settlements.length === 0 ? (
-          <p className="text-sm text-muted-foreground italic">Sin abonos registrados.</p>
+        {payments.length === 0 ? (
+          <p className="text-sm text-muted-foreground italic">Sin pagos registrados.</p>
         ) : (
-          <ul className="space-y-3">
-            {settlements.map((s, idx) => (
-              <SettlementCard
+          <ul className="divide-y">
+            {payments.map((s) => (
+              <PaymentRow
                 key={s.id}
-                index={idx + 1}
                 settlement={s}
-                onEdit={() => startEditSettlement(s.id)}
-                onDelete={() => setConfirmSettlementDelete(s.id)}
+                onEdit={() => startEdit(s.id)}
+                onDelete={() => setConfirmPaymentDelete(s.id)}
                 busy={busy}
-                editing={editingSettlementId === s.id}
+                editing={editingId === s.id}
               />
             ))}
           </ul>
         )}
       </FormSection>
 
-      {/* Registrar / editar abono */}
-      {showSettlementForm ? (
-        <div id="ap-settlement-form">
-          <FormProvider {...methods}>
-            <form
-              onSubmit={handleSubmit(onSubmitSettlement, (errs) =>
-                notifyFormErrors(errs),
-              )}
-            >
-              <FormSection
-                title={editingSettlementId ? 'Editar abono' : 'Registrar abono'}
-                description={
-                  appliesRetention
-                    ? 'Indica cuántos USD del lote cubre este pago y a qué tasa: se calculan el bruto, la retención de ISLR y el neto a transferir.'
-                    : 'Indica cuántos USD del lote cubre este pago y a qué tasa. Este lote no descuenta retención: el proveedor recibe el bruto.'
-                }
-              >
-                {ratesForSelect.length === 0 ? (
-                  <p className="text-sm text-destructive flex items-center gap-1.5">
-                    <AlertTriangle className="w-4 h-4" />
-                    No hay tasas USD/Bs cargadas; no se puede registrar el abono.
-                  </p>
-                ) : (
-                  <>
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">
-                          Fecha del abono
-                        </label>
-                        <DatePicker
-                          value={settlementDate}
-                          onChange={(v) => setSettlementDate(v ?? todayIso)}
-                          disabled={busy}
-                        />
-                        <p className="text-[11px] text-muted-foreground">
-                          Define el período fiscal de su retención.
-                        </p>
-                      </div>
-                      <div className="space-y-1">
-                        <label
-                          htmlFor="ap-covered-usd"
-                          className="text-xs font-medium text-muted-foreground"
-                        >
-                          USD del lote a cubrir
-                        </label>
-                        <CurrencyAmountInput
-                          id="ap-covered-usd"
-                          currencyPrefix="$ "
-                          value={coveredUsd}
-                          onChange={setCoveredUsd}
-                          disabled={busy}
-                          invalid={!coveredValid}
-                        />
-                        <button
-                          type="button"
-                          className="text-[11px] text-brand-blue hover:underline"
-                          onClick={() => setCoveredUsd(availableUsd)}
-                          disabled={busy}
-                        >
-                          Cubrir todo el saldo ({formatMoney(availableUsd)} USD)
-                        </button>
-                      </div>
-                      <div className="space-y-1">
-                        <UsdRateSelect
-                          rates={ratesForSelect}
-                          selectedId={formRate?.id ?? ''}
-                          currentRateId={currentRateId}
-                          onSelect={onSelectFormRate}
-                          allowCreate
-                          disabled={busy}
-                          label="Tasa del abono (USD/Bs)"
-                        />
-                        <p className="text-[11px] text-muted-foreground">
-                          La tasa a la que se pagó ESTA porción. No afecta a los
-                          abonos anteriores.
-                        </p>
-                      </div>
-                    </div>
-
-                    {appliesRetention ? (
-                      <div className="mt-4 pt-4 border-t">
-                        <FormSwitch
-                          label="Monto de retención manual"
-                          description={
-                            customOn
-                              ? 'La retención de este abono NO se calcula: se retiene el monto en Bs que indiques.'
-                              : 'La retención se calcula prorrateando la del lote completo por la porción que cubre este abono.'
+      {/* Registrar / editar pago */}
+      {showForm ? (
+        <div id="ap-payment-form">
+          <FormSection
+            title={editingId ? 'Editar pago' : 'Registrar pago'}
+            description={
+              appliesRetention
+                ? 'Indica cuántos USD del lote paga y a qué tasa; el monto a transferir ya descuenta la retención de ISLR.'
+                : 'Indica cuántos USD del lote paga y a qué tasa.'
+            }
+          >
+            {ratesForSelect.length === 0 ? (
+              <p className="text-sm text-destructive flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4" />
+                No hay tasas USD/Bs cargadas; no se puede registrar el pago.
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {/* Datos del movimiento */}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Tipo</Label>
+                    <Select
+                      value={draft.type}
+                      onValueChange={(v) =>
+                        patch({
+                          type: v as OrderPaymentType,
+                          bankCode: '',
+                          accountNumber: '',
+                          recipientMethodId: '',
+                        })
+                      }
+                      disabled={busy}
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {STANDARD_TYPES.map((t) => (
+                          <SelectItem key={t} value={t}>
+                            {PAYMENT_TYPE_LABEL[t]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Fecha</Label>
+                    <DatePicker
+                      value={draft.date}
+                      onChange={(v) => patch({ date: v ?? todayIso })}
+                      disabled={busy}
+                    />
+                  </div>
+                  {needsBank && methodsForType.length > 0 ? (
+                    <div className="space-y-1">
+                      <Label className="text-xs">Cuenta del proveedor</Label>
+                      <Select
+                        value={draft.recipientMethodId || '__manual__'}
+                        onValueChange={(v) => {
+                          if (v === '__manual__') {
+                            patch({ recipientMethodId: '', bankCode: '' });
+                            return;
                           }
-                          checked={customOn}
-                          onCheckedChange={(next) => {
-                            setCustomOn(next);
-                            setCustomRetentionBs(next ? autoRetentionBs : undefined);
-                          }}
-                          disabled={busy}
-                        />
-                        {customOn ? (
-                          <div className="mt-3 w-full max-w-xs space-y-1">
-                            <label
-                              htmlFor="ap-custom-retention"
-                              className="text-xs font-medium text-muted-foreground"
-                            >
-                              Monto a retener (Bs.)
-                            </label>
-                            <CurrencyAmountInput
-                              id="ap-custom-retention"
-                              value={customRetentionBs}
-                              onChange={setCustomRetentionBs}
-                              disabled={busy}
-                              invalid={customRetentionBs === undefined}
-                            />
-                            <p className="text-[11px] text-muted-foreground">
-                              Cálculo de referencia: {formatMoney(autoRetentionBs)} Bs.
-                            </p>
-                          </div>
+                          const m = methodsForType.find((x) => x.id === v);
+                          patch({
+                            recipientMethodId: v,
+                            bankCode: m?.bankCode ?? '',
+                            accountNumber: m?.accountNumber ?? '',
+                          });
+                        }}
+                        disabled={busy}
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="Selecciona una cuenta" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {methodsForType.map((m) => (
+                            <SelectItem key={m.id} value={m.id as string}>
+                              {recipientMethodLabel(m, banks)}
+                            </SelectItem>
+                          ))}
+                          <SelectItem value="__manual__">Otra cuenta (manual)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : null}
+                  {needsBank ? (
+                    <div className="space-y-1">
+                      <Label className="text-xs">Banco</Label>
+                      <Select
+                        value={draft.bankCode || ''}
+                        onValueChange={(v) => patch({ bankCode: v })}
+                        disabled={busy || !!draft.recipientMethodId}
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="Selecciona banco" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {bankOptions.map((b) => (
+                            <SelectItem key={b.code} value={b.code}>
+                              {b.code} · {b.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : null}
+                  {needsRef ? (
+                    <div className="space-y-1">
+                      <Label className="text-xs">Referencia</Label>
+                      <Input
+                        className="h-9"
+                        value={draft.referenceNumber}
+                        onChange={(e) => patch({ referenceNumber: e.target.value })}
+                        maxLength={20}
+                        disabled={busy}
+                      />
+                    </div>
+                  ) : null}
+                  {draft.type === 'other' ? (
+                    <div className="space-y-1">
+                      <Label className="text-xs">Cuenta / detalle (opcional)</Label>
+                      <Input
+                        className="h-9"
+                        value={draft.accountNumber}
+                        onChange={(e) => patch({ accountNumber: e.target.value })}
+                        maxLength={40}
+                        disabled={busy}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+
+                {/* Cuánto del lote paga y a qué tasa */}
+                <div className="grid gap-3 sm:grid-cols-2 pt-3 border-t">
+                  <div className="space-y-1">
+                    <Label className="text-xs" htmlFor="ap-covered-usd">
+                      USD del lote que paga
+                    </Label>
+                    <CurrencyAmountInput
+                      id="ap-covered-usd"
+                      currencyPrefix="$ "
+                      value={draft.coveredUsd ?? availableUsd}
+                      onChange={(v) => patch({ coveredUsd: v })}
+                      disabled={busy}
+                      invalid={!coveredValid}
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Saldo: {formatMoney(availableUsd)} USD
+                      {coveredUsd < availableUsd - 0.01 ? (
+                        <>
+                          {' · '}
+                          <button
+                            type="button"
+                            className="text-brand-blue hover:underline"
+                            onClick={() => patch({ coveredUsd: availableUsd })}
+                          >
+                            pagar todo
+                          </button>
+                        </>
+                      ) : null}
+                    </p>
+                  </div>
+                  <UsdRateSelect
+                    rates={ratesForSelect}
+                    selectedId={rateId ?? ''}
+                    currentRateId={currentRateId}
+                    onSelect={(v) => patch({ rateId: v })}
+                    disabled={busy}
+                    label="Tasa del pago (USD/Bs)"
+                  />
+                </div>
+
+                {/* Resultado */}
+                <div className="rounded-lg border bg-muted/30 p-3 space-y-2 text-sm">
+                  <div className="flex justify-between gap-3 font-mono">
+                    <span className="text-muted-foreground">
+                      Bruto · {formatMoney(coveredUsd)} USD × {formatMoney(rateBs)}
+                    </span>
+                    <span>{formatMoney(grossBs)} Bs.</span>
+                  </div>
+                  {appliesRetention ? (
+                    <div className="flex justify-between gap-3 font-mono items-start">
+                      <span className="text-muted-foreground">
+                        − Retención ISLR
+                        {draft.customOn ? (
+                          <> (manual)</>
+                        ) : slice ? (
+                          <>
+                            {' '}
+                            · {(slice.taxRate * 100).toFixed(0)}%
+                            {!isLegal && slice.subtrahendBs > 0
+                              ? ` − sustraendo ${formatMoney(slice.subtrahendBs)}`
+                              : ''}
+                            {slice.belowThreshold ? ' · bajo el mínimo' : ''}
+                          </>
                         ) : null}
-                        <SeniatBreakdown
-                          personType={seniatPersonType}
-                          taxUnitBs={taxUnitBs}
-                          result={slice}
-                          customRetentionBs={customOn ? (customRetentionBs ?? 0) : null}
-                        />
-                      </div>
-                    ) : null}
-
-                    <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
-                      <SummaryTile
-                        label="Bruto del abono"
-                        value={`${formatMoney(settlementGrossBs)} Bs.`}
-                      />
-                      <SummaryTile
-                        label="Retención"
-                        value={
-                          appliesRetention
-                            ? `${formatMoney(retentionBs)} Bs.`
-                            : 'No aplica'
-                        }
-                        tone={appliesRetention ? 'warning' : undefined}
-                      />
-                      <SummaryTile
-                        label="Neto a transferir"
-                        value={`${formatMoney(settlementNetBs)} Bs.`}
-                        tone="success"
-                      />
-                    </div>
-
-                    <div className="mt-4">
-                      <Controller
-                        control={control}
-                        name="payments"
-                        render={({ field }) => (
-                          <OrderPaymentForm
-                            payments={(field.value ?? []) as OrderPaymentValues[]}
-                            onChange={(next) => field.onChange(next)}
-                            usdRate={formRate}
-                            onEurRateLoaded={(r) =>
-                              setEurRatesById((prev) =>
-                                prev[r.id] ? prev : { ...prev, [r.id]: r },
-                              )
-                            }
-                            rateSelectable
-                            rateLocked
-                            rateLockedNote="Fijada a la tasa del abono; cámbiala arriba en «Tasa del abono (USD/Bs)»."
-                            onRatesLoaded={(rates) =>
-                              setEurRatesById((prev) => {
-                                const missing = rates.filter((r) => !prev[r.id]);
-                                if (!missing.length) return prev;
-                                const next = { ...prev };
-                                for (const r of missing) next[r.id] = r;
-                                return next;
-                              })
-                            }
-                            errors={buildPaymentErrors(
-                              (formState.errors as { payments?: unknown }).payments,
-                            )}
-                            hideAddButtons
-                            onRemovePayment={removePaymentAt}
-                            usePaymentAccount={false}
-                            recipientMethods={recipientMethods}
-                            remaining={{ amount: rowsDiff, currency: 'BS' }}
+                        {!draft.customOn ? (
+                          <>
+                            {' · '}
+                            <button
+                              type="button"
+                              className="text-brand-blue hover:underline"
+                              onClick={() =>
+                                patch({ customOn: true, customRetentionBs: autoRetentionBs })
+                              }
+                              disabled={busy}
+                            >
+                              ajustar
+                            </button>
+                          </>
+                        ) : null}
+                      </span>
+                      {draft.customOn ? (
+                        <div className="flex items-center gap-2">
+                          <CurrencyAmountInput
+                            className="h-8 w-36 text-right"
+                            value={draft.customRetentionBs}
+                            onChange={(v) => patch({ customRetentionBs: v })}
+                            disabled={busy}
+                            invalid={draft.customRetentionBs === undefined}
                           />
-                        )}
-                      />
-                    </div>
-
-                    <div className="flex flex-wrap gap-2 mt-3">
-                      {STANDARD_TYPES.map((t) => (
-                        <Button
-                          key={t}
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => addPayment(t)}
-                        >
-                          <Plus className="w-3.5 h-3.5 mr-1" /> {PAYMENT_TYPE_LABEL[t]}
-                        </Button>
-                      ))}
-                    </div>
-
-                    <div className="mt-3 rounded-md border p-3 flex items-center justify-between gap-3 text-sm">
-                      <div className="text-[11px] text-muted-foreground font-mono">
-                        Formas de pago {formatMoney(rowsBs)} / neto{' '}
-                        {formatMoney(settlementNetBs)} Bs.
-                      </div>
-                      {rowsBalanced && watchedPayments.length > 0 ? (
-                        <Badge className="bg-success text-white shrink-0">Cuadrado</Badge>
-                      ) : rowsDiff < 0 ? (
-                        <Badge className="bg-destructive text-white shrink-0">
-                          Excede {formatMoney(-rowsDiff)} Bs.
-                        </Badge>
+                          <button
+                            type="button"
+                            className="text-[11px] text-muted-foreground hover:underline"
+                            onClick={() =>
+                              patch({ customOn: false, customRetentionBs: undefined })
+                            }
+                            title={`Volver al cálculo: ${formatMoney(autoRetentionBs)} Bs.`}
+                          >
+                            auto
+                          </button>
+                        </div>
                       ) : (
-                        <Badge className="bg-warning text-white shrink-0">
-                          Falta {formatMoney(rowsDiff)} Bs.
-                        </Badge>
+                        <span>{formatMoney(retentionBs)} Bs.</span>
                       )}
                     </div>
+                  ) : null}
+                  <div className="flex justify-between gap-3 font-mono font-semibold border-t pt-2 text-success-strong">
+                    <span>Monto a transferir</span>
+                    <span>
+                      {currency === 'BS'
+                        ? `${formatMoney(netBs)} Bs.`
+                        : `${formatMoney(amount)} ${currency} (= ${formatMoney(netBs)} Bs.)`}
+                    </span>
+                  </div>
+                  {appliesRetention && slice && !isLegal ? (
+                    <p className="text-[11px] text-muted-foreground">
+                      Sustraendo y mínimo no sujeto ({formatMoney(slice.thresholdBs)} Bs.) se
+                      calculan sobre el lote completo y se prorratean por la porción pagada
+                      ({(slice.share * 100).toFixed(1)}%). UT {formatMoney(taxUnitBs)} Bs.
+                    </p>
+                  ) : null}
+                  {currency === 'EUR' && !(eurBs > 0) ? (
+                    <p className="text-xs text-destructive">No hay tasa EUR/Bs cargada.</p>
+                  ) : null}
+                </div>
 
-                    <div className="flex items-center justify-end gap-2 mt-4">
-                      {editingSettlementId ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={resetSettlementForm}
-                        >
-                          Cancelar edición
-                        </Button>
-                      ) : null}
-                      <Button
-                        type="submit"
-                        disabled={busy || formState.isSubmitting || !canSubmitSettlement}
-                      >
-                        {busy || formState.isSubmitting
-                          ? 'Guardando…'
-                          : editingSettlementId
-                            ? 'Guardar abono'
-                            : (coveredUsd ?? 0) >= availableUsd - 0.01
-                              ? 'Registrar abono final'
-                              : 'Registrar abono parcial'}
-                      </Button>
-                    </div>
-                  </>
-                )}
-              </FormSection>
-            </form>
-          </FormProvider>
+                <div className="flex items-center justify-end gap-2">
+                  {editingId ? (
+                    <Button type="button" variant="outline" onClick={resetForm}>
+                      Cancelar edición
+                    </Button>
+                  ) : null}
+                  <Button type="button" onClick={onSubmit} disabled={busy || !canSubmit}>
+                    {busy
+                      ? 'Guardando…'
+                      : editingId
+                        ? 'Guardar pago'
+                        : coveredUsd >= availableUsd - 0.01
+                          ? 'Registrar pago'
+                          : 'Registrar pago parcial'}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </FormSection>
         </div>
-      ) : canUpdate ? (
-        <FormSection
-          title="Registrar abono"
-          description="El lote está totalmente abonado. Edita o elimina un abono para liberar saldo."
-        >
-          <p className="text-sm text-muted-foreground italic">
-            No queda saldo por pagar en este lote.
-          </p>
-        </FormSection>
       ) : null}
 
       {/* Anular lote */}
@@ -1484,7 +1391,7 @@ function BatchDetail({ id }: { id: string }) {
               <div>
                 <AlertDialogTitle>Anular lote N° {batch.payableNumber}</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Se borrarán sus abonos y las órdenes volverán a Pendientes. No se
+                  Se borrarán sus pagos y las órdenes volverán a Pendientes. No se
                   puede anular si alguna retención ya fue pagada al SENIAT.
                 </AlertDialogDescription>
               </div>
@@ -1504,8 +1411,8 @@ function BatchDetail({ id }: { id: string }) {
       </AlertDialog>
 
       <AlertDialog
-        open={!!confirmSettlementDelete}
-        onOpenChange={(o) => !o && setConfirmSettlementDelete(null)}
+        open={!!confirmPaymentDelete}
+        onOpenChange={(o) => !o && setConfirmPaymentDelete(null)}
       >
         <AlertDialogContent className="rounded-xl shadow-lg">
           <AlertDialogHeader>
@@ -1514,10 +1421,10 @@ function BatchDetail({ id }: { id: string }) {
                 <Trash2 className="w-5 h-5" />
               </div>
               <div>
-                <AlertDialogTitle>Eliminar abono</AlertDialogTitle>
+                <AlertDialogTitle>Eliminar pago</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Se borrarán sus formas de pago y su retención con el SENIAT, y el
-                  lote volverá a deber esos USD.
+                  Se borrará el pago y su retención con el SENIAT, y el lote volverá a
+                  deber esos USD.
                 </AlertDialogDescription>
               </div>
             </div>
@@ -1525,9 +1432,7 @@ function BatchDetail({ id }: { id: string }) {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>Cancelar</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() =>
-                confirmSettlementDelete && onDeleteSettlement(confirmSettlementDelete)
-              }
+              onClick={() => confirmPaymentDelete && onDeletePayment(confirmPaymentDelete)}
               disabled={busy}
               className="bg-destructive text-white hover:bg-destructive/90"
             >
@@ -1540,86 +1445,92 @@ function BatchDetail({ id }: { id: string }) {
   );
 }
 
-/** Ficha de un abono: porción cubierta, tasa, retención, neto y sus pagos. */
-function SettlementCard({
-  index,
-  settlement,
+/** Etiqueta de una cuenta registrada del proveedor. */
+function recipientMethodLabel(m: RecipientPaymentMethod, banks: Bank[]): string {
+  const bankName = m.bankCode
+    ? (banks.find((b) => b.code === m.bankCode)?.name ?? m.bankCode)
+    : null;
+  if (m.type === 'mobile_payment') {
+    return [bankName, m.phoneNumber].filter(Boolean).join(' · ') || 'Pago móvil';
+  }
+  if (m.type === 'bank_transfer') {
+    const acct = m.accountNumber ? `…${String(m.accountNumber).slice(-4)}` : null;
+    return [bankName, acct].filter(Boolean).join(' · ') || 'Transferencia';
+  }
+  return m.description?.trim() || 'Otra cuenta';
+}
+
+/** Fila de un pago: movimiento, USD cubiertos, tasa, retención y neto. */
+function PaymentRow({
+  settlement: s,
   onEdit,
   onDelete,
   busy,
   editing,
 }: {
-  index: number;
   settlement: AccountsPayableSettlement;
   onEdit: () => void;
   onDelete: () => void;
   busy: boolean;
   editing: boolean;
 }) {
-  const rateBs = settlementRateBs(settlement);
+  const p = s.payments?.[0];
+  const rateBs = settlementRateBs(s);
   return (
     <li
-      className={`rounded-lg border bg-card p-3 ${
-        editing ? 'border-brand-blue ring-1 ring-brand-blue/30' : ''
+      className={`flex items-start gap-3 py-3 first:pt-0 last:pb-0 ${
+        editing ? 'bg-brand-blue/5 -mx-2 px-2 rounded-md' : ''
       }`}
     >
-      <div className="flex items-start gap-3">
-        <div className="flex-1 min-w-0 space-y-1">
-          <div className="flex items-baseline gap-2 flex-wrap">
-            <span className="text-sm font-semibold">Abono {index}</span>
-            <span className="font-mono text-sm">
-              {formatMoney(settlement.coveredUsd)} USD
-            </span>
-            <span className="text-xs text-muted-foreground">
-              · {formatDateOnly(settlement.settlementDate)} · 1 USD ={' '}
-              {formatMoney(rateBs)} Bs.
-            </span>
-          </div>
-          <div className="text-xs font-mono text-muted-foreground">
-            Bruto {formatMoney(settlement.grossBs)} Bs. · Retención{' '}
-            {formatMoney(settlement.retentionBs)} Bs.
-            {settlement.isCustomRetention ? ' (manual)' : ''} · Neto{' '}
-            {formatMoney(settlement.netBs)} Bs.
-          </div>
-          <ul className="text-[11px] text-muted-foreground divide-y border-t mt-1.5 pt-1.5">
-            {(settlement.payments ?? []).map((p) => (
-              <li key={p.id} className="py-1 font-mono">
-                {PAYMENT_TYPE_LABEL[p.type]} ·{' '}
-                {p.paymentDate ? formatDateOnly(p.paymentDate) : '—'} ·{' '}
-                {formatMoney(p.amountValue)} {p.amountCurrency} ·{' '}
-                {formatMoney(p.amountInBs)} Bs.
-                {p.referenceNumber ? ` · Ref. ${p.referenceNumber}` : ''}
-              </li>
-            ))}
-          </ul>
+      <div className="flex-1 min-w-0 text-sm space-y-0.5">
+        <div className="flex items-baseline gap-2 flex-wrap">
+          <span className="font-medium">
+            {p ? PAYMENT_TYPE_LABEL[p.type] : 'Pago'} · {formatDateOnly(s.settlementDate)}
+          </span>
+          {p?.referenceNumber ? (
+            <span className="text-xs text-muted-foreground">Ref. {p.referenceNumber}</span>
+          ) : null}
         </div>
-        <Can permission={PERMISSIONS.ACCOUNTS_PAYABLE.UPDATE}>
-          <div className="flex items-center gap-1 shrink-0">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={onEdit}
-              disabled={busy}
-              title="Editar abono"
-            >
-              <Pencil className="w-3.5 h-3.5" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-destructive"
-              onClick={onDelete}
-              disabled={busy}
-              title="Eliminar abono"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </Button>
-          </div>
-        </Can>
+        <div className="text-xs text-muted-foreground font-mono">
+          {formatMoney(s.coveredUsd)} USD × {formatMoney(rateBs)} = {formatMoney(s.grossBs)}{' '}
+          Bs. − retención {formatMoney(s.retentionBs)} Bs.
+          {s.isCustomRetention ? ' (manual)' : ''}
+        </div>
       </div>
+      <div className="text-right font-mono text-sm shrink-0">
+        <div className="font-semibold">{formatMoney(s.netBs)} Bs.</div>
+        {p && p.amountCurrency !== 'BS' ? (
+          <div className="text-xs text-muted-foreground">
+            {formatMoney(p.amountValue)} {p.amountCurrency}
+          </div>
+        ) : null}
+      </div>
+      <Can permission={PERMISSIONS.ACCOUNTS_PAYABLE.UPDATE}>
+        <div className="flex items-center gap-1 shrink-0">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={onEdit}
+            disabled={busy}
+            title="Editar pago"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+            onClick={onDelete}
+            disabled={busy}
+            title="Eliminar pago"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </Button>
+        </div>
+      </Can>
     </li>
   );
 }
@@ -1633,10 +1544,13 @@ const STATUS_TEXT: Record<AccountsPayableBatch['status'], string> = {
 function SummaryTile({
   label,
   value,
+  sub,
   tone,
 }: {
   label: string;
   value: string;
+  /** Línea secundaria bajo el valor. */
+  sub?: string;
   tone?: 'warning' | 'success';
 }) {
   return (
@@ -1653,91 +1567,7 @@ function SummaryTile({
         {label}
       </div>
       <div className="font-mono font-semibold">{value}</div>
-    </div>
-  );
-}
-
-/**
- * Desglose del cálculo de la retención de UN abono (ISLR, Decreto 1.808): la
- * retención del bruto total a la tasa del abono, prorrateada por la porción que
- * cubre — por eso el sustraendo aparece prorrateado y el mínimo no sujeto es el
- * del total.
- */
-function SeniatBreakdown({
-  personType,
-  taxUnitBs,
-  result,
-  customRetentionBs,
-}: {
-  personType: SeniatPersonType;
-  taxUnitBs: number | null;
-  result: SliceRetentionResult | null;
-  /** Monto manual del abono (Bs); null = la retención es el cálculo prorrateado. */
-  customRetentionBs: number | null;
-}) {
-  const isLegal = personType === 'legal_entity';
-  const regimen = isLegal
-    ? 'Persona jurídica domiciliada (5%)'
-    : 'Persona natural residente (3%)';
-
-  const tiles: { label: string; value: string; tone?: 'warning' }[] = [];
-  if (result) {
-    tiles.push({
-      label: 'Base imponible del abono',
-      value: `${formatMoney(result.sliceGrossBs)} Bs.`,
-    });
-    tiles.push({ label: 'Tasa aplicada', value: `${(result.taxRate * 100).toFixed(0)}%` });
-    tiles.push({
-      label: 'Porción del lote',
-      value: `${(result.share * 100).toFixed(2)} %`,
-    });
-    if (!isLegal) {
-      tiles.push({ label: 'Valor UT', value: `${formatMoney(taxUnitBs ?? 0)} Bs.` });
-      tiles.push({
-        label: 'Sustraendo (prorrateado)',
-        value: `${formatMoney(result.subtrahendBs)} Bs.`,
-      });
-      tiles.push({
-        label: 'Mínimo no sujeto (total)',
-        value: `${formatMoney(result.thresholdBs)} Bs.`,
-      });
-    }
-    const autoValue = result.belowThreshold
-      ? 'Exento'
-      : `${formatMoney(result.taxAmountBs)} Bs.`;
-    if (customRetentionBs !== null) {
-      // Monto manual: el cálculo prorrateado queda sólo como referencia.
-      tiles.push({ label: 'Cálculo prorrateado', value: autoValue });
-      tiles.push({
-        label: 'Retención (manual)',
-        value: `${formatMoney(customRetentionBs)} Bs.`,
-        tone: 'warning',
-      });
-    } else {
-      tiles.push({ label: 'Retención del abono', value: autoValue, tone: 'warning' });
-    }
-  }
-
-  return (
-    <div className="mt-4 space-y-2">
-      <div className="flex items-baseline justify-between gap-2 flex-wrap">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-          Desglose de la retención del abono · ISLR (Decreto 1.808)
-        </div>
-        <div className="text-xs text-muted-foreground">{regimen}</div>
-      </div>
-      {!result ? (
-        <p className="text-xs italic text-muted-foreground">
-          No hay Unidad Tributaria vigente configurada; no se puede desglosar el
-          cálculo.
-        </p>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
-          {tiles.map((t) => (
-            <SummaryTile key={t.label} label={t.label} value={t.value} tone={t.tone} />
-          ))}
-        </div>
-      )}
+      {sub ? <div className="text-[11px] text-muted-foreground">{sub}</div> : null}
     </div>
   );
 }

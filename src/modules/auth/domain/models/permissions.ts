@@ -76,7 +76,6 @@ export const PERMISSIONS = {
     LIST: 'budgets.list',
     CREATE: 'budgets.create',
     UPDATE: 'budgets.update',
-    CHANGE_STATUS: 'budgets.change-status',
     CONVERT: 'budgets.convert',
     EDIT_AMOUNT: 'budgets.edit-amount',
     SOFT_DELETE: 'budgets.soft-delete',
