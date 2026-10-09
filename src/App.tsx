@@ -59,6 +59,10 @@ import { OrderCreate } from './modules/orders/presentation/pages/OrderCreate';
 import { OrderDraftsPage } from './modules/orders/presentation/pages/OrderDraftsPage';
 import { OrderEdit } from './modules/orders/presentation/pages/OrderEdit';
 import { OrderDetailPage } from './modules/orders/presentation/pages/OrderDetailPage';
+import { BudgetList } from './modules/budgets/presentation/pages/BudgetList';
+import { BudgetCreate } from './modules/budgets/presentation/pages/BudgetCreate';
+import { BudgetEdit } from './modules/budgets/presentation/pages/BudgetEdit';
+import { BudgetDetailPage } from './modules/budgets/presentation/pages/BudgetDetailPage';
 import { AccountsPayableList } from './modules/accounts-payable/presentation/pages/AccountsPayableList';
 import { AccountsPayableBatchPage } from './modules/accounts-payable/presentation/pages/AccountsPayableBatchPage';
 import { AccountsReceivableList } from './modules/accounts-receivable/presentation/pages/AccountsReceivableList';
@@ -205,6 +209,12 @@ function App() {
             <Route path="drafts" element={<OrderDraftsPage />} />
             <Route path="edit/:id" element={<OrderEdit />} />
             <Route path=":id" element={<OrderDetailPage />} />
+          </Route>
+          <Route path="budgets">
+            <Route index element={<BudgetList />} />
+            <Route path="create" element={<BudgetCreate />} />
+            <Route path="edit/:id" element={<BudgetEdit />} />
+            <Route path=":id" element={<BudgetDetailPage />} />
           </Route>
           <Route path="accounts-payable">
             <Route index element={<AccountsPayableList />} />

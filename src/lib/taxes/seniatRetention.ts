@@ -71,6 +71,65 @@ export function calcRetention(input: RetentionInput): RetentionResult {
   };
 }
 
+// -----------------------------------------------------------------------------
+// Retención de un ABONO (pago parcial de una obligación mayor).
+// -----------------------------------------------------------------------------
+
+export interface SliceRetentionInput {
+  /** Porción del bruto, en USD, que cubre el abono. */
+  sliceUsd: number;
+  /** Bruto total en USD de la obligación (el lote completo). */
+  totalUsd: number;
+  /** Tasa USD/Bs del abono. */
+  rateBs: number;
+  personType: SeniatPersonType;
+  /** Valor de 1 UT en bolívares al momento del abono. */
+  taxUnitBs: number;
+}
+
+export interface SliceRetentionResult extends RetentionResult {
+  /** Proporción del bruto total que cubre el abono (0..1). */
+  share: number;
+  /** Bruto en Bs del abono (= `sliceUsd` × `rateBs`). */
+  sliceGrossBs: number;
+  /** Bruto en Bs del total a la tasa del abono (base del prorrateo). */
+  totalGrossBs: number;
+  /** Retención del total a la tasa del abono (antes de prorratear). */
+  totalTaxAmountBs: number;
+}
+
+/**
+ * Retención de ISLR de un abono: la retención del bruto TOTAL a la tasa de este
+ * abono, por la proporción que el abono cubre. Así la suma de las retenciones
+ * de los abonos de un lote (a una misma tasa) da la retención del lote
+ * completo: el sustraendo y el mínimo no sujeto son del total, no de cada
+ * abono. Espejo de `calcSliceRetention` del BE.
+ */
+export function calcSliceRetention(
+  input: SliceRetentionInput,
+): SliceRetentionResult {
+  const sliceUsd = Math.max(0, Number(input.sliceUsd) || 0);
+  const rawTotal = Number(input.totalUsd) || 0;
+  const totalUsd = rawTotal > 0 ? rawTotal : sliceUsd;
+  const rateBs = Number(input.rateBs) || 0;
+  const share = totalUsd > 0 ? Math.min(1, sliceUsd / totalUsd) : 0;
+  const totalGrossBs = round2(totalUsd * rateBs);
+  const full = calcRetention({
+    grossBs: totalGrossBs,
+    personType: input.personType,
+    taxUnitBs: input.taxUnitBs,
+  });
+  return {
+    ...full,
+    subtrahendBs: round2(full.subtrahendBs * share),
+    taxAmountBs: round2(full.taxAmountBs * share),
+    share,
+    sliceGrossBs: round2(sliceUsd * rateBs),
+    totalGrossBs,
+    totalTaxAmountBs: full.taxAmountBs,
+  };
+}
+
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }

@@ -1009,6 +1009,7 @@ function BatchDetail({ id }: { id: string }) {
               selectedId={selectedUsdRateId}
               currentRateId={currentRateId}
               onSelect={handleSelectRate}
+              allowCreate
             />
             <p className="text-[11px] text-muted-foreground mt-1">
               Tasa del estado de cuenta y de la conversión de los cobros.
@@ -1428,6 +1429,7 @@ function BatchDetail({ id }: { id: string }) {
                       selectedId={fixed && fixedRate ? fixedRate.id : selectedUsdRateId}
                       currentRateId={currentRateId}
                       onSelect={handleSelectRate}
+                      allowCreate
                       disabled={fixed && !!fixedRate}
                       lockNote={
                         fixed

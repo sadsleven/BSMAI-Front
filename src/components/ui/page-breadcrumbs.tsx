@@ -13,6 +13,7 @@ const PATH_LABELS: Record<string, string> = {
   edit: 'Editar',
   'change-password': 'Cambiar contraseña',
   orders: 'Órdenes',
+  budgets: 'Presupuestos',
   patients: 'Pacientes',
   doctors: 'Doctores',
   insurers: 'Aseguradoras',

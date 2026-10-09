@@ -24,7 +24,7 @@ import { SortableHeader, type SortDir } from '@/components/ui/sortable-header';
 import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
-import { formatCreated } from '@/lib/dates';
+import { formatCreated, formatDateOnly } from '@/lib/dates';
 import { formatMoney } from '@/lib/format/money';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
@@ -415,6 +415,11 @@ export function TaxesPayableList() {
                           </TableCell>
                           <TableCell className="py-3.5 px-4 text-xs font-mono truncate max-w-[160px]">
                             {ordersLabel(t)}
+                            {t.settlementDate ? (
+                              <div className="text-[11px] text-muted-foreground">
+                                Abono {formatDateOnly(t.settlementDate)}
+                              </div>
+                            ) : null}
                           </TableCell>
                           <TableCell className="py-3.5 px-4">
                             <Badge variant="outline" className="font-normal text-[10px]">

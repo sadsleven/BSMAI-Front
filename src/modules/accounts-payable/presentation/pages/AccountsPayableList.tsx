@@ -524,7 +524,7 @@ export function AccountsPayableList() {
                       Neto Bs.
                     </TableHead>
                     <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                      Falta Bs.
+                      Falta por pagar
                     </TableHead>
                     <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                       Estado
@@ -588,17 +588,22 @@ export function AccountsPayableList() {
                           {formatMoney(b.netBs ?? 0)} Bs.
                         </TableCell>
                         <TableCell className="py-3.5 px-4 text-sm font-mono">
+                          {/* El saldo del lote se lleva en USD; los Bs son la
+                              proyección a la tasa por defecto del lote. */}
                           <span
                             className={
-                              (b.pendingBs ?? 0) <= 0.01
+                              (b.pendingUsd ?? 0) <= 0.01
                                 ? 'text-success'
-                                : (b.paidBs ?? 0) > 0
+                                : (b.coveredUsd ?? 0) > 0
                                   ? 'text-warning'
                                   : 'text-foreground'
                             }
                           >
-                            {formatMoney(b.pendingBs ?? 0)} Bs.
+                            {formatMoney(b.pendingUsd ?? 0)} USD
                           </span>
+                          <div className="text-[11px] text-muted-foreground">
+                            ≈ {formatMoney(b.pendingBs ?? 0)} Bs.
+                          </div>
                         </TableCell>
                         <TableCell className="py-3.5 px-4">
                           {statusBadge(b.status)}

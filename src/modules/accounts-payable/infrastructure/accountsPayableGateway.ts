@@ -1,8 +1,8 @@
 import { api } from '@/lib/api';
 import type {
   AccountsPayableBatch,
-  AccountsPayablePaymentInput,
   AccountsPayableQuery,
+  AccountsPayableSettlementInput,
   CreateAccountsPayableBatchDto,
   PaginatedResponse,
   PendingPayable,
@@ -96,7 +96,7 @@ export const accountsPayableGateway = {
     );
     return data;
   },
-  /** Cambia la tasa de pago USD/Bs del lote (recalcula bruto Bs/retención/neto/estado). */
+  /** Cambia la tasa de pago USD/Bs por defecto del lote (no toca los abonos ya hechos). */
   async setExchangeRate(
     id: string,
     exchangeRateId: string,
@@ -118,47 +118,35 @@ export const accountsPayableGateway = {
     );
     return data;
   },
-  /**
-   * Fija (número) o quita (`null` ⇒ automático) el monto manual de la retención
-   * del lote (recalcula neto/estado).
-   */
-  async setCustomRetention(
+  /** Registra un abono: USD cubiertos + tasa + retención + sus filas de pago. */
+  async registerSettlement(
     id: string,
-    customRetentionBs: number | null,
-  ): Promise<AccountsPayableBatch> {
-    const { data } = await api.patch<AccountsPayableBatch>(
-      `${BASE}/${id}/custom-retention`,
-      { customRetentionBs },
-    );
-    return data;
-  },
-  async registerPayment(
-    id: string,
-    payments: AccountsPayablePaymentInput[],
+    dto: AccountsPayableSettlementInput,
   ): Promise<AccountsPayableBatch> {
     const { data } = await api.post<AccountsPayableBatch>(
-      `${BASE}/${id}/payments`,
-      { payments },
-    );
-    return data;
-  },
-  async editPayment(
-    id: string,
-    paymentId: string,
-    dto: AccountsPayablePaymentInput,
-  ): Promise<AccountsPayableBatch> {
-    const { data } = await api.patch<AccountsPayableBatch>(
-      `${BASE}/${id}/payments/${paymentId}`,
+      `${BASE}/${id}/settlements`,
       dto,
     );
     return data;
   },
-  async deletePayment(
+  /** Reemplaza por completo un abono (incluidas sus filas de pago). */
+  async editSettlement(
     id: string,
-    paymentId: string,
+    settlementId: string,
+    dto: AccountsPayableSettlementInput,
+  ): Promise<AccountsPayableBatch> {
+    const { data } = await api.patch<AccountsPayableBatch>(
+      `${BASE}/${id}/settlements/${settlementId}`,
+      dto,
+    );
+    return data;
+  },
+  async deleteSettlement(
+    id: string,
+    settlementId: string,
   ): Promise<AccountsPayableBatch> {
     const { data } = await api.delete<AccountsPayableBatch>(
-      `${BASE}/${id}/payments/${paymentId}`,
+      `${BASE}/${id}/settlements/${settlementId}`,
     );
     return data;
   },

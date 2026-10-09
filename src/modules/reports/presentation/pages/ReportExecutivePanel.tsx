@@ -35,6 +35,7 @@ import {
 import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { accountsReceivableGateway } from '@/modules/accounts-receivable/infrastructure/accountsReceivableGateway';
 import { accountsPayableGateway } from '@/modules/accounts-payable/infrastructure/accountsPayableGateway';
+import { settlementNetUsd } from '@/modules/accounts-payable/domain/models/accountsPayable';
 import { taxesPayableGateway } from '@/modules/taxes-payable/infrastructure/taxesPayableGateway';
 import { orderGateway } from '@/modules/orders/infrastructure/orderGateway';
 import {
@@ -334,7 +335,15 @@ export function ReportExecutivePanel() {
             })),
           );
         setArPayments(toPaymentsUsd(arRes.data));
-        setApPayments(toPaymentsUsd(apRes.data));
+        // Egresos a proveedores: un abono = una salida de caja, a SU tasa.
+        setApPayments(
+          apRes.data.flatMap((b) =>
+            (b.settlements ?? []).map((s) => ({
+              date: s.settlementDate,
+              amountInUsd: settlementNetUsd(s),
+            })),
+          ),
+        );
         setTaxPayments(toPaymentsBs(taxRes.data));
       })
       .catch((e) => {

@@ -249,6 +249,9 @@ export function OrderEdit() {
             bankCode: pay.bankCode ?? '',
             exchangeRateId: pay.exchangeRateId ?? '',
             accountNumber: pay.accountNumber ?? '',
+            // Sin esto el selector de cuenta propia arranca vacío y se
+            // autoselecciona la primera, pisando la cuenta guardada.
+            paymentAccountId: pay.paymentAccountId ?? '',
             amountCurrency: pay.amountCurrency,
             amountValue: Number(pay.amountValue),
           })),

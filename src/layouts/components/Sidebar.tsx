@@ -18,6 +18,7 @@ import {
   Calculator,
   Building,
   ClipboardList,
+  ClipboardCheck,
   Wallet,
   HandCoins,
   Receipt,
@@ -86,6 +87,12 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
       title: 'Principal',
       items: [
         { icon: Home, label: 'Inicio', href: '/', show: !isProvider },
+        {
+          icon: ClipboardCheck,
+          label: 'Presupuestos',
+          href: '/budgets',
+          show: has(PERMISSIONS.BUDGETS.LIST),
+        },
         {
           icon: ClipboardList,
           label: 'Órdenes',

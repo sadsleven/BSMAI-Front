@@ -23,6 +23,8 @@ import { patientGateway } from '@/modules/patients/infrastructure/patientGateway
 import { displayName } from '@/modules/patients/domain/models/patient';
 import type { Patient } from '@/modules/patients/domain/models/patient';
 import { localTodayIso } from '@/lib/dates';
+import { budgetGateway } from '@/modules/budgets/infrastructure/budgetGateway';
+import { budgetToOrderValues } from '@/modules/budgets/domain/models/budgetToOrder';
 
 const DEFAULT_VALUES: OrderValues = {
   branchId: '',
@@ -130,8 +132,13 @@ export function OrderCreate() {
   // Reanudar un borrador parcial: ?draft=<id>. Hidrata el form (y los selects de
   // titular/paciente) antes de montar OrderForm.
   const resumeDraftId = searchParams.get('draft');
+  // Orden nacida de un presupuesto aprobado: ?budget=<id>. Precarga el Paso 1
+  // y, al crear la orden, enlaza el presupuesto con ella.
+  const fromBudgetId = searchParams.get('budget');
   const [draftId, setDraftId] = useState<string | null>(resumeDraftId);
-  const [hydrating, setHydrating] = useState<boolean>(!!resumeDraftId);
+  const [hydrating, setHydrating] = useState<boolean>(
+    !!resumeDraftId || !!fromBudgetId,
+  );
   const [savingDraft, setSavingDraft] = useState(false);
   const [initialHolder, setInitialHolder] = useState<Patient | null>(null);
   const [initialPatient, setInitialPatient] = useState<Patient | null>(null);
@@ -213,6 +220,40 @@ export function OrderCreate() {
           next.delete('draft');
           setSearchParams(next, { replace: true });
         }
+      } finally {
+        if (!cancelled) setHydrating(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!fromBudgetId || resumeDraftId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const budget = await budgetGateway.getById(fromBudgetId);
+        if (cancelled) return;
+        methods.reset(budgetToOrderValues(budget, DEFAULT_VALUES));
+        const [h, p] = await Promise.all([
+          patientGateway.getById(budget.holderId).catch(() => null),
+          budget.patientId !== budget.holderId
+            ? patientGateway.getById(budget.patientId).catch(() => null)
+            : Promise.resolve(null),
+        ]);
+        if (cancelled) return;
+        setInitialHolder(h);
+        setInitialPatient(p ?? h);
+        if (budget.patientId !== budget.holderId && !p) {
+          // Paciente borrado desde que se presupuestó: no se cae al titular en
+          // silencio — se limpia para que el select refleje lo que se enviaría.
+          methods.setValue('patientId', '');
+        }
+      } catch (e) {
+        notify.fromError(e, 'No se pudo cargar el presupuesto.');
       } finally {
         if (!cancelled) setHydrating(false);
       }
@@ -323,6 +364,18 @@ export function OrderCreate() {
           /* el borrador huérfano no es crítico */
         }
       }
+      // Presupuesto de origen: queda enlazado y aprobado. Si el enlace falla,
+      // la orden ya existe — se avisa, no se revierte.
+      if (fromBudgetId) {
+        try {
+          await budgetGateway.linkOrder(fromBudgetId, created.id);
+        } catch (e) {
+          notify.fromError(
+            e,
+            'La orden se creó, pero no se pudo enlazar con el presupuesto.',
+          );
+        }
+      }
       notify.success('Orden creada.');
       // Tras crear, avanzar directo al Paso 2 (Atención). Si el usuario no tiene
       // permiso de atención, queda en el Paso 1 de la orden ya guardada.
@@ -341,7 +394,11 @@ export function OrderCreate() {
   };
 
   if (hydrating) {
-    return <PageLoader label="Cargando borrador…" />;
+    return (
+      <PageLoader
+        label={fromBudgetId ? 'Cargando presupuesto…' : 'Cargando borrador…'}
+      />
+    );
   }
 
   return (

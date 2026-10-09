@@ -19,6 +19,7 @@ import { SkeletonTableRows } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { accountsReceivableGateway } from '@/modules/accounts-receivable/infrastructure/accountsReceivableGateway';
 import { accountsPayableGateway } from '@/modules/accounts-payable/infrastructure/accountsPayableGateway';
+import { settlementNetUsd } from '@/modules/accounts-payable/domain/models/accountsPayable';
 import { taxesPayableGateway } from '@/modules/taxes-payable/infrastructure/taxesPayableGateway';
 import { ReportShell } from '../components/ReportShell';
 import { KpiRow } from '../components/KpiCard';
@@ -82,11 +83,12 @@ export function ReportFinancialSummary() {
             })),
           ),
         );
+        // Egresos a proveedores: un abono = una salida de caja, a SU tasa.
         setApPayments(
-          apRes.data.flatMap((a) =>
-            (a.payments ?? []).map((p) => ({
-              date: p.paymentDate,
-              amountInUsd: Number(p.amountInUsd || 0),
+          apRes.data.flatMap((b) =>
+            (b.settlements ?? []).map((s) => ({
+              date: s.settlementDate,
+              amountInUsd: settlementNetUsd(s),
             })),
           ),
         );

@@ -1,11 +1,14 @@
 import { useMemo, useState } from 'react';
-import { ChevronDown, Search } from 'lucide-react';
+import { ChevronDown, Plus, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import { formatMoney } from '@/lib/format/money';
-import type { ExchangeRate } from '../../domain/models/exchangeRate';
+import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
+import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
+import type { Currency, ExchangeRate } from '../../domain/models/exchangeRate';
+import { QuickExchangeRateModal } from './QuickExchangeRateModal';
 
 export interface UsdRateSelectProps {
   rates: ExchangeRate[];
@@ -19,6 +22,15 @@ export interface UsdRateSelectProps {
   lockNote?: string;
   label?: string;
   className?: string;
+  /** Moneda de las tasas listadas; la usa el alta rápida. Default: USD. */
+  currency?: Currency;
+  /**
+   * Muestra el botón "+" para crear una tasa sin salir de la pantalla (seguros
+   * y pagos que liquidan a la tasa del día con otros decimales).
+   */
+  allowCreate?: boolean;
+  /** Aviso extra tras crear una tasa; ya queda seleccionada por el componente. */
+  onCreated?: (rate: ExchangeRate) => void;
 }
 
 /**
@@ -34,12 +46,21 @@ export function UsdRateSelect({
   lockNote,
   label = 'Tasa USD aplicada',
   className,
+  currency = 'USD',
+  allowCreate = false,
+  onCreated,
 }: UsdRateSelectProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const { has } = usePermissions();
+  const canCreate =
+    allowCreate && !disabled && has(PERMISSIONS.EXCHANGE_RATES.CREATE);
 
   const selected = rates.find((r) => r.id === selectedId) ?? null;
-  const display = selected ? `1 USD = ${formatMoney(selected.amountBs)} Bs.` : '—';
+  const display = selected
+    ? `1 ${currency} = ${formatMoney(selected.amountBs)} Bs.`
+    : '—';
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -62,68 +83,112 @@ export function UsdRateSelect({
           ) : null}
         </>
       ) : (
-        <Popover open={open} onOpenChange={setOpen}>
-          <PopoverTrigger asChild>
+        <div className="flex items-center gap-1.5">
+          <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="flex-1 min-w-0 justify-between font-mono h-8"
+              >
+                <span className="truncate">{display}</span>
+                <ChevronDown className="w-3.5 h-3.5 ml-1 opacity-60 shrink-0" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              className="w-80 p-0"
+              align="start"
+              onOpenAutoFocus={(e) => e.preventDefault()}
+            >
+              <div className="p-2 border-b">
+                <div className="relative">
+                  <Search className="absolute left-2 top-2 w-3.5 h-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar por monto o fecha…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="h-8 pl-7 text-sm"
+                  />
+                </div>
+              </div>
+              <div className="max-h-72 overflow-y-auto py-1">
+                {filtered.length === 0 ? (
+                  <div className="px-3 py-4 space-y-2 text-center">
+                    <p className="text-xs text-muted-foreground">
+                      Sin tasas {currency} disponibles.
+                    </p>
+                    {canCreate ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          setOpen(false);
+                          setCreateOpen(true);
+                        }}
+                      >
+                        <Plus className="w-3.5 h-3.5 mr-1" /> Nueva tasa
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : (
+                  filtered.map((r) => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => {
+                        onSelect(r.id);
+                        setOpen(false);
+                        setSearch('');
+                      }}
+                      className={cn(
+                        'w-full text-left flex items-center justify-between gap-2 px-3 py-2 hover:bg-muted/40',
+                        r.id === selectedId && 'bg-muted/60',
+                      )}
+                    >
+                      <span className="font-mono text-sm">
+                        1 {currency} = {formatMoney(r.amountBs)} Bs.
+                      </span>
+                      <span className="text-[11px] text-muted-foreground shrink-0">
+                        {r.effectiveDate.slice(0, 10)}
+                        {r.id === currentRateId ? ' · actual' : ''}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
+          {canCreate ? (
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="w-full justify-between font-mono h-8"
+              className="h-8 w-8 p-0 shrink-0"
+              title={`Nueva tasa ${currency}/Bs`}
+              aria-label={`Nueva tasa ${currency}/Bs`}
+              onClick={() => setCreateOpen(true)}
             >
-              <span>{display}</span>
-              <ChevronDown className="w-3.5 h-3.5 ml-1 opacity-60" />
+              <Plus className="w-4 h-4" />
             </Button>
-          </PopoverTrigger>
-          <PopoverContent
-            className="w-80 p-0"
-            align="start"
-            onOpenAutoFocus={(e) => e.preventDefault()}
-          >
-            <div className="p-2 border-b">
-              <div className="relative">
-                <Search className="absolute left-2 top-2 w-3.5 h-3.5 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar por monto o fecha…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="h-8 pl-7 text-sm"
-                />
-              </div>
-            </div>
-            <div className="max-h-72 overflow-y-auto py-1">
-              {filtered.length === 0 ? (
-                <p className="px-3 py-4 text-xs text-muted-foreground text-center">
-                  Sin tasas USD disponibles.
-                </p>
-              ) : (
-                filtered.map((r) => (
-                  <button
-                    key={r.id}
-                    type="button"
-                    onClick={() => {
-                      onSelect(r.id);
-                      setOpen(false);
-                      setSearch('');
-                    }}
-                    className={cn(
-                      'w-full text-left flex items-center justify-between gap-2 px-3 py-2 hover:bg-muted/40',
-                      r.id === selectedId && 'bg-muted/60',
-                    )}
-                  >
-                    <span className="font-mono text-sm">
-                      1 USD = {formatMoney(r.amountBs)} Bs.
-                    </span>
-                    <span className="text-[11px] text-muted-foreground shrink-0">
-                      {r.effectiveDate.slice(0, 10)}
-                      {r.id === currentRateId ? ' · actual' : ''}
-                    </span>
-                  </button>
-                ))
-              )}
-            </div>
-          </PopoverContent>
-        </Popover>
+          ) : null}
+        </div>
       )}
+      {canCreate ? (
+        <QuickExchangeRateModal
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          currency={currency}
+          defaultAmountBs={selected ? Number(selected.amountBs) : undefined}
+          defaultEffectiveDate={selected?.effectiveDate || undefined}
+          onCreated={(rate) => {
+            onSelect(rate.id);
+            onCreated?.(rate);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

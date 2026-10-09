@@ -1192,6 +1192,211 @@ export const orderSchema = z
   });
 export type OrderValues = z.infer<typeof orderSchema>;
 
+const BUDGET_TYPES = ['particular', 'insurance'] as const;
+
+/**
+ * Presupuesto de servicios. Es el Paso 1 de la orden sin pagos ni fecha de
+ * atención: a quién se le presupuesta, qué servicios y a qué precio.
+ *
+ * Diferencias con `orderSchema` que vienen del negocio, no de la pereza:
+ *  - El proveedor de cada línea es OPCIONAL (al presupuestar casi nunca se
+ *    sabe quién atiende); si se indica, sigue valiendo el XOR doctor/centro.
+ *  - Cada línea lleva su propio `unitPriceUsd` editable — el precio cotizado
+ *    se congela aunque después cambie el baremo.
+ */
+export const budgetSchema = z
+  .object({
+    branchId: z.string().uuid({ message: 'Sucursal requerida' }),
+    type: z.enum(BUDGET_TYPES, { error: 'Tipo requerido' }),
+    holderId: z.string().uuid({ message: 'Titular requerido' }),
+    patientId: z.string().uuid({ message: 'Paciente requerido' }),
+    insuranceId: z.string().uuid().optional().or(z.literal('')),
+    insuranceSource: z
+      .enum(['direct', 'via_contractor'])
+      .optional()
+      .or(z.literal('')),
+    contractorId: z.string().uuid().optional().or(z.literal('')),
+    serviceTypes: z
+      .array(
+        z.object({
+          serviceTypeId: z
+            .string()
+            .uuid({ message: 'Tipo de servicio requerido' }),
+          specialtyId: z.string().uuid().optional().or(z.literal('')),
+          customName: z
+            .string({ error: 'El nombre del servicio es obligatorio' })
+            .trim()
+            .min(1, 'El nombre del servicio es obligatorio')
+            .max(300, 'Máximo 300 caracteres'),
+          quantity: z
+            .number()
+            .int('La cantidad debe ser un entero')
+            .min(1, 'La cantidad debe ser ≥ 1')
+            .max(100000, 'Cantidad demasiado alta')
+            .optional(),
+          unitPriceUsd: z
+            .number({ error: 'Precio requerido' })
+            .min(0, 'El precio no puede ser negativo')
+            .refine((v) => hasAtMostTwoDecimals(v), {
+              message: 'Máximo 2 decimales',
+            }),
+          catalogPriceUsd: z.number().min(0).optional(),
+          providerType: z.enum(PROVIDER_TYPES).optional().or(z.literal('')),
+          doctorId: z.string().uuid().optional().or(z.literal('')),
+          careCenterId: z.string().uuid().optional().or(z.literal('')),
+        }),
+      )
+      .min(1, 'Agrega al menos un servicio')
+      .max(50, 'Máximo 50 servicios'),
+    pathologyIds: z
+      .array(z.string().uuid())
+      .max(50, 'Máximo 50 patologías')
+      .optional(),
+    diagnosisNote: z
+      .string()
+      .trim()
+      .max(500, 'Máximo 500 caracteres')
+      .optional(),
+    observations: z
+      .string()
+      .trim()
+      .max(2000, 'Máximo 2000 caracteres')
+      .optional(),
+    referringDoctorName: z
+      .string()
+      .trim()
+      .max(200, 'Máximo 200 caracteres')
+      .optional(),
+    referringSpecialtyName: z
+      .string()
+      .trim()
+      .max(200, 'Máximo 200 caracteres')
+      .optional(),
+    budgetDate: z
+      .string()
+      .min(1, 'Fecha del presupuesto requerida')
+      .refine(isoDateNotFuture, {
+        message: 'La fecha no puede ser posterior a hoy',
+      }),
+    validUntilDate: z.string().optional().or(z.literal('')),
+    priceAmount: z
+      .number({ error: 'Monto requerido' })
+      .positive('Debe ser > 0')
+      .refine((v) => hasAtMostTwoDecimals(v), { message: 'Máximo 2 decimales' }),
+    // Monto base = suma de los precios de catálogo. FE-only: el BE lo recalcula.
+    priceBaseAmount: z.number().optional(),
+    priceAdjustmentNote: z
+      .string()
+      .trim()
+      .max(500, 'Máximo 500 caracteres')
+      .optional(),
+    exchangeRateId: z.string().uuid().optional().or(z.literal('')),
+    paymentAccountId: z.string().uuid().optional().or(z.literal('')),
+  })
+  .superRefine((val, ctx) => {
+    // Proveedor por fila: opcional, pero coherente cuando se indica.
+    val.serviceTypes.forEach((row, i) => {
+      if (row.providerType === 'doctor') {
+        if (!row.doctorId) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['serviceTypes', i, 'doctorId'],
+            message: 'Doctor requerido',
+          });
+        }
+        if (row.careCenterId) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['serviceTypes', i, 'careCenterId'],
+            message: 'Fila Doctor no admite Centro',
+          });
+        }
+      } else if (row.providerType === 'care_center') {
+        if (!row.careCenterId) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['serviceTypes', i, 'careCenterId'],
+            message: 'Centro requerido',
+          });
+        }
+        if (row.doctorId) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['serviceTypes', i, 'doctorId'],
+            message: 'Fila Centro no admite Doctor',
+          });
+        }
+      } else if (row.doctorId || row.careCenterId) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['serviceTypes', i, 'providerType'],
+          message: 'Indica el tipo de proveedor',
+        });
+      }
+    });
+
+    if (val.type === 'insurance') {
+      if (!val.insuranceId) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['insuranceId'],
+          message: 'Seguro requerido',
+        });
+      }
+      if (!val.insuranceSource) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['insuranceSource'],
+          message: 'Origen del seguro requerido',
+        });
+      }
+      if (val.insuranceSource === 'via_contractor' && !val.contractorId) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['contractorId'],
+          message: 'Contratista requerido',
+        });
+      }
+      if (val.insuranceSource === 'direct' && val.contractorId) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['contractorId'],
+          message: 'El origen directo no admite contratista',
+        });
+      }
+    } else if (val.insuranceId || val.insuranceSource || val.contractorId) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['insuranceId'],
+        message: 'Seguro y contratista sólo aplican al tipo Seguro',
+      });
+    }
+
+    // La vigencia no puede quedar antes de la fecha del presupuesto.
+    if (val.validUntilDate && val.validUntilDate < val.budgetDate) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['validUntilDate'],
+        message: 'La vigencia no puede ser anterior a la fecha del presupuesto',
+      });
+    }
+
+    // Ajuste de monto: motivo obligatorio si difiere de la suma de catálogo.
+    if (
+      val.priceBaseAmount !== undefined &&
+      Math.round(val.priceAmount * 100) !==
+        Math.round(val.priceBaseAmount * 100) &&
+      !(val.priceAdjustmentNote ?? '').trim()
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['priceAdjustmentNote'],
+        message: 'Indica el motivo del ajuste de monto',
+      });
+    }
+  });
+export type BudgetValues = z.infer<typeof budgetSchema>;
+
 export const roleSchema = z.object({
   name: z
     .string({ error: 'El nombre del rol es obligatorio' })

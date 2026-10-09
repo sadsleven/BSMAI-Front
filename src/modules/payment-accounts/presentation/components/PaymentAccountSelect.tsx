@@ -27,6 +27,12 @@ export type PaymentAccountSelectProps = {
   type: PaymentAccountType;
   /** Cuenta actualmente referenciada (para mostrar entradas stale). */
   currentAccount?: PaymentAccount | null;
+  /**
+   * Notifica la cuenta completa resuelta para `value` (del catálogo o por id),
+   * sin que el usuario la elija. Sirve para que el padre cachee la cuenta de un
+   * pago ya guardado y pueda mostrar sus datos.
+   */
+  onResolve?: (account: PaymentAccount) => void;
   disabled?: boolean;
   error?: boolean;
   placeholder?: string;
@@ -42,12 +48,22 @@ export function PaymentAccountSelect({
   onChange,
   type,
   currentAccount,
+  onResolve,
   disabled,
   error,
   placeholder,
 }: PaymentAccountSelectProps) {
-  const [accounts, setAccounts] = useState<PaymentAccount[]>([]);
-  const [loading, setLoading] = useState(false);
+  // El catálogo se guarda junto al tipo con el que se pidió: al cambiar de tipo
+  // de pago, la lista del tipo anterior queda obsoleta en el mismo render y no
+  // debe alimentar la autoselección (si no, se elige una cuenta de otro tipo y
+  // el ítem aparece marcado "Tipo distinto").
+  const [loaded, setLoaded] = useState<{
+    type: PaymentAccountType;
+    list: PaymentAccount[];
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
+  /** Cuenta resuelta por id cuando no está en el catálogo asignable (stale). */
+  const [fetched, setFetched] = useState<PaymentAccount | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -55,10 +71,10 @@ export function PaymentAccountSelect({
     paymentAccountGateway
       .listAssignable({ type })
       .then((list) => {
-        if (!cancelled) setAccounts(list);
+        if (!cancelled) setLoaded({ type, list });
       })
       .catch(() => {
-        if (!cancelled) setAccounts([]);
+        if (!cancelled) setLoaded({ type, list: [] });
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -68,24 +84,55 @@ export function PaymentAccountSelect({
     };
   }, [type]);
 
+  const accounts = useMemo(
+    () => (loaded && loaded.type === type ? loaded.list : []),
+    [loaded, type],
+  );
+  /** Catálogo del tipo actual ya cargado. */
+  const ready = !loading && !!loaded && loaded.type === type;
+
   // Autoselección: ninguna cuenta elegida → seleccionar la primera asignable
-  // una vez cargadas.
+  // del tipo actual, una vez cargadas.
   useEffect(() => {
-    if (loading || value) return;
+    if (!ready || disabled || value) return;
     if (accounts.length > 0) {
       onChange(accounts[0].id, accounts[0]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, value, accounts]);
+  }, [ready, disabled, value, accounts]);
+
+  // Cuenta ya guardada que no está en el catálogo asignable (en papelera,
+  // deshabilitada o de otro tipo): se busca por id para poder mostrarla.
+  useEffect(() => {
+    if (!ready || !value) return;
+    if (currentAccount?.id === value) return;
+    if (fetched?.id === value) return;
+    if (accounts.some((a) => a.id === value)) return;
+    let cancelled = false;
+    paymentAccountGateway
+      .getById(value)
+      .then((a) => {
+        if (!cancelled) setFetched(a);
+      })
+      .catch(() => {
+        /* cuenta inaccesible: queda el placeholder */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, value, currentAccount, fetched, accounts]);
 
   const items = useMemo(() => {
     const map = new Map<string, PaymentAccount>();
     for (const a of accounts) map.set(a.id, a);
-    if (currentAccount && !map.has(currentAccount.id)) {
-      map.set(currentAccount.id, currentAccount);
+    // La entrada stale sólo aplica a la cuenta seleccionada; si no, quedarían
+    // cuentas de un tipo anterior colgando en el menú.
+    const stale = currentAccount ?? fetched;
+    if (stale && stale.id === value && !map.has(stale.id)) {
+      map.set(stale.id, stale);
     }
     return Array.from(map.values());
-  }, [accounts, currentAccount]);
+  }, [accounts, currentAccount, fetched, value]);
 
   const isStale = (a: PaymentAccount) =>
     !!a.deletedAt || !a.isActive || a.type !== type;
@@ -97,6 +144,12 @@ export function PaymentAccountSelect({
   };
 
   const selected = value ? items.find((a) => a.id === value) ?? null : null;
+
+  // Deja la cuenta del pago guardado en el caché del padre (datos de display).
+  useEffect(() => {
+    if (selected) onResolve?.(selected);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
 
   return (
     <Select value={value || ''} onValueChange={handleChange} disabled={disabled}>
