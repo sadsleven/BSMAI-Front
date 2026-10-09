@@ -14,6 +14,7 @@ import {
   budgetCompanyHeaderLines,
   budgetFileBaseName,
   type BudgetDocData,
+  type BudgetDocOptions,
 } from './budgetDocument';
 
 const AFMI_BLUE: [number, number, number] = [0, 32, 96];
@@ -182,10 +183,13 @@ function drawField(
 
 /**
  * Plantilla PACIENTE en PDF — montos en Bs, con total en $ y tasa BCV al pie.
- * Espeja `downloadBudgetPatientXlsx`.
+ * Espeja `downloadBudgetPatientXlsx`, opción de bolívares incluida.
  */
-export async function downloadBudgetPatientPdf(budget: Budget): Promise<void> {
-  const data = await buildBudgetDoc(budget);
+export async function downloadBudgetPatientPdf(
+  budget: Budget,
+  options: BudgetDocOptions = {},
+): Promise<void> {
+  const data = await buildBudgetDoc(budget, options);
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
   const marginL = 18;
@@ -218,7 +222,7 @@ export async function downloadBudgetPatientPdf(budget: Budget): Promise<void> {
   doc.setFontSize(11);
   doc.text('PROCEDIMIENTOS A REALIZAR:', marginL, y);
 
-  const inBs = data.rateBs > 0;
+  const inBs = data.showBs;
   autoTable(doc, {
     startY: y + 3,
     margin: { left: marginL, right: marginL },
@@ -486,10 +490,11 @@ export async function downloadBudgetApsPdf(budget: Budget): Promise<void> {
 export function downloadBudgetPdf(
   budget: Budget,
   template: BudgetTemplate,
+  options: BudgetDocOptions = {},
 ): Promise<void> {
   switch (template) {
     case 'patient':
-      return downloadBudgetPatientPdf(budget);
+      return downloadBudgetPatientPdf(budget, options);
     case 'insurance':
       return downloadBudgetInsurancePdf(budget);
     case 'aps':

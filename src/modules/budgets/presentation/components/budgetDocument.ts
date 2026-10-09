@@ -118,6 +118,15 @@ export interface BudgetDocLine {
   totalUsd: number;
 }
 
+/** Opciones de armado del documento que elige quien descarga. */
+export interface BudgetDocOptions {
+  /**
+   * Imprimir los montos en bolívares en la plantilla PACIENTE (default: sí).
+   * En `false` el documento sale en dólares y sin la fila "TASA Bcv".
+   */
+  includeBs?: boolean;
+}
+
 export interface BudgetDocData {
   lines: BudgetDocLine[];
   /** Total impreso en USD: el monto del presupuesto (con su ajuste). */
@@ -126,10 +135,15 @@ export interface BudgetDocData {
   linesTotalUsd: number;
   /**
    * Tasa USD/Bs del documento. Sale del snapshot del presupuesto; sin él, de
-   * la tasa vigente a la fecha del presupuesto. 0 ⇒ no se pudo resolver y la
-   * plantilla PACIENTE imprime los montos sin convertir.
+   * la tasa vigente a la fecha del presupuesto. 0 ⇒ no se pudo resolver.
    */
   rateBs: number;
+  /**
+   * ¿La plantilla PACIENTE imprime los montos en bolívares? Es la opción que
+   * se elige al descargar, y cae a `false` sola cuando no hay tasa que usar.
+   * En `false` el documento va en dólares y sin la fila de la tasa.
+   */
+  showBs: boolean;
   patientName: string;
   patientId: string;
   patientPhone: string;
@@ -175,7 +189,10 @@ export async function resolveBudgetRateBs(budget: Budget): Promise<number> {
  * El total impreso es `priceAmount` (el ajustado), no la suma de las líneas:
  * si el usuario aplicó un descuento global, el documento debe cobrar eso.
  */
-export async function buildBudgetDoc(budget: Budget): Promise<BudgetDocData> {
+export async function buildBudgetDoc(
+  budget: Budget,
+  options: BudgetDocOptions = {},
+): Promise<BudgetDocData> {
   const rows = [...(budget.budgetServiceTypes ?? [])].sort(
     (a, b) => (a.position ?? 0) - (b.position ?? 0),
   );
@@ -191,11 +208,16 @@ export async function buildBudgetDoc(budget: Budget): Promise<BudgetDocData> {
     };
   });
 
+  // La tasa sólo se consulta si el documento la va a usar.
+  const wantsBs = options.includeBs ?? true;
+  const rateBs = wantsBs ? await resolveBudgetRateBs(budget) : 0;
+
   return {
     lines,
     totalUsd: Number(budget.priceAmount) || 0,
     linesTotalUsd: budgetLinesTotalUsd(budget),
-    rateBs: await resolveBudgetRateBs(budget),
+    rateBs,
+    showBs: wantsBs && rateBs > 0,
     patientName: holderDisplayName(budget.patient).toUpperCase(),
     patientId: holderId(budget.patient),
     patientPhone: budget.patient?.phones?.[0]?.number ?? '',

@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { FileSpreadsheet, FileText, Loader2 } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { notify } from '@/lib/notifications/toast';
 import {
@@ -16,7 +18,7 @@ type Format = 'xlsx' | 'pdf';
 /** Qué es cada plantilla, en una línea, para no tener que abrirla y ver. */
 const TEMPLATE_HINT: Record<BudgetTemplate, string> = {
   insurance: 'Dirigido a la aseguradora, montos en dólares y cuenta de pago.',
-  patient: 'Para entregar al paciente, montos en bolívares y tasa BCV.',
+  patient: 'Para entregar al paciente.',
   aps: 'Formulario de solicitud de servicio de Seguros Altamira.',
 };
 
@@ -65,13 +67,17 @@ export function BudgetDownloadCard({ budget }: { budget: Budget }) {
   // `${template}:${format}` de la descarga en curso — sólo una a la vez para
   // que el navegador no dispare varios "guardar como" encimados.
   const [busy, setBusy] = useState<string | null>(null);
+  // Bolívares en la plantilla PACIENTE. Por defecto sí: es como se entrega.
+  const [includeBs, setIncludeBs] = useState(true);
   const templates = budgetTemplatesFor(budget);
 
   const run = async (template: BudgetTemplate, format: Format) => {
     setBusy(`${template}:${format}`);
     try {
-      if (format === 'xlsx') await downloadBudgetXlsx(budget, template);
-      else await downloadBudgetPdf(budget, template);
+      // La opción sólo aplica a la plantilla del paciente; las otras van en $.
+      const options = { includeBs: template === 'patient' ? includeBs : false };
+      if (format === 'xlsx') await downloadBudgetXlsx(budget, template, options);
+      else await downloadBudgetPdf(budget, template, options);
     } catch (e) {
       notify.fromError(
         e,
@@ -103,7 +109,28 @@ export function BudgetDownloadCard({ budget }: { budget: Budget }) {
               <p className="text-sm font-medium">{BUDGET_TEMPLATE_LABEL[t]}</p>
               <p className="text-xs text-muted-foreground">
                 {TEMPLATE_HINT[t]}
+                {t === 'patient'
+                  ? includeBs
+                    ? ' Montos en bolívares, con el total en $ y la tasa BCV.'
+                    : ' Montos en dólares.'
+                  : ''}
               </p>
+              {t === 'patient' ? (
+                <div className="flex items-center gap-2 pt-1.5">
+                  <Checkbox
+                    id="budget-include-bs"
+                    checked={includeBs}
+                    onCheckedChange={(v) => setIncludeBs(v === true)}
+                    disabled={busy !== null}
+                  />
+                  <Label
+                    htmlFor="budget-include-bs"
+                    className="cursor-pointer text-xs font-normal text-muted-foreground"
+                  >
+                    Incluir montos en bolívares (tasa BCV)
+                  </Label>
+                </div>
+              ) : null}
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {(['xlsx', 'pdf'] as Format[]).map((f) => (

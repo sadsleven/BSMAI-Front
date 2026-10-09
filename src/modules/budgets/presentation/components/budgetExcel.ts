@@ -14,6 +14,7 @@ import {
   budgetCompanyHeaderLines,
   budgetFileBaseName,
   type BudgetDocData,
+  type BudgetDocOptions,
 } from './budgetDocument';
 
 const AFMI_BLUE = 'FF002060';
@@ -262,11 +263,14 @@ async function writeFooter(
  * Plantilla PACIENTE — el presupuesto que se le entrega al paciente: montos en
  * BOLÍVARES, con el total en $ y la tasa BCV con que se convirtieron al pie.
  *
- * Sin tasa resoluble (`rateBs = 0`) los montos salen en USD sin convertir y la
- * fila de la tasa se omite: es preferible a imprimir ceros.
+ * Con `includeBs: false` (o sin tasa que usar) sale en dólares y sin la fila de
+ * la tasa: es preferible a imprimir ceros.
  */
-export async function downloadBudgetPatientXlsx(budget: Budget): Promise<void> {
-  const doc = await buildBudgetDoc(budget);
+export async function downloadBudgetPatientXlsx(
+  budget: Budget,
+  options: BudgetDocOptions = {},
+): Promise<void> {
+  const doc = await buildBudgetDoc(budget, options);
   const wb = new ExcelJS.Workbook();
   wb.creator = 'AFMI';
   const ws = wb.addWorksheet('PACIENTE');
@@ -328,7 +332,7 @@ export async function downloadBudgetPatientXlsx(budget: Budget): Promise<void> {
   put(
     ws,
     'D13',
-    doc.rateBs > 0 ? 'COSTO BS' : 'COSTO $',
+    doc.showBs ? 'COSTO BS' : 'COSTO $',
     BOLD11,
     centerMid,
   );
@@ -345,7 +349,7 @@ export async function downloadBudgetPatientXlsx(budget: Budget): Promise<void> {
     put(
       ws,
       `D${r}`,
-      doc.rateBs > 0 ? +(line.totalUsd * doc.rateBs).toFixed(2) : line.totalUsd,
+      doc.showBs ? +(line.totalUsd * doc.rateBs).toFixed(2) : line.totalUsd,
       VALUE,
       centerMid,
       '#,##0.00',
@@ -362,9 +366,9 @@ export async function downloadBudgetPatientXlsx(budget: Budget): Promise<void> {
   // presupuesto no se sostiene frente al paciente.
   const adjustmentUsd = +(doc.totalUsd - doc.linesTotalUsd).toFixed(2);
   const toBs = (usd: number): number =>
-    doc.rateBs > 0 ? +(usd * doc.rateBs).toFixed(2) : usd;
+    doc.showBs ? +(usd * doc.rateBs).toFixed(2) : usd;
   if (adjustmentUsd !== 0) {
-    put(ws, `B${r}`, doc.rateBs > 0 ? 'SUB-TOTAL BS' : 'SUB-TOTAL $', BOLD11, left);
+    put(ws, `B${r}`, doc.showBs ? 'SUB-TOTAL BS' : 'SUB-TOTAL $', BOLD11, left);
     put(ws, `D${r}`, toBs(doc.linesTotalUsd), VALUE, right, '#,##0.00');
     r += 1;
     put(
@@ -377,14 +381,14 @@ export async function downloadBudgetPatientXlsx(budget: Budget): Promise<void> {
     put(ws, `D${r}`, toBs(adjustmentUsd), VALUE, right, '#,##0.00');
     r += 1;
   }
-  if (doc.rateBs > 0) {
+  if (doc.showBs) {
     put(ws, `B${r}`, 'TOTAL BS', BOLD11, left);
     put(ws, `D${r}`, toBs(doc.totalUsd), TOTAL, right, '#,##0.00');
     r += 1;
   }
   put(ws, `B${r}`, 'TOTAL $', BOLD11, left);
   put(ws, `D${r}`, doc.totalUsd, TOTAL, right, '#,##0.00');
-  if (doc.rateBs > 0) {
+  if (doc.showBs) {
     r += 1;
     put(ws, `B${r}`, 'TASA Bcv', BOLD11, left);
     put(ws, `D${r}`, doc.rateBs, VALUE, right, '#,##0.00');
@@ -651,10 +655,11 @@ export async function downloadBudgetApsXlsx(budget: Budget): Promise<void> {
 export function downloadBudgetXlsx(
   budget: Budget,
   template: BudgetTemplate,
+  options: BudgetDocOptions = {},
 ): Promise<void> {
   switch (template) {
     case 'patient':
-      return downloadBudgetPatientXlsx(budget);
+      return downloadBudgetPatientXlsx(budget, options);
     case 'insurance':
       return downloadBudgetInsuranceXlsx(budget);
     case 'aps':
