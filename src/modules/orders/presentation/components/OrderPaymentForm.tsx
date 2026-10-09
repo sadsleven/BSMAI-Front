@@ -714,6 +714,11 @@ export function OrderPaymentForm({
                             ? paymentAccountsById[p.paymentAccountId] ?? null
                             : null
                         }
+                        onResolve={(account) =>
+                          setPaymentAccountsById((prev) =>
+                            prev[account.id] ? prev : { ...prev, [account.id]: account },
+                          )
+                        }
                         disabled={disabled}
                         error={!!err.paymentAccountId}
                       />
@@ -806,6 +811,11 @@ export function OrderPaymentForm({
                           p.paymentAccountId
                             ? paymentAccountsById[p.paymentAccountId] ?? null
                             : null
+                        }
+                        onResolve={(account) =>
+                          setPaymentAccountsById((prev) =>
+                            prev[account.id] ? prev : { ...prev, [account.id]: account },
+                          )
                         }
                         disabled={disabled}
                         error={!!err.paymentAccountId}

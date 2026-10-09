@@ -13,6 +13,7 @@ import {
   budgetCompanyHeaderBodyText,
   budgetCompanyHeaderLines,
   budgetFileBaseName,
+  SHEET_COLUMNS,
   type BudgetDocData,
   type BudgetDocOptions,
 } from './budgetDocument';
@@ -119,6 +120,36 @@ function saveWorkbook(
       `${budgetFileBaseName(budget, template)}.xlsx`,
     );
   });
+}
+
+/**
+ * Configura la hoja para imprimir/exportar a PDF en A4.
+ *
+ * ExcelJS escribe un `<pageSetup>` SIN `paperSize`, y Excel lo interpreta como
+ * Carta: maqueta la hoja a 8,5" de ancho y, al exportar a un PDF A4, encoge
+ * todo ~5%. El Excel de la administración no trae `pageSetup` y por eso sale
+ * a escala 1. Declarando A4 el PDF exportado queda a tamaño real y coincide
+ * con el PDF que genera la aplicación.
+ */
+function setupA4(ws: ExcelJS.Worksheet): void {
+  ws.pageSetup = {
+    paperSize: 9, // A4
+    orientation: 'portrait',
+    // Una sola página de ancho. El formato de la administración no lo trae y
+    // por eso su hoja PACIENTE parte en dos: la columna de los montos acaba
+    // impresa en una segunda página. El alto queda libre.
+    fitToPage: true,
+    fitToWidth: 1,
+    fitToHeight: 0,
+    margins: {
+      left: 0.7,
+      right: 0.7,
+      top: 0.75,
+      bottom: 0.75,
+      header: 0.3,
+      footer: 0.3,
+    },
+  };
 }
 
 /** Escribe valor + estilo en una celda, de forma compacta. */
@@ -274,14 +305,12 @@ export async function downloadBudgetPatientXlsx(
   const wb = new ExcelJS.Workbook();
   wb.creator = 'AFMI';
   const ws = wb.addWorksheet('PACIENTE');
+  setupA4(ws);
 
   // Anchos exactos del template.
-  ws.columns = [
-    { width: 9.71 }, // A
-    { width: 16.57 }, // B — etiquetas
-    { width: 48.71 }, // C — valores / nombre del procedimiento
-    { width: 14.29 }, // D — montos
-  ];
+  // Anchos de SHEET_COLUMNS: los comparte con el PDF para que las dos salidas
+  // tengan la misma retícula.
+  ws.columns = SHEET_COLUMNS.patient.map((width) => ({ width }));
 
   const LABEL: Partial<ExcelJS.Font> = { name: 'Calibri', size: 12, bold: true };
   const VALUE: Partial<ExcelJS.Font> = { name: 'Calibri', size: 11 };
@@ -412,13 +441,9 @@ export async function downloadBudgetInsuranceXlsx(
   const wb = new ExcelJS.Workbook();
   wb.creator = 'AFMI';
   const ws = wb.addWorksheet('SEGUROS');
+  setupA4(ws);
 
-  ws.columns = [
-    { width: 9.71 }, // A — etiquetas del bloque "PARA"
-    { width: 14.29 }, // B
-    { width: 48.71 }, // C — valores / nombre del estudio
-    { width: 14.29 }, // D — montos
-  ];
+  ws.columns = SHEET_COLUMNS.insurance.map((width) => ({ width }));
 
   const LABEL12: Partial<ExcelJS.Font> = {
     name: 'Calibri',
@@ -532,13 +557,9 @@ export async function downloadBudgetApsXlsx(budget: Budget): Promise<void> {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'AFMI';
   const ws = wb.addWorksheet('APS');
+  setupA4(ws);
 
-  ws.columns = [
-    { width: 4.71 }, // A
-    { width: 36.71 }, // B — etiquetas
-    { width: 45.43 }, // C — valores
-    { width: 8 }, // D
-  ];
+  ws.columns = SHEET_COLUMNS.aps.map((width) => ({ width }));
 
   const BLACK = { argb: 'FF000000' };
   const T: Partial<ExcelJS.Border> = { style: 'thin', color: BLACK };

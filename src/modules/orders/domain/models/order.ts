@@ -35,6 +35,8 @@ export interface OrderPayment {
     effectiveDate?: string;
   } | null;
   accountNumber?: string | null;
+  /** Cuenta bancaria propia (AFMI) a la que entró el pago. */
+  paymentAccountId?: string | null;
   amountCurrency: PaymentCurrency;
   amountValue: number | string;
   amountInUsd?: number | string;

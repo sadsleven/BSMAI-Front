@@ -1,5 +1,4 @@
 import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { saveAs } from 'file-saver';
 import { formatDateOnly } from '@/lib/dates';
 import { formatMoney } from '@/lib/format/money';
@@ -8,17 +7,23 @@ import type { Budget, BudgetTemplate } from '../../domain/models/budget';
 import {
   APS_ATTACHMENTS_NOTE,
   BUDGET_COMPANY,
+  BUDGET_HEADER_FONT,
   buildBudgetDoc,
   budgetBankLines,
-  BUDGET_HEADER_FONT,
   budgetCompanyHeaderLines,
   budgetFileBaseName,
   type BudgetDocData,
   type BudgetDocOptions,
 } from './budgetDocument';
+import { SheetGrid, cell, rowRule, PT_MM } from './budgetSheetGrid';
 
 const AFMI_BLUE: [number, number, number] = [0, 32, 96];
 const APS_BLUE: [number, number, number] = [0, 56, 149];
+
+/** 1 píxel de Excel (96 dpi) en milímetros. */
+const PX_MM = 25.4 / 96;
+/** EMU (unidad del XML de dibujos de Excel) a milímetros. */
+const emuMm = (emu: number): number => (emu / 9525) * PX_MM;
 
 /** Las mismas imágenes del Excel original de AFMI, servidas desde public/. */
 const IMG = {
@@ -35,6 +40,13 @@ const IMG = {
     mime: 'image/jpeg',
   },
 } as const;
+
+/** Tamaño de cada imagen en mm, el mismo que ocupa en la hoja. */
+const IMG_MM = {
+  logo: { w: 148.2 * PX_MM, h: 82 * PX_MM },
+  signature: { w: 153 * PX_MM, h: 93 * PX_MM },
+  altamira: { w: 79 * PX_MM, h: 51.13 * PX_MM },
+};
 
 type BudgetImage = (typeof IMG)[keyof typeof IMG];
 
@@ -95,95 +107,79 @@ async function resolveBankName(budget: Budget): Promise<string> {
 }
 
 /**
- * Cabecera de las plantillas PACIENTE y SEGUROS: logo a la izquierda y el
- * bloque de razón social / RIF / dirección / teléfonos centrado a su derecha.
- * Devuelve la `y` donde sigue el documento.
+ * Cabecera de las plantillas PACIENTE y SEGUROS: logo pegado al margen
+ * izquierdo y el bloque de razón social centrado en la columna C, que es la
+ * celda mergeada donde vive en la hoja. Las cinco líneas llevan los dos
+ * tamaños del Excel (razón social más grande).
  */
-async function drawCompanyHeader(doc: jsPDF, marginL: number): Promise<number> {
-  const pageW = doc.internal.pageSize.getWidth();
-  // Mismo tamaño que en el Excel (148×82 px → mm).
-  await drawImage(doc, IMG.logo, marginL, 12, 39.2, 21.7);
+async function drawCompanyHeader(
+  doc: jsPDF,
+  grid: SheetGrid,
+  logo: { x: number; y: number },
+): Promise<void> {
+  await drawImage(doc, IMG.logo, logo.x, logo.y, IMG_MM.logo.w, IMG_MM.logo.h);
 
-  const cx = pageW / 2 + 15;
-  let y = 14;
+  const lines = budgetCompanyHeaderLines();
+  const cx = grid.xMid(2);
+  const lineH = (size: number) => size * PT_MM * 1.3;
+  const totalH =
+    lineH(BUDGET_HEADER_FONT.title) +
+    lineH(BUDGET_HEADER_FONT.body) * (lines.length - 1);
+  // El bloque va centrado verticalmente en la fila 1, como la celda C1:C2.
+  let y =
+    grid.top(1) +
+    (grid.height(1) - totalH) / 2 +
+    BUDGET_HEADER_FONT.title * PT_MM;
+
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(0, 0, 0);
-  // Las mismas cinco líneas y los mismos dos tamaños que la celda del Excel.
-  budgetCompanyHeaderLines().forEach((line, i) => {
+  lines.forEach((line, i) => {
     doc.setFontSize(i === 0 ? BUDGET_HEADER_FONT.title : BUDGET_HEADER_FONT.body);
-    doc.text(line, cx, y, { align: 'center', maxWidth: pageW - cx - marginL + 40 });
-    y += i === 0 ? 5 : 4;
+    doc.text(line, cx, y, { align: 'center' });
+    y += lineH(BUDGET_HEADER_FONT.body);
   });
-  return Math.max(y, 30);
 }
 
-/** Título "PRESUPUESTO DE SERVICIOS." en el azul del formato. */
-function drawTitle(doc: jsPDF, y: number): number {
-  const pageW = doc.internal.pageSize.getWidth();
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.setTextColor(...AFMI_BLUE);
-  doc.text('PRESUPUESTO DE SERVICIOS.', pageW / 2, y, { align: 'center' });
-  doc.setTextColor(0, 0, 0);
-  return y + 10;
+/** Título "PRESUPUESTO DE SERVICIOS." centrado en la columna C. */
+function drawTitle(doc: jsPDF, grid: SheetGrid, row: number): void {
+  cell(doc, grid, row, 2, 'PRESUPUESTO DE SERVICIOS.', {
+    size: 16,
+    bold: true,
+    align: 'center',
+    color: AFMI_BLUE,
+  });
 }
+
+/** Filas que ocupa la firma y sello (93 px ≈ 5 filas de 15 pt), como el Excel. */
+const SIGNATURE_ROWS = 5;
 
 /**
- * Pie: la firma y sello escaneados de AFMI, "Elaborado por" y la leyenda
- * "FIRMA Y SELLO" debajo. La imagen va al mismo tamaño que en el Excel
- * (153×93 px → mm) y `y` es la línea de "Elaborado por", así que el sello se
- * dibuja encima.
+ * Pie: la firma y sello escaneados sobre las {@link SIGNATURE_ROWS} filas
+ * anteriores, "Elaborado por" en la columna A y "FIRMA Y SELLO" en la C.
+ * `signatureXmm` es el desplazamiento dentro de la columna C, como en la hoja.
  */
 async function drawFooter(
   doc: jsPDF,
-  y: number,
+  grid: SheetGrid,
+  row: number,
   data: BudgetDocData,
-  marginL: number,
+  signatureXmm: number,
 ): Promise<void> {
-  const pageW = doc.internal.pageSize.getWidth();
-  await drawImage(doc, IMG.signature, pageW / 2 + 20 - 40.5 / 2, y - 28, 40.5, 24.6);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  doc.setTextColor(0, 0, 0);
-  doc.text(`Elaborado por: ${data.preparedBy}`, marginL, y);
-  doc.text('FIRMA Y SELLO', pageW / 2 + 20, y + 6, { align: 'center' });
-}
-
-/**
- * Línea horizontal punteada, como las que encierran la tabla de
- * procedimientos en el Excel. `autoTable` sólo sabe hacer bordes sólidos, así
- * que las reglas se dibujan aparte y las celdas van sin borde.
- */
-function dottedRule(doc: jsPDF, y: number, x0: number, x1: number): void {
-  doc.saveGraphicsState();
-  doc.setDrawColor(0, 0, 0);
-  doc.setLineWidth(0.2);
-  doc.setLineDashPattern([0.5, 0.7], 0);
-  doc.line(x0, y, x1, y);
-  doc.setLineDashPattern([], 0);
-  doc.restoreGraphicsState();
-}
-
-/** Etiqueta + valor en una línea, con la etiqueta en negrita. */
-function drawField(
-  doc: jsPDF,
-  x: number,
-  y: number,
-  label: string,
-  value: string,
-  labelWidth: number,
-): void {
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text(label, x, y);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  doc.text(value, x + labelWidth, y, { maxWidth: 110 });
+  await drawImage(
+    doc,
+    IMG.signature,
+    grid.x(2) + signatureXmm,
+    grid.top(row - SIGNATURE_ROWS) + emuMm(184100),
+    IMG_MM.signature.w,
+    IMG_MM.signature.h,
+  );
+  cell(doc, grid, row, 0, `Elaborado por: ${data.preparedBy}`, { size: 10 });
+  cell(doc, grid, row + 1, 2, 'FIRMA Y SELLO', { size: 11, align: 'center' });
 }
 
 /**
  * Plantilla PACIENTE en PDF — montos en Bs, con total en $ y tasa BCV al pie.
- * Espeja `downloadBudgetPatientXlsx`, opción de bolívares incluida.
+ * Mismas filas y columnas que `downloadBudgetPatientXlsx`.
  */
 export async function downloadBudgetPatientPdf(
   budget: Budget,
@@ -191,219 +187,201 @@ export async function downloadBudgetPatientPdf(
 ): Promise<void> {
   const data = await buildBudgetDoc(budget, options);
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  const pageW = doc.internal.pageSize.getWidth();
-  const marginL = 18;
+  const grid = new SheetGrid('patient');
+  grid.setRowHeight(1, 84).setRowHeight(3, 19.5);
+  for (const r of [5, 7, 8, 9, 10]) grid.setRowHeight(r, 15.75);
 
-  let y = await drawCompanyHeader(doc, marginL);
-  y = drawTitle(doc, y + 6);
+  await drawCompanyHeader(doc, grid, {
+    x: grid.x(0) + emuMm(85725),
+    y: grid.top(1) + emuMm(323851),
+  });
+  drawTitle(doc, grid, 3);
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text('FECHA DEL PRESUPUESTO:', pageW - marginL - 40, y, { align: 'right' });
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  doc.text(formatDateOnly(budget.budgetDate), pageW - marginL, y, {
+  // R5 — Fecha del presupuesto.
+  cell(doc, grid, 5, 2, 'FECHA DEL PRESUPUESTO:', {
+    size: 12,
+    bold: true,
     align: 'right',
   });
-  y += 10;
-
-  for (const [label, value] of [
-    ['PACIENTE:', data.patientName],
-    ['CEDULA:', data.patientId],
-    ['DIAGNOSTICO:', data.diagnosis],
-    ['TELEFONO:', data.patientPhone],
-  ] as Array<[string, string]>) {
-    drawField(doc, marginL, y, label, value, 32);
-    y += 7;
-  }
-
-  y += 4;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text('PROCEDIMIENTOS A REALIZAR:', marginL, y);
-
-  const inBs = data.showBs;
-  autoTable(doc, {
-    startY: y + 3,
-    margin: { left: marginL, right: marginL },
-    head: [['', inBs ? 'COSTO BS' : 'COSTO $']],
-    body: data.lines.map((l) => [
-      l.name,
-      formatMoney(inBs ? l.totalUsd * data.rateBs : l.totalUsd),
-    ]),
-    theme: 'plain',
-    styles: {
-      font: 'helvetica',
-      fontSize: 10,
-      cellPadding: { top: 1.4, bottom: 1.4, left: 1.4, right: 1.4 },
-      lineColor: [0, 0, 0],
-    },
-    headStyles: { fontStyle: 'bold', halign: 'center' },
-    columnStyles: {
-      0: { cellWidth: pageW - marginL * 2 - 40 },
-      1: { cellWidth: 40, halign: 'center' },
-    },
-    // Reglas punteadas arriba del encabezado y debajo de la última fila,
-    // como el formato original.
-    didDrawPage: (data_) => {
-      const t = data_.table;
-      dottedRule(doc, t.body[0].cells[0].y, marginL, pageW - marginL);
-      const last = t.body[t.body.length - 1].cells[0];
-      dottedRule(doc, last.y + last.height, marginL, pageW - marginL);
-    },
+  cell(doc, grid, 5, 3, formatDateOnly(budget.budgetDate), {
+    size: 11,
+    align: 'right',
   });
 
-  // @ts-expect-error lastAutoTable es runtime de jspdf-autotable
-  y = (doc.lastAutoTable.finalY as number) + 10;
+  // R7..R10 — Datos del paciente.
+  (
+    [
+      ['PACIENTE:', data.patientName],
+      ['CEDULA :', data.patientId],
+      ['DIAGNOSTICO:', data.diagnosis],
+      ['TELEFONO:', data.patientPhone],
+    ] as Array<[string, string]>
+  ).forEach(([label, value], i) => {
+    const r = 7 + i;
+    cell(doc, grid, r, 1, label, { size: 12, bold: true });
+    cell(doc, grid, r, 2, value, { size: 11 });
+  });
 
-  // Con ajuste global se imprime SUB-TOTAL + DESCUENTO/RECARGO antes del total:
-  // las líneas tienen que sumar lo que se cobra.
+  // R12/R13 — Encabezado de la tabla de procedimientos.
+  cell(doc, grid, 12, 2, ' PROCEDIMIENTOS A REALIZAR :', {
+    size: 11,
+    bold: true,
+  });
+  cell(doc, grid, 13, 3, data.showBs ? 'COSTO BS' : 'COSTO $', {
+    size: 11,
+    bold: true,
+    align: 'center',
+  });
+  rowRule(doc, grid, 14);
+
+  // Detalle — una fila por procedimiento.
+  const detailStart = 15;
+  data.lines.forEach((line, i) => {
+    const r = detailStart + i;
+    cell(doc, grid, r, 1, line.name, { size: 11, spanTo: 2 });
+    cell(
+      doc,
+      grid,
+      r,
+      3,
+      formatMoney(data.showBs ? line.totalUsd * data.rateBs : line.totalUsd),
+      { size: 11, align: 'center' },
+    );
+  });
+  const detailEnd = detailStart + Math.max(data.lines.length, 1);
+  rowRule(doc, grid, detailEnd + 1);
+
+  // Totales. Con ajuste global salen SUB-TOTAL + DESCUENTO/RECARGO antes.
+  let r = detailEnd + 4;
   const adjustmentUsd = +(data.totalUsd - data.linesTotalUsd).toFixed(2);
-  const toBs = (usd: number): number => (inBs ? usd * data.rateBs : usd);
-  const totals: Array<[string, string]> = [];
+  const toBs = (usd: number): number =>
+    data.showBs ? +(usd * data.rateBs).toFixed(2) : usd;
+  const total = (label: string, value: number, strong = false) => {
+    cell(doc, grid, r, 1, label, { size: 11, bold: true });
+    cell(doc, grid, r, 3, formatMoney(value), {
+      size: strong ? 10 : 11,
+      bold: strong,
+      align: 'right',
+    });
+    r += 1;
+  };
   if (adjustmentUsd !== 0) {
-    totals.push([
-      inBs ? 'SUB-TOTAL BS' : 'SUB-TOTAL $',
-      formatMoney(toBs(data.linesTotalUsd)),
-    ]);
-    totals.push([
-      adjustmentUsd < 0 ? 'DESCUENTO' : 'RECARGO',
-      formatMoney(toBs(adjustmentUsd)),
-    ]);
+    total(data.showBs ? 'SUB-TOTAL BS' : 'SUB-TOTAL $', toBs(data.linesTotalUsd));
+    total(adjustmentUsd < 0 ? 'DESCUENTO' : 'RECARGO', toBs(adjustmentUsd));
   }
-  if (inBs) {
-    totals.push(['TOTAL BS', formatMoney(data.totalUsd * data.rateBs)]);
-  }
-  totals.push(['TOTAL $', formatMoney(data.totalUsd)]);
-  if (inBs) totals.push(['TASA Bcv', formatMoney(data.rateBs)]);
+  if (data.showBs) total('TOTAL BS', toBs(data.totalUsd), true);
+  total('TOTAL $', data.totalUsd, true);
+  if (data.showBs) total('TASA Bcv', data.rateBs);
 
-  for (const [label, value] of totals) {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.text(label, marginL, y);
-    doc.setFontSize(10);
-    doc.text(value, pageW - marginL, y, { align: 'right' });
-    y += 6;
-  }
-
-  await drawFooter(doc, y + 36, data, marginL);
+  await drawFooter(doc, grid, r + 1 + SIGNATURE_ROWS, data, emuMm(1092389));
   saveAs(doc.output('blob'), `${budgetFileBaseName(budget, 'patient')}.pdf`);
 }
 
 /**
  * Plantilla SEGUROS en PDF — montos en $ y, al pie, la cuenta donde paga el
- * seguro. Espeja `downloadBudgetInsuranceXlsx`.
+ * seguro. Mismas filas y columnas que `downloadBudgetInsuranceXlsx`.
  */
 export async function downloadBudgetInsurancePdf(budget: Budget): Promise<void> {
-  const data = await buildBudgetDoc(budget);
+  const data = await buildBudgetDoc(budget, { includeBs: false });
   const bankName = await resolveBankName(budget);
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  const pageW = doc.internal.pageSize.getWidth();
-  const marginL = 18;
+  const grid = new SheetGrid('insurance');
+  grid.setRowHeight(1, 84).setRowHeight(7, 19.5);
+  for (const r of [3, 4, 5]) grid.setRowHeight(r, 15.75);
 
-  let y = await drawCompanyHeader(doc, marginL);
-  y += 6;
-
-  for (const [label, value] of [
-    ['FECHA:', formatDateOnly(budget.budgetDate)],
-    ['PARA:', (budget.insurance?.name ?? '').toUpperCase()],
-    ['RIF:', budget.insurance?.rif ?? ''],
-  ] as Array<[string, string]>) {
-    drawField(doc, marginL, y, label, value, 20);
-    y += 6;
-  }
-
-  y = drawTitle(doc, y + 8);
-
-  for (const [label, value] of [
-    ['PACIENTE:', data.patientName],
-    ['CEDULA:', data.patientId],
-    ['TELEFONO:', data.patientPhone],
-  ] as Array<[string, string]>) {
-    drawField(doc, marginL, y, label, value, 28);
-    y += 7;
-  }
-
-  y += 4;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text('PROCEDIMIENTOS A REALIZAR:', marginL, y);
-
-  autoTable(doc, {
-    startY: y + 3,
-    margin: { left: marginL, right: marginL },
-    head: [['ESTUDIOS', 'COSTOS $']],
-    body: data.lines.map((l) => [l.name, formatMoney(l.totalUsd)]),
-    theme: 'plain',
-    styles: {
-      font: 'helvetica',
-      fontSize: 10,
-      cellPadding: { top: 1.4, bottom: 1.4, left: 1.4, right: 1.4 },
-      lineColor: [0, 0, 0],
-    },
-    headStyles: { fontStyle: 'bold', halign: 'left' },
-    columnStyles: {
-      0: { cellWidth: pageW - marginL * 2 - 40 },
-      1: { cellWidth: 40, halign: 'center' },
-    },
-    didParseCell: (cell) => {
-      if (cell.section === 'head' && cell.column.index === 1) {
-        cell.cell.styles.halign = 'center';
-      }
-    },
-    // Reglas punteadas arriba del encabezado y debajo de la última fila.
-    didDrawPage: (data_) => {
-      const t = data_.table;
-      dottedRule(doc, t.head[0].cells[0].y, marginL, pageW - marginL);
-      const last = t.body[t.body.length - 1].cells[0];
-      dottedRule(doc, last.y + last.height, marginL, pageW - marginL);
-    },
+  await drawCompanyHeader(doc, grid, {
+    x: grid.x(0) + emuMm(38100),
+    y: grid.top(1) + emuMm(142876),
   });
 
-  // @ts-expect-error lastAutoTable es runtime de jspdf-autotable
-  y = (doc.lastAutoTable.finalY as number) + 8;
+  // R3..R5 — A quién va dirigido.
+  (
+    [
+      ['FECHA:', formatDateOnly(budget.budgetDate)],
+      ['PARA: ', (budget.insurance?.name ?? '').toUpperCase()],
+      ['RIF:', budget.insurance?.rif ?? ''],
+    ] as Array<[string, string]>
+  ).forEach(([label, value], i) => {
+    const r = 3 + i;
+    cell(doc, grid, r, 0, label, { size: 12, bold: true });
+    cell(doc, grid, r, 1, value, { size: 12, bold: true });
+  });
 
-  // Con ajuste global, SUB-TOTAL + DESCUENTO/RECARGO antes del total.
+  drawTitle(doc, grid, 7);
+
+  // R9..R11 — Datos del paciente.
+  (
+    [
+      ['PACIENTE:', data.patientName],
+      ['CEDULA :', data.patientId],
+      ['TELEFONO:', data.patientPhone],
+    ] as Array<[string, string]>
+  ).forEach(([label, value], i) => {
+    const r = 9 + i;
+    cell(doc, grid, r, 1, label, { size: 11, bold: true });
+    cell(doc, grid, r, 2, value, { size: 11 });
+  });
+
+  // R13..R15 — Encabezado de la tabla.
+  cell(doc, grid, 13, 2, ' PROCEDIMIENTOS A REALIZAR :', {
+    size: 11,
+    bold: true,
+  });
+  rowRule(doc, grid, 14);
+  cell(doc, grid, 15, 1, 'ESTUDIOS ', { size: 11, bold: true });
+  cell(doc, grid, 15, 3, 'COSTOS $', { size: 11, bold: true, align: 'center' });
+
+  const detailStart = 17;
+  data.lines.forEach((line, i) => {
+    const r = detailStart + i;
+    cell(doc, grid, r, 1, line.name, { size: 11, spanTo: 2 });
+    cell(doc, grid, r, 3, formatMoney(line.totalUsd), {
+      size: 11,
+      align: 'center',
+    });
+  });
+  const detailEnd = detailStart + Math.max(data.lines.length, 1);
+  rowRule(doc, grid, detailEnd);
+
+  // Totales en la fila detailEnd+2, como la hoja.
+  let totalRow = detailEnd + 2;
   const adjustmentUsd = +(data.totalUsd - data.linesTotalUsd).toFixed(2);
-  const totals: Array<[string, string]> = [];
+  const total = (label: string, value: number) => {
+    cell(doc, grid, totalRow, 1, label, { size: 11, bold: true });
+    cell(doc, grid, totalRow, 3, formatMoney(value), {
+      size: 11,
+      align: 'center',
+    });
+    totalRow += 1;
+  };
   if (adjustmentUsd !== 0) {
-    totals.push(['SUB-TOTAL $', formatMoney(data.linesTotalUsd)]);
-    totals.push([
-      adjustmentUsd < 0 ? 'DESCUENTO $' : 'RECARGO $',
-      formatMoney(adjustmentUsd),
-    ]);
+    total('SUB-TOTAL $', data.linesTotalUsd);
+    total(adjustmentUsd < 0 ? 'DESCUENTO $' : 'RECARGO $', adjustmentUsd);
   }
-  totals.push(['TOTAL $', formatMoney(data.totalUsd)]);
-  for (const [label, value] of totals) {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.text(label, marginL, y);
-    doc.setFontSize(10);
-    doc.text(value, pageW - marginL, y, { align: 'right' });
-    y += 6;
-  }
-  y += 6;
+  total('TOTAL $', data.totalUsd);
+  totalRow -= 1;
 
-  for (const line of budgetBankLines(budget, bankName)) {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.text(line, marginL, y);
-    y += 5;
-  }
+  // Bloque bancario, tres filas más abajo.
+  const bankLines = budgetBankLines(budget, bankName);
+  bankLines.forEach((line, i) => {
+    cell(doc, grid, totalRow + 3 + i, 1, line, { size: 11, bold: true });
+  });
 
-  await drawFooter(doc, y + 36, data, marginL);
+  const footerRow =
+    totalRow + 3 + Math.max(bankLines.length, 1) + 1 + SIGNATURE_ROWS;
+  await drawFooter(doc, grid, footerRow, data, emuMm(2337399));
   saveAs(doc.output('blob'), `${budgetFileBaseName(budget, 'insurance')}.pdf`);
 }
 
 /**
- * Plantilla APS en PDF — la solicitud de servicio del seguro, como tabla de
- * dos columnas con rejilla completa. Espeja `downloadBudgetApsXlsx`.
+ * Plantilla APS en PDF — la solicitud de servicio del seguro: dos columnas con
+ * rejilla completa. Mismas filas y columnas que `downloadBudgetApsXlsx`.
  */
 export async function downloadBudgetApsPdf(budget: Budget): Promise<void> {
-  const data = await buildBudgetDoc(budget);
+  const data = await buildBudgetDoc(budget, { includeBs: false });
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  const pageW = doc.internal.pageSize.getWidth();
-  const marginL = 18;
+  const grid = new SheetGrid('aps');
+  grid.setRowHeight(1, 38.25);
 
   const servicio = data.lines.map((l) => l.name).join(' + ');
   const referring = [budget.referringDoctorName, budget.referringSpecialtyName]
@@ -411,77 +389,94 @@ export async function downloadBudgetApsPdf(budget: Budget): Promise<void> {
     .filter(Boolean)
     .join(' — ');
 
-  const rows: Array<[string, string]> = [
-    ['NOMBRE DEL TITULAR:', data.holderName],
-    ['NUMERO DE CI:', data.holderId],
-    ['NOMBRE DEL PACIENTE', data.patientName],
-    ['NUMERO DE CI:', data.patientId],
-    ['NO. TELEFONICO DEL PACIENTE', data.patientPhone],
-    ['DIAGNOSTICO/SINTOMATOLOGIA', data.diagnosis],
-    ['SERVICIO SOLICITADO:', servicio],
-    ['NOMBRE Y ESPECIALIDAD DEL MEDICO QUE REFIERE:', referring],
+  const rows: Array<{
+    label: string;
+    value: string;
+    bold?: boolean;
+    blue?: boolean;
+  }> = [
+    { label: 'NOMBRE DEL TITULAR:', value: data.holderName },
+    { label: 'NUMERO DE CI:', value: data.holderId },
+    { label: 'NOMBRE DEL PACIENTE', value: data.patientName },
+    { label: 'NUMERO DE CI:', value: data.patientId },
+    { label: 'NO. TELEFONICO DEL PACIENTE', value: data.patientPhone },
+    { label: 'DIAGNOSTICO/SINTOMATOLOGIA', value: data.diagnosis },
+    { label: 'SERVICIO SOLICITADO:', value: servicio },
+    {
+      label: 'NOMBRE Y ESPECIALIDAD DEL MEDICO QUE REFIERE:',
+      value: referring,
+    },
     // El formulario del seguro pide el costo en dólares, sin desglose.
-    ['COSTO DE LA ATENCION:', `$${data.totalUsd.toFixed(2)}`],
-    ['COMENTARIO/OBSERVACIONES', budget.observations ?? ''],
-    ['OPERADOR/CLINICA', data.preparedBy],
-    ['TELEFONO DIRECTO CLINICA:', BUDGET_COMPANY.directPhone],
+    {
+      label: 'COSTO DE LA ATENCION:',
+      value: `$${data.totalUsd.toFixed(2)}`,
+      blue: true,
+    },
+    { label: 'COMENTARIO/OBSERVACIONES', value: budget.observations ?? '' },
+    { label: 'OPERADOR/CLINICA', value: data.preparedBy, bold: true },
+    {
+      label: 'TELEFONO DIRECTO CLINICA:',
+      value: BUDGET_COMPANY.directPhone,
+      bold: true,
+    },
   ];
-  const costRowIndex = rows.findIndex(([l]) => l === 'COSTO DE LA ATENCION:');
-  // Operador y teléfono de la clínica van en negrita, como en el Excel.
-  const boldValueRows = new Set([rows.length - 2, rows.length - 1]);
-  // Fila del título: logo del seguro a la izquierda y el título a la derecha,
-  // dentro del recuadro — igual que la primera fila de la hoja del Excel.
-  const TITLE_ROW_H = 14;
+  const noteRow = 3 + rows.length;
+  for (let r = 2; r <= noteRow; r++) grid.setRowHeight(r, 25.5);
 
-  autoTable(doc, {
-    startY: 18,
-    margin: { left: marginL, right: marginL },
-    body: [
-      ['', 'SOLICITUD SERVICIO APS'],
-      // Fila en blanco entre el título y los datos, como la hoja del Excel.
-      ['', ''],
-      ...rows,
-      [{ content: APS_ATTACHMENTS_NOTE, colSpan: 2, styles: { fontSize: 7 } }],
-    ],
-    theme: 'plain',
-    styles: {
-      font: 'helvetica',
-      fontSize: 10,
-      cellPadding: { top: 2, bottom: 2, left: 2, right: 2 },
-      lineWidth: 0.2,
-      lineColor: [0, 0, 0],
-      valign: 'middle',
-      minCellHeight: 9,
-    },
-    columnStyles: {
-      0: { cellWidth: 72, fontStyle: 'bold' },
-      1: { cellWidth: pageW - marginL * 2 - 72 },
-    },
-    didParseCell: (cell) => {
-      if (cell.row.index === 0) {
-        cell.cell.styles.minCellHeight = TITLE_ROW_H;
-        if (cell.column.index === 1) {
-          cell.cell.styles.fontSize = 14;
-          cell.cell.styles.fontStyle = 'bold';
-          cell.cell.styles.halign = 'center';
-          cell.cell.styles.textColor = APS_BLUE;
-        }
-        return;
-      }
-      // Las filas de datos arrancan tras el título y la fila en blanco.
-      const i = cell.row.index - 2;
-      // "COSTO DE LA ATENCION" va en azul, como en el formulario del seguro.
-      if (i === costRowIndex && cell.column.index === 0) {
-        cell.cell.styles.textColor = APS_BLUE;
-      }
-      if (boldValueRows.has(i) && cell.column.index === 1) {
-        cell.cell.styles.fontStyle = 'bold';
-      }
-    },
+  /** Recuadro de una fila a lo ancho de B..C, con la línea que las separa. */
+  const boxRow = (row: number, split = true) => {
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.2);
+    const y = grid.top(row);
+    const h = grid.height(row);
+    doc.rect(grid.x(1), y, grid.xEnd(2) - grid.x(1), h);
+    if (split) doc.line(grid.x(2), y, grid.x(2), y + h);
+  };
+
+  // R1 — logo de Seguros Altamira + título, dentro del recuadro.
+  await drawImage(
+    doc,
+    IMG.altamira,
+    grid.x(1) + emuMm(342899),
+    grid.top(1),
+    IMG_MM.altamira.w,
+    IMG_MM.altamira.h,
+  );
+  cell(doc, grid, 1, 2, 'SOLICITUD SERVICIO APS', {
+    size: 14.5,
+    bold: true,
+    align: 'center',
+    color: APS_BLUE,
+    valign: 'top',
+  });
+  boxRow(1);
+  // R2 — fila en blanco, mergeada B:C en la hoja.
+  boxRow(2, false);
+
+  rows.forEach((f, i) => {
+    const r = 3 + i;
+    cell(doc, grid, r, 1, f.label, {
+      size: 10,
+      bold: true,
+      color: f.blue ? APS_BLUE : [0, 0, 0],
+      padding: 2,
+      valign: 'top',
+      wrap: true,
+    });
+    cell(doc, grid, r, 2, f.value, { size: 10, bold: f.bold, padding: 2 });
+    boxRow(r);
   });
 
-  // El logo del seguro se dibuja encima de la celda del título, ya medida.
-  await drawImage(doc, IMG.altamira, marginL + 3, 19.5, 20.9, 13.5);
+  // Última fila — recaudos a anexar, a lo ancho de B:C.
+  cell(doc, grid, noteRow, 1, APS_ATTACHMENTS_NOTE, {
+    size: 7,
+    bold: true,
+    spanTo: 2,
+    padding: 2,
+    valign: 'top',
+    wrap: true,
+  });
+  boxRow(noteRow, false);
 
   saveAs(doc.output('blob'), `${budgetFileBaseName(budget, 'aps')}.pdf`);
 }

@@ -65,6 +65,33 @@ export function budgetCompanyHeaderBodyText(): string {
 /** El mismo relleno, para separar la razón social del resto de la cabecera. */
 export const BUDGET_HEADER_LINE_BREAK = HEADER_LINE_BREAK;
 
+/**
+ * Anchos de columna de cada plantilla, en las "unidades de carácter" de Excel.
+ * Son la retícula del documento: el Excel los aplica a la hoja y el PDF los
+ * convierte a milímetros para colocar el texto en las mismas columnas. Viven
+ * aquí para que los dos formatos no se separen.
+ */
+export const SHEET_COLUMNS: Record<BudgetTemplate, readonly number[]> = {
+  // La C del formato original mide 48,71, pero con ese ancho la hoja PACIENTE
+  // no entra en un A4 y Excel manda la columna de los montos a una segunda
+  // página (le pasa al archivo de la administración). 46 la deja entrar al
+  // 100%, sin encoger nada.
+  patient: [9.71, 16.57, 46, 14.29],
+  insurance: [9.71, 14.29, 48.71, 14.29],
+  aps: [4.71, 36.71, 45.43, 8],
+};
+
+/**
+ * Ancho de columna en píxeles a partir de su medida en "caracteres" de Excel
+ * (Calibri 11, ancho de dígito 7 px). El `+ 5` es el relleno de la celda: sin
+ * él las columnas del PDF se desplazan respecto del PDF que exporta Excel
+ * —comprobado midiendo ambos—, aunque `Columns(i).Width` reporte sólo el
+ * ancho útil (9,71 → 51 pt).
+ */
+export function excelColPx(chars: number): number {
+  return Math.round(chars * 7) + 5;
+}
+
 /** Nota al pie de la solicitud APS (lista de recaudos). */
 export const APS_ATTACHMENTS_NOTE =
   'ANEXAR LOS SIGUIENTES DOCUMENTOS: COPIA DE LA C.I., COPIA DE LA PARTIDA DE NACIMIENTO (MENORES DE EDAD), INFORME MEDICO, RECIPES MEDICOS, PRESUPUESTO';
