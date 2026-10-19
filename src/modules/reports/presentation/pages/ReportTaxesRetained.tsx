@@ -167,38 +167,6 @@ export function ReportTaxesRetained() {
     <ReportShell
       title="Reporte de impuestos retenidos"
       description={`${formatNumber(summary.count)} retenci${summary.count === 1 ? 'ón' : 'ones'} en el rango filtrado`}
-      headerRight={
-        <ReportDownloadButton
-          disabled={loading || rows.length === 0}
-          onDownload={() =>
-            downloadReportTableXlsx({
-              filename: 'Impuestos-retenidos',
-              title: 'Impuestos retenidos',
-              sheetName: 'IMPUESTOS RETENIDOS',
-              rows,
-              columns: [
-                { header: 'Médico/Centro', value: (r) => r.providerName, width: 26 },
-                {
-                  header: 'Tipo',
-                  value: (r) => (r.personType === 'legal_entity' ? 'Jurídico' : 'Natural'),
-                  width: 10,
-                },
-                {
-                  header: 'Órdenes internas',
-                  value: (r) => (r.internalNumbers ?? []).join(', '),
-                  width: 18,
-                },
-                { header: 'N° Retención', value: (r) => r.taxPayableNumber, width: 12, align: 'center' },
-                { header: 'N° Lote', value: (r) => r.taxBatchNumber ?? '', width: 12, align: 'center' },
-                { header: '% Ret.', value: (r) => (r.taxRate ? r.taxRate * 100 : 0), width: 9, numFmt: '0.0', align: 'center' },
-                { header: 'Base Bs.', value: (r) => r.grossAmountBs, width: 14, numFmt: '#,##0.00', total: true },
-                { header: 'Retenido Bs.', value: (r) => r.taxAmountBs, width: 14, numFmt: '#,##0.00', total: true },
-                { header: 'Estado', value: (r) => STATE_LABEL[r.state], width: 12, align: 'center' },
-              ],
-            })
-          }
-        />
-      }
       kpis={
         <KpiRow
           items={[
@@ -235,6 +203,38 @@ export function ReportTaxesRetained() {
     >
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
+          actions={
+            <ReportDownloadButton
+              disabled={loading || rows.length === 0}
+              onDownload={() =>
+                downloadReportTableXlsx({
+                  filename: 'Impuestos-retenidos',
+                  title: 'Impuestos retenidos',
+                  sheetName: 'IMPUESTOS RETENIDOS',
+                  rows,
+                  columns: [
+                    { header: 'Médico/Centro', value: (r) => r.providerName, width: 26 },
+                    {
+                      header: 'Tipo',
+                      value: (r) => (r.personType === 'legal_entity' ? 'Jurídico' : 'Natural'),
+                      width: 10,
+                    },
+                    {
+                      header: 'Órdenes internas',
+                      value: (r) => (r.internalNumbers ?? []).join(', '),
+                      width: 18,
+                    },
+                    { header: 'N° Retención', value: (r) => r.taxPayableNumber, width: 12, align: 'center' },
+                    { header: 'N° Lote', value: (r) => r.taxBatchNumber ?? '', width: 12, align: 'center' },
+                    { header: '% Ret.', value: (r) => (r.taxRate ? r.taxRate * 100 : 0), width: 9, numFmt: '0.0', align: 'center' },
+                    { header: 'Base Bs.', value: (r) => r.grossAmountBs, width: 14, numFmt: '#,##0.00', total: true },
+                    { header: 'Retenido Bs.', value: (r) => r.taxAmountBs, width: 14, numFmt: '#,##0.00', total: true },
+                    { header: 'Estado', value: (r) => STATE_LABEL[r.state], width: 12, align: 'center' },
+                  ],
+                })
+              }
+            />
+          }
           searchValue={searchInput}
           onSearchChange={setSearchInput}
           searchPlaceholder="Buscar por médico, orden interna, N° retención…"

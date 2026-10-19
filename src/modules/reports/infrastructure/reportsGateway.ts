@@ -20,6 +20,16 @@ export type PayableObligationState =
   | 'partially_paid'
   | 'paid';
 
+/** Un pago concreto del lote AP: banco, referencia y monto en Bs. */
+export interface ReportPayablePayment {
+  date: string | null;
+  type: string;
+  reference: string | null;
+  bankCode: string | null;
+  bankName: string | null;
+  amountBs: number;
+}
+
 export interface ReportPayableRow {
   orderId: string;
   orderNumber: string;
@@ -44,6 +54,7 @@ export interface ReportPayableRow {
   payableNumber: string | null;
   paymentDate: string | null;
   paymentReference: string | null;
+  payments: ReportPayablePayment[];
   state: PayableObligationState;
 }
 
@@ -206,6 +217,86 @@ export interface ReportEnvelope<TRow, TSummary> {
   summary: TSummary;
 }
 
+// ---- Facturas / Relación de ingresos (base: facturas emitidas) ----
+export type InvoiceStatus = 'active' | 'cancelled';
+
+/**
+ * Una factura emitida. Puede agrupar varias órdenes del mismo contratante:
+ * `amountUsd`/`costUsd` ya vienen sumados por el backend y son 0 si está
+ * anulada (una factura anulada no es ingreso).
+ */
+export interface ReportInvoiceRow {
+  invoiceId: string;
+  invoiceNumber: string;
+  controlNumber: string;
+  /** Fecha de emisión (YYYY-MM-DD). */
+  invoiceDate: string;
+  status: InvoiceStatus;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  createdByName: string;
+  orderId: string;
+  orderNumber: string;
+  orderType: string;
+  orderDate: string;
+  branchId: string;
+  branchName: string | null;
+  clientType: 'insurance' | 'holder';
+  clientId: string | null;
+  clientName: string;
+  holderName: string;
+  holderId: string;
+  patientName: string;
+  patientId: string;
+  doctorName: string;
+  serviceKey: string;
+  /** N° de orden interna de cada proveedor cubierto, separados por coma. */
+  internalNumbers: string;
+  /** N° de las órdenes cubiertas por la factura, separados por coma. */
+  orderNumbers: string;
+  ordersCount: number;
+  amountUsd: number;
+  rateBs: number | null;
+  amountBs: number | null;
+  costUsd: number;
+  marginUsd: number;
+}
+
+export interface ReportInvoiceSummary {
+  count: number;
+  activeCount: number;
+  cancelledCount: number;
+  amountUsd: number;
+  amountBs: number;
+  costUsd: number;
+  marginUsd: number;
+  avgUsd: number;
+  /** Tasa promedio ponderada del período (Σ Bs / Σ $). */
+  avgRateBs: number;
+}
+
+export interface ReportInvoiceClientRow {
+  clientType: 'insurance' | 'holder';
+  clientId: string | null;
+  clientName: string;
+  invoicesCount: number;
+  amountUsd: number;
+  amountBs: number;
+  costUsd: number;
+  marginUsd: number;
+}
+
+export interface IncomeRelationResult {
+  rows: ReportInvoiceRow[];
+  byClient: ReportInvoiceClientRow[];
+  summary: ReportInvoiceSummary;
+}
+
+export interface InvoicesReportQuery extends ReportQuery {
+  status?: InvoiceStatus | '';
+  clientType?: 'insurance' | 'holder' | '';
+}
+
 // ---- ARC (Comprobante de Agente de Retención, Decreto 1.808) ----
 export interface ArcLine {
   /** Fecha de pago o abono en cuenta (ISO). */
@@ -246,7 +337,9 @@ export interface ArcReport {
   years: { min: number; max: number };
 }
 
-function params(q: ReportQuery & { groupBy?: string }): Record<string, string | undefined> {
+function params(
+  q: ReportQuery & { groupBy?: string; clientType?: string },
+): Record<string, string | undefined> {
   return {
     from: q.from,
     to: q.to,
@@ -255,9 +348,10 @@ function params(q: ReportQuery & { groupBy?: string }): Record<string, string | 
     careCenterId: q.careCenterId,
     insuranceId: q.insuranceId,
     holderId: q.holderId,
-    status: q.status,
+    status: q.status || undefined,
     search: q.search,
     groupBy: q.groupBy,
+    clientType: q.clientType || undefined,
   };
 }
 
@@ -312,6 +406,18 @@ export const reportsGateway = {
   },
   async aging(q: ReportQuery = {}): Promise<ReportAgingResult> {
     const { data } = await api.get(`${BASE}/aging`, { params: params(q) });
+    return data;
+  },
+  /** Facturas emitidas (vigentes y anuladas), de la más reciente a la más vieja. */
+  async invoices(
+    q: InvoicesReportQuery = {},
+  ): Promise<ReportEnvelope<ReportInvoiceRow, ReportInvoiceSummary>> {
+    const { data } = await api.get(`${BASE}/invoices`, { params: params(q) });
+    return data;
+  },
+  /** Relación de ingresos: facturas en orden cronológico + desglose por cliente. */
+  async incomeRelation(q: InvoicesReportQuery = {}): Promise<IncomeRelationResult> {
+    const { data } = await api.get(`${BASE}/income-relation`, { params: params(q) });
     return data;
   },
   async arc(q: ReportQuery & { year?: string } = {}): Promise<ArcReport> {

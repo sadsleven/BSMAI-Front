@@ -82,6 +82,8 @@ import { ReportServicesBilled } from './modules/reports/presentation/pages/Repor
 import { ReportTaxesRetained } from './modules/reports/presentation/pages/ReportTaxesRetained';
 import { ReportArc } from './modules/reports/presentation/pages/ReportArc';
 import { ReportExecutivePanel } from './modules/reports/presentation/pages/ReportExecutivePanel';
+import { ReportInvoices } from './modules/reports/presentation/pages/ReportInvoices';
+import { ReportIncomeRelation } from './modules/reports/presentation/pages/ReportIncomeRelation';
 import { ReportPaymentAccountInflows } from './modules/reports/presentation/pages/ReportPaymentAccountInflows';
 import { AppConfigPage } from './modules/app-config/presentation/pages/AppConfigPage';
 import { GuidePage } from './modules/guide/presentation/pages/GuidePage';
@@ -270,6 +272,22 @@ function App() {
               element={
                 <RequirePermission permission={PERMISSIONS.REPORTS.PAYABLES_LIST}>
                   <ReportPayablesList />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="invoices"
+              element={
+                <RequirePermission permission={PERMISSIONS.REPORTS.INVOICES_LIST}>
+                  <ReportInvoices />
+                </RequirePermission>
+              }
+            />
+            <Route
+              path="income-relation"
+              element={
+                <RequirePermission permission={PERMISSIONS.REPORTS.INCOME_RELATION_LIST}>
+                  <ReportIncomeRelation />
                 </RequirePermission>
               }
             />

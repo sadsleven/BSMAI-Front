@@ -188,6 +188,18 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
           show: has(PERMISSIONS.REPORTS.EXECUTIVE_PANEL_LIST),
         },
         {
+          icon: Receipt,
+          label: 'Facturas',
+          href: '/reports/invoices',
+          show: has(PERMISSIONS.REPORTS.INVOICES_LIST),
+        },
+        {
+          icon: TrendingUp,
+          label: 'Relación de ingresos',
+          href: '/reports/income-relation',
+          show: has(PERMISSIONS.REPORTS.INCOME_RELATION_LIST),
+        },
+        {
           icon: Coins,
           label: 'Cuentas por cobrar',
           href: '/reports/receivables',

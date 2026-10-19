@@ -92,6 +92,22 @@ export const accountsReceivableGateway = {
     return data;
   },
   /**
+   * Cambia la tasa USD/Bs de UNA orden del lote (seguro no indexado: cada
+   * orden tiene su tasa amarrada). Recalcula el objetivo en Bs de esa orden
+   * sin tocar el resto del lote ni la tasa de la orden original.
+   */
+  async setOrderRate(
+    id: string,
+    orderId: string,
+    exchangeRateId: string,
+  ): Promise<AccountsReceivableBatch> {
+    const { data } = await api.patch<AccountsReceivableBatch>(
+      `${BASE}/${id}/orders/${orderId}/rate`,
+      { exchangeRateId },
+    );
+    return data;
+  },
+  /**
    * Ajuste (resta o suma) del total a cobrar del lote — p. ej. el seguro paga
    * menos de lo facturado. `amount` va en la moneda del lote (Bs en modo tasa
    * fija, USD en modo USD); 0 limpia el ajuste. Con ajuste ≠ 0 el motivo es

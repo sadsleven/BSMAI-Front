@@ -1,6 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { Controller, FormProvider, useForm } from 'react-hook-form';
+import {
+  Controller,
+  FormProvider,
+  useForm,
+  type Resolver,
+} from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
@@ -36,7 +41,11 @@ import { formatBs, formatMoney } from '@/lib/format/money';
 import { formatDateOnly } from '@/lib/dates';
 import { PageLoader } from '@/components/ui/spinner';
 import { casheaBreakdownCents } from '@/lib/money/cashea';
-import { orderPaymentSchema, type OrderPaymentValues } from '@/lib/validations/schemas';
+import {
+  fixedRateIncomingPaymentSchema,
+  orderPaymentSchema,
+  type OrderPaymentValues,
+} from '@/lib/validations/schemas';
 import {
   OrderPaymentForm,
   INCOMING_PAYMENT_TYPES,
@@ -52,6 +61,8 @@ import { downloadEstadoCuentaSeguro } from '../components/arExcel';
 import {
   debtorDisplayName,
   DEBTOR_TYPE_LABEL,
+  fixedWeightedRateBs,
+  orderRateOf,
   pendingBatchKey,
   pendingDebtorId,
   pendingDebtorName,
@@ -60,6 +71,7 @@ import {
   portionLabel,
   type AccountsReceivableBatch,
   type AccountsReceivableDebtorType,
+  type AccountsReceivableOrder,
   type PendingReceivable,
 } from '../../domain/models/accountsReceivable';
 import {
@@ -71,6 +83,15 @@ import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 
 const paymentSchema = z.object({
   payments: z.array(orderPaymentSchema).min(1, 'Registra al menos un cobro'),
+});
+/**
+ * Lotes a tasa fija (seguro no indexado): el cobro no elige tasa — cada orden
+ * del lote tiene la suya y el objetivo ya está en Bs.
+ */
+const fixedPaymentSchema = z.object({
+  payments: z
+    .array(fixedRateIncomingPaymentSchema)
+    .min(1, 'Registra al menos un cobro'),
 });
 type PaymentFormValues = z.infer<typeof paymentSchema>;
 
@@ -337,6 +358,7 @@ export function AccountsReceivableBatchPage() {
                           </div>
                           <div className="flex items-center gap-2 flex-wrap text-[11px] text-muted-foreground">
                             <span className="truncate">{pendingDebtorName(p)}</span>
+                            <span>Factura: {p.invoiceNumber?.trim() || 'No aplica'}</span>
                             {p.useFixedRate ? (
                               <Badge
                                 variant="outline"
@@ -411,6 +433,7 @@ export function AccountsReceivableBatchPage() {
                             </Badge>
                           ) : null}
                           <span className="truncate">{pendingDebtorName(p)}</span>
+                          <span>Factura: {p.invoiceNumber?.trim() || 'No aplica'}</span>
                         </div>
                       </div>
                       <div className="flex items-center gap-3 shrink-0">
@@ -553,33 +576,67 @@ function BatchDetail({ id }: { id: string }) {
     if (candidatesOpen) loadCandidates();
   }, [candidatesOpen, loadCandidates]);
 
-  // Seguro no indexado: la tasa de los cobros es la tasa fija de la orden — no se
-  // elige. Con varias tasas fijas en el lote manda la de la primera orden que
-  // tenga una (mismo criterio del BE al convertir).
+  // Seguro no indexado: NO hay una tasa del lote — cada orden trae la suya y
+  // se ajusta por separado en "Órdenes del lote". Para la vista previa de los
+  // cobros (equivalente en la otra moneda) se usa la ponderada del lote, que
+  // es la misma referencia que aplica el BE al convertir. Pseudo-tasa sin id:
+  // no se guarda en el cobro, sólo convierte.
   const fixedRate = useMemo<ExchangeRate | null>(() => {
-    if (!fixed) return null;
-    const raw = (batch?.orders ?? []).find((o) => o.order?.fixedExchangeRate)
-      ?.order?.fixedExchangeRate;
-    if (!raw) return null;
-    return (
-      usdRates.find((r) => r.id === raw.id) ?? {
-        id: raw.id,
-        currency: 'USD',
-        amountBs: String(raw.amountBs),
-        effectiveDate: '',
-        isActive: true,
-      }
-    );
-  }, [fixed, batch, usdRates]);
+    if (!fixed || !batch) return null;
+    const weighted = fixedWeightedRateBs(batch);
+    if (weighted == null) return null;
+    return {
+      id: '',
+      currency: 'USD',
+      amountBs: String(weighted),
+      effectiveDate: '',
+      isActive: true,
+    } as ExchangeRate;
+  }, [fixed, batch]);
 
   const selectedMarketRate = useMemo(
     () => fixedRate ?? usdRates.find((r) => r.id === selectedUsdRateId) ?? null,
     [fixedRate, usdRates, selectedUsdRateId],
   );
 
+  /**
+   * Opciones de tasa de una orden del lote: las tasas USD activas más la
+   * propia de la fila cuando ya no está activa (tasa vieja de la orden).
+   */
+  const rateOptionsFor = useCallback(
+    (row: AccountsReceivableOrder): ExchangeRate[] => {
+      const own = orderRateOf(row);
+      if (!own || usdRates.some((r) => r.id === own.id)) return usdRates;
+      return [
+        {
+          id: own.id,
+          currency: 'USD',
+          amountBs: String(own.amountBs),
+          effectiveDate: '',
+          isActive: true,
+        } as ExchangeRate,
+        ...usdRates,
+      ];
+    },
+    [usdRates],
+  );
+
   // ---------------- Payment form ----------------
+  // El lote se carga async: el resolver lee el modo por ref para no recrear el
+  // form cuando pasa a tasa fija (ahí la tasa del cobro no es obligatoria).
+  const fixedRef = useRef(fixed);
+  fixedRef.current = fixed;
+  const resolver = useMemo<Resolver<PaymentFormValues>>(
+    () => (values, context, options) =>
+      zodResolver(fixedRef.current ? fixedPaymentSchema : paymentSchema)(
+        values,
+        context,
+        options,
+      ),
+    [],
+  );
   const methods = useForm<PaymentFormValues>({
-    resolver: zodResolver(paymentSchema),
+    resolver,
     mode: 'onBlur',
     defaultValues: { payments: [] },
   });
@@ -634,6 +691,16 @@ function BatchDetail({ id }: { id: string }) {
   );
 
   const unit = fixed ? 'Bs.' : 'USD';
+
+  // Tasa fija: sin efectivo en EUR — exigiría una tasa EUR/Bs que el lote no
+  // modela (el objetivo ya está en Bs a la tasa de cada orden).
+  const allowedPaymentTypes = useMemo(
+    () =>
+      fixed
+        ? INCOMING_PAYMENT_TYPES.filter((t) => t !== 'cash_eur')
+        : INCOMING_PAYMENT_TYPES,
+    [fixed],
+  );
 
   // Ajuste guardado del lote (en la moneda del lote).
   const savedAdjustment = Number(batch?.adjustmentAmount ?? 0) || 0;
@@ -711,7 +778,24 @@ function BatchDetail({ id }: { id: string }) {
   const collected = fixed ? batch?.collectedBs ?? 0 : batch?.collectedUsd ?? 0;
   const pendingVal = fixed ? batch?.pendingBs ?? 0 : batch?.pendingUsd ?? 0;
   const liveForm = fixed ? totalPaymentsBs : totalPaymentsUsd;
-  const liveRemaining = pendingVal - liveForm;
+  // Cobro en edición: su monto guardado ya está dentro de `collected`, pero el
+  // formulario lo REEMPLAZA, no lo suma — se devuelve al faltante.
+  const editingSaved = editingPaymentId
+    ? (batch?.payments ?? []).find((p) => p.id === editingPaymentId) ?? null
+    : null;
+  const editingSavedAmount = editingSaved
+    ? Number((fixed ? editingSaved.amountInBs : editingSaved.amountInUsd) ?? 0) ||
+      0
+    : 0;
+  /**
+   * Lo que falta para cuadrar en la moneda del lote, con signo (negativo =
+   * excede). A diferencia de `pendingVal` (que el BE recorta a 0) conserva el
+   * sobre-cobro, y alimenta tanto el badge como el atajo "Para cuadrar" de
+   * cada fila en Bs del formulario de cobro.
+   */
+  const outstanding =
+    Math.round((target - collected + editingSavedAmount) * 100) / 100;
+  const liveRemaining = Math.round((outstanding - liveForm) * 100) / 100;
 
   // En modo USD las cifras del resumen están en USD; mostramos su equivalente
   // en Bs como referencia a la tasa seleccionada (la misma del form de cobro).
@@ -812,6 +896,20 @@ function BatchDetail({ id }: { id: string }) {
     }
   };
 
+  const onSetOrderRate = async (orderId: string, exchangeRateId: string) => {
+    setBusy(true);
+    try {
+      setBatch(
+        await accountsReceivableGateway.setOrderRate(id, orderId, exchangeRateId),
+      );
+      notify.success('Tasa de la orden actualizada');
+    } catch (e) {
+      notify.fromError(e, 'No se pudo actualizar la tasa de la orden');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const onRemoveOrder = async (orderId: string) => {
     setBusy(true);
     try {
@@ -888,7 +986,7 @@ function BatchDetail({ id }: { id: string }) {
         title="Resumen"
         description={
           fixed
-            ? 'Modo tasa fija — los cobros se comparan en bolívares.'
+            ? 'Modo tasa fija — cada orden conserva su propia tasa y los cobros se comparan en bolívares.'
             : rateBs > 0
               ? 'Sin tope — el deudor puede pagar por encima del agregado. Bs de referencia a la tasa seleccionada.'
               : 'Sin tope — el deudor puede pagar por encima del agregado.'
@@ -1181,7 +1279,11 @@ function BatchDetail({ id }: { id: string }) {
       {/* Órdenes */}
       <FormSection
         title={`Órdenes del lote (${batch.orders?.length ?? 0})`}
-        description="Órdenes del deudor incluidas en este lote."
+        description={
+          fixed
+            ? 'Cada orden se cobra a su propia tasa: ajústala por separado y su objetivo en Bs (USD × tasa) se recalcula sin tocar el resto del lote.'
+            : 'Órdenes del deudor incluidas en este lote.'
+        }
       >
         {!isCollected ? (
           <div className="flex justify-end mb-2">
@@ -1247,6 +1349,7 @@ function BatchDetail({ id }: { id: string }) {
                             {debtorType === 'cashea'
                               ? `${pendingDebtorName(c)} · `
                               : ''}
+                            Factura: {c.invoiceNumber?.trim() || 'No aplica'} ·{' '}
                             {c.useFixedRate && c.targetBs !== null
                               ? `${formatMoney(c.targetBs)} Bs.`
                               : `${formatMoney(c.targetUsd ?? 0)} USD`}
@@ -1273,41 +1376,69 @@ function BatchDetail({ id }: { id: string }) {
 
         <ul className="text-sm divide-y">
           {(batch.orders ?? []).map((o) => (
-            <li
-              key={o.orderId}
-              className="flex items-center justify-between py-2 first:pt-0 last:pb-0 gap-3"
-            >
-              <span className="font-mono font-medium inline-flex items-center gap-2">
-                N° {o.order?.orderNumber ?? '—'}
-                {portionLabel(o.portion) ? (
-                  <Badge
-                    variant="outline"
-                    className="bg-brand-cyan-soft text-brand-cyan-strong border-brand-cyan/40 text-[10px] font-sans font-medium"
-                  >
-                    {portionLabel(o.portion)}
-                  </Badge>
-                ) : null}
-              </span>
-              <div className="flex items-center gap-3 shrink-0">
-                <span className="font-mono">
-                  {o.useFixedRate && o.targetBs != null
-                    ? `${formatMoney(o.targetBs)} Bs.`
-                    : `${formatMoney(o.targetUsd ?? 0)} USD`}
-                </span>
-                {!isCollected ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                    onClick={() => onRemoveOrder(o.orderId)}
-                    title="Quitar"
-                    disabled={busy || (batch.orders?.length ?? 0) <= 1}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
-                ) : null}
+            <li key={o.orderId} className="py-2 first:pt-0 last:pb-0 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="font-mono font-medium inline-flex items-center gap-2">
+                    N° {o.order?.orderNumber ?? '—'}
+                    {portionLabel(o.portion) ? (
+                      <Badge
+                        variant="outline"
+                        className="bg-brand-cyan-soft text-brand-cyan-strong border-brand-cyan/40 text-[10px] font-sans font-medium"
+                      >
+                        {portionLabel(o.portion)}
+                      </Badge>
+                    ) : null}
+                  </span>
+                  <div className="text-[11px] text-muted-foreground">
+                    Factura: {o.order?.invoiceNumber?.trim() || 'No aplica'}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="font-mono">
+                    {o.useFixedRate && o.targetBs != null
+                      ? `${formatMoney(o.targetBs)} Bs.`
+                      : `${formatMoney(o.targetUsd ?? 0)} USD`}
+                  </span>
+                  {!isCollected ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                      onClick={() => onRemoveOrder(o.orderId)}
+                      title="Quitar"
+                      disabled={busy || (batch.orders?.length ?? 0) <= 1}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  ) : null}
+                </div>
               </div>
+              {/* Tasa propia de la orden (seguro no indexado). */}
+              {o.useFixedRate ? (
+                <Can permission={PERMISSIONS.ACCOUNTS_RECEIVABLE.UPDATE}>
+                  <div className="flex items-end gap-3 flex-wrap">
+                    <UsdRateSelect
+                      className="w-full sm:w-72"
+                      label="Tasa de esta orden"
+                      rates={rateOptionsFor(o)}
+                      selectedId={orderRateOf(o)?.id ?? ''}
+                      currentRateId={currentRateId}
+                      onSelect={(rid) => {
+                        if (rid !== orderRateOf(o)?.id)
+                          void onSetOrderRate(o.orderId, rid);
+                      }}
+                      allowCreate
+                    />
+                    <p className="text-[11px] text-muted-foreground font-mono pb-2">
+                      {formatMoney(o.targetUsd ?? 0)} USD ×{' '}
+                      {formatMoney(Number(orderRateOf(o)?.amountBs ?? 0))} ={' '}
+                      {formatMoney(o.targetBs ?? 0)} Bs.
+                    </p>
+                  </div>
+                </Can>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -1382,7 +1513,11 @@ function BatchDetail({ id }: { id: string }) {
             >
               <FormSection
                 title={editingPaymentId ? 'Editar cobro' : 'Registrar cobro'}
-                description="Mismo componente de pagos usado al crear órdenes."
+                description={
+                  fixed
+                    ? 'El cobro no elige tasa: el objetivo ya está en bolívares a la tasa de cada orden (ajustable arriba).'
+                    : 'Mismo componente de pagos usado al crear órdenes.'
+                }
               >
                 <Controller
                   control={control}
@@ -1400,7 +1535,17 @@ function BatchDetail({ id }: { id: string }) {
                       errors={buildPaymentErrors(
                         (formState.errors as { payments?: unknown }).payments,
                       )}
-                      allowedTypes={INCOMING_PAYMENT_TYPES}
+                      allowedTypes={allowedPaymentTypes}
+                      // Tasa fija: el lote no tiene una tasa única que mostrar
+                      // ni elegir — cada orden conserva la suya.
+                      hideExchangeRate={fixed}
+                      // Atajo "Para cuadrar" bajo el monto de cada fila en Bs:
+                      // el valor exacto que deja el lote cobrado, con la tasa
+                      // de esa misma fila. Un clic lo copia al campo.
+                      remaining={{
+                        amount: liveRemaining,
+                        currency: fixed ? 'BS' : 'USD',
+                      }}
                     />
                   )}
                 />
@@ -1408,7 +1553,7 @@ function BatchDetail({ id }: { id: string }) {
                 <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                   <div
                     className={`rounded-md border p-2 bg-muted/30${
-                      rateInSummary ? ' col-span-2' : ''
+                      rateInSummary || fixed ? ' col-span-2' : ''
                     }`}
                   >
                     <div className="text-xs text-muted-foreground">
@@ -1423,19 +1568,14 @@ function BatchDetail({ id }: { id: string }) {
                         : `${formatMoney(totalPaymentsUsd)} USD`}
                     </div>
                   </div>
-                  {!rateInSummary ? (
+                  {/* Tasa fija: no se elige tasa aquí — la de cada orden manda. */}
+                  {!rateInSummary && !fixed ? (
                     <UsdRateSelect
-                      rates={fixed && fixedRate ? [fixedRate] : usdRates}
-                      selectedId={fixed && fixedRate ? fixedRate.id : selectedUsdRateId}
+                      rates={usdRates}
+                      selectedId={selectedUsdRateId}
                       currentRateId={currentRateId}
                       onSelect={handleSelectRate}
                       allowCreate
-                      disabled={fixed && !!fixedRate}
-                      lockNote={
-                        fixed
-                          ? 'Tasa fija de la orden (seguro no indexado): con ella se convierten los cobros en USD/EUR a Bs.'
-                          : undefined
-                      }
                     />
                   ) : null}
                 </div>

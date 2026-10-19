@@ -176,31 +176,6 @@ export function ReportPaymentAccountInflows() {
     <ReportShell
       title="Dinero recibido por cuenta"
       description="Pagos recibidos en las cuentas propias de AFMI (órdenes y cuentas por cobrar)"
-      headerRight={
-        <ReportDownloadButton
-          disabled={loading || filteredRows.length === 0}
-          onDownload={() =>
-            downloadReportTableXlsx({
-              filename: 'Dinero-recibido-por-cuenta',
-              title: 'Dinero recibido por cuenta',
-              sheetName: 'DINERO RECIBIDO',
-              rows: filteredRows,
-              columns: [
-                { header: 'Fecha', value: (r) => excelDateCell(r.paymentDate), width: 12, numFmt: 'dd/mm/yyyy', align: 'center' },
-                { header: 'Origen', value: (r) => (r.source === 'order' ? 'Orden' : 'Por cobrar'), width: 11 },
-                { header: 'Cuenta propia', value: (r) => r.paymentAccountName ?? '', width: 22 },
-                { header: 'Método', value: (r) => methodLabel(r.type), width: 16 },
-                { header: 'Documento', value: (r) => r.documentNumber ?? '', width: 14, align: 'center' },
-                { header: 'Contraparte', value: (r) => r.counterpart ?? '', width: 22 },
-                { header: 'Referencia', value: (r) => r.referenceNumber ?? '', width: 14 },
-                { header: 'Moneda', value: (r) => r.amountCurrency, width: 9, align: 'center' },
-                { header: 'Monto', value: (r) => r.amountValue, width: 13, numFmt: '#,##0.00' },
-                { header: 'Monto USD', value: (r) => r.amountInUsd, width: 13, numFmt: '0.00', total: true },
-              ],
-            })
-          }
-        />
-      }
       kpis={
         <KpiRow
           items={[
@@ -330,6 +305,31 @@ export function ReportPaymentAccountInflows() {
       {/* Detalle de pagos */}
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
+          actions={
+            <ReportDownloadButton
+              disabled={loading || filteredRows.length === 0}
+              onDownload={() =>
+                downloadReportTableXlsx({
+                  filename: 'Dinero-recibido-por-cuenta',
+                  title: 'Dinero recibido por cuenta',
+                  sheetName: 'DINERO RECIBIDO',
+                  rows: filteredRows,
+                  columns: [
+                    { header: 'Fecha', value: (r) => excelDateCell(r.paymentDate), width: 12, numFmt: 'dd/mm/yyyy', align: 'center' },
+                    { header: 'Origen', value: (r) => (r.source === 'order' ? 'Orden' : 'Por cobrar'), width: 11 },
+                    { header: 'Cuenta propia', value: (r) => r.paymentAccountName ?? '', width: 22 },
+                    { header: 'Método', value: (r) => methodLabel(r.type), width: 16 },
+                    { header: 'Documento', value: (r) => r.documentNumber ?? '', width: 14, align: 'center' },
+                    { header: 'Contraparte', value: (r) => r.counterpart ?? '', width: 22 },
+                    { header: 'Referencia', value: (r) => r.referenceNumber ?? '', width: 14 },
+                    { header: 'Moneda', value: (r) => r.amountCurrency, width: 9, align: 'center' },
+                    { header: 'Monto', value: (r) => r.amountValue, width: 13, numFmt: '#,##0.00' },
+                    { header: 'Monto USD', value: (r) => r.amountInUsd, width: 13, numFmt: '0.00', total: true },
+                  ],
+                })
+              }
+            />
+          }
           searchValue={searchInput}
           onSearchChange={setSearchInput}
           searchPlaceholder="Buscar por cuenta, documento, contraparte, referencia…"
