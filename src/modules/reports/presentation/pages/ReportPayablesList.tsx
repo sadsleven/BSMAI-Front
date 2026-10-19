@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
@@ -86,6 +87,8 @@ export function ReportPayablesList() {
   const [careCenters, setCareCenters] = useState<CareCenter[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // La columna FACTURACION $ sale del Excel sólo si se pide expresamente.
+  const [includeFacturacion, setIncludeFacturacion] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -183,12 +186,6 @@ export function ReportPayablesList() {
     <ReportShell
       title="Reporte de cuentas por pagar"
       description={`${formatNumber(summary.count)} obligaci${summary.count === 1 ? 'ón' : 'ones'} en el rango filtrado`}
-      headerRight={
-        <ReportDownloadButton
-          disabled={loading || rows.length === 0}
-          onDownload={() => downloadPayablesReportXlsx(rows)}
-        />
-      }
       kpis={
         <KpiRow
           items={[
@@ -225,6 +222,27 @@ export function ReportPayablesList() {
     >
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
+          actions={
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="payables-facturacion"
+                  checked={includeFacturacion}
+                  onCheckedChange={setIncludeFacturacion}
+                />
+                <label
+                  htmlFor="payables-facturacion"
+                  className="text-sm text-muted-foreground cursor-pointer select-none"
+                >
+                  Incluir FACTURACION $
+                </label>
+              </div>
+              <ReportDownloadButton
+                disabled={loading || rows.length === 0}
+                onDownload={() => downloadPayablesReportXlsx(rows, { includeFacturacion })}
+              />
+            </div>
+          }
           searchValue={searchInput}
           onSearchChange={setSearchInput}
           searchPlaceholder="Buscar por proveedor, orden interna…"

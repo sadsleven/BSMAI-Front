@@ -951,6 +951,15 @@ export const egressPaymentSchema = makeOrderPaymentSchema(false);
  * (el monto ya está denominado en Bs por la retención).
  */
 export const taxPaymentSchema = makeOrderPaymentSchema(false, false);
+/**
+ * Cobros de un lote de cuentas por cobrar a TASA FIJA (seguro no indexado):
+ * el objetivo está en Bs y cada orden del lote tiene su propia tasa amarrada,
+ * así que el cobro no elige tasa — los Bs entran tal cual.
+ */
+export const fixedRateIncomingPaymentSchema = makeOrderPaymentSchema(
+  true,
+  false,
+);
 export type OrderPaymentValues = z.infer<typeof orderPaymentSchema>;
 
 export const orderSchema = z

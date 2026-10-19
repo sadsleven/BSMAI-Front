@@ -214,29 +214,6 @@ export function ReportOrdersPipeline() {
     <ReportShell
       title="Seguimiento de órdenes"
       description="Distribución de órdenes por etapa del flujo y tiempo en cada estado"
-      headerRight={
-        <ReportDownloadButton
-          disabled={loading || filtered.length === 0}
-          onDownload={() =>
-            downloadReportTableXlsx({
-              filename: 'Seguimiento-de-ordenes',
-              title: 'Seguimiento de órdenes',
-              sheetName: 'SEGUIMIENTO ORDENES',
-              rows: filtered,
-              columns: [
-                { header: 'N° Orden', value: (o) => orderInternalNumbers(o).join(' · '), width: 14, align: 'center' },
-                { header: 'Fecha', value: (o) => excelDateCell(o.orderDate), width: 12, numFmt: 'dd/mm/yyyy', align: 'center' },
-                { header: 'Paciente', value: (o) => holderDisplayName(o.patient), width: 24 },
-                { header: 'Especialidad', value: (o) => o.specialty?.name ?? '', width: 20 },
-                { header: 'Tipo', value: (o) => ORDER_TYPE_LABEL[o.type], width: 14 },
-                { header: 'Estado', value: (o) => ORDER_STATUS_LABEL[o.status], width: 14 },
-                { header: 'Días en sistema', value: (o) => daysBetween(o.orderDate), width: 13, numFmt: '#,##0', align: 'center' },
-                { header: 'Monto USD', value: (o) => Number(o.priceAmount) || 0, width: 13, numFmt: '0.00', total: true },
-              ],
-            })
-          }
-        />
-      }
       kpis={
         <KpiRow
           items={top4.map((st) => ({
@@ -257,6 +234,29 @@ export function ReportOrdersPipeline() {
 
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
+          actions={
+            <ReportDownloadButton
+              disabled={loading || filtered.length === 0}
+              onDownload={() =>
+                downloadReportTableXlsx({
+                  filename: 'Seguimiento-de-ordenes',
+                  title: 'Seguimiento de órdenes',
+                  sheetName: 'SEGUIMIENTO ORDENES',
+                  rows: filtered,
+                  columns: [
+                    { header: 'N° Orden', value: (o) => orderInternalNumbers(o).join(' · '), width: 14, align: 'center' },
+                    { header: 'Fecha', value: (o) => excelDateCell(o.orderDate), width: 12, numFmt: 'dd/mm/yyyy', align: 'center' },
+                    { header: 'Paciente', value: (o) => holderDisplayName(o.patient), width: 24 },
+                    { header: 'Especialidad', value: (o) => o.specialty?.name ?? '', width: 20 },
+                    { header: 'Tipo', value: (o) => ORDER_TYPE_LABEL[o.type], width: 14 },
+                    { header: 'Estado', value: (o) => ORDER_STATUS_LABEL[o.status], width: 14 },
+                    { header: 'Días en sistema', value: (o) => daysBetween(o.orderDate), width: 13, numFmt: '#,##0', align: 'center' },
+                    { header: 'Monto USD', value: (o) => Number(o.priceAmount) || 0, width: 13, numFmt: '0.00', total: true },
+                  ],
+                })
+              }
+            />
+          }
           searchValue={searchInput}
           onSearchChange={setSearchInput}
           searchPlaceholder="Buscar por N° orden, paciente, titular…"

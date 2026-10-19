@@ -130,38 +130,6 @@ export function ReportInsuranceProduction() {
     <ReportShell
       title="Producción por aseguradora"
       description="Volumen y recaudo por cada compañía de seguros"
-      headerRight={
-        <ReportDownloadButton
-          disabled={loading || filtered.length === 0}
-          onDownload={() =>
-            downloadReportTableXlsx({
-              filename: 'Produccion-por-aseguradora',
-              title: 'Producción por aseguradora',
-              sheetName: 'PRODUCCION ASEGURADORA',
-              rows: filtered,
-              columns: [
-                { header: '#', value: (_r, i) => i + 1, width: 5, align: 'center' },
-                { header: 'Aseguradora', value: (r) => r.debtorName, width: 26 },
-                { header: 'Órdenes', value: (r) => r.ordersCount, width: 10, numFmt: '#,##0', total: true },
-                { header: 'Lotes', value: (r) => r.lotesCount, width: 8, numFmt: '#,##0', total: true },
-                { header: 'Facturado USD', value: (r) => r.targetUsd, width: 14, numFmt: '0.00', total: true },
-                { header: 'Facturado Bs.', value: (r) => r.targetBs, width: 15, numFmt: '#,##0.00', total: true },
-                { header: 'Cobrado USD', value: (r) => r.collectedUsd, width: 14, numFmt: '0.00', total: true },
-                { header: 'Cobrado Bs.', value: (r) => r.collectedBs, width: 15, numFmt: '#,##0.00', total: true },
-                { header: 'Pendiente USD', value: (r) => r.pendingUsd, width: 14, numFmt: '0.00', total: true },
-                { header: 'Pendiente Bs.', value: (r) => r.pendingBs, width: 15, numFmt: '#,##0.00', total: true },
-                {
-                  header: '% Cobranza',
-                  value: (r) => pctFor(r),
-                  width: 11,
-                  numFmt: '0.0',
-                  align: 'center',
-                },
-              ],
-            })
-          }
-        />
-      }
       kpis={
         <KpiRow
           items={[
@@ -199,6 +167,38 @@ export function ReportInsuranceProduction() {
     >
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
+          actions={
+            <ReportDownloadButton
+              disabled={loading || filtered.length === 0}
+              onDownload={() =>
+                downloadReportTableXlsx({
+                  filename: 'Produccion-por-aseguradora',
+                  title: 'Producción por aseguradora',
+                  sheetName: 'PRODUCCION ASEGURADORA',
+                  rows: filtered,
+                  columns: [
+                    { header: '#', value: (_r, i) => i + 1, width: 5, align: 'center' },
+                    { header: 'Aseguradora', value: (r) => r.debtorName, width: 26 },
+                    { header: 'Órdenes', value: (r) => r.ordersCount, width: 10, numFmt: '#,##0', total: true },
+                    { header: 'Lotes', value: (r) => r.lotesCount, width: 8, numFmt: '#,##0', total: true },
+                    { header: 'Facturado USD', value: (r) => r.targetUsd, width: 14, numFmt: '0.00', total: true },
+                    { header: 'Facturado Bs.', value: (r) => r.targetBs, width: 15, numFmt: '#,##0.00', total: true },
+                    { header: 'Cobrado USD', value: (r) => r.collectedUsd, width: 14, numFmt: '0.00', total: true },
+                    { header: 'Cobrado Bs.', value: (r) => r.collectedBs, width: 15, numFmt: '#,##0.00', total: true },
+                    { header: 'Pendiente USD', value: (r) => r.pendingUsd, width: 14, numFmt: '0.00', total: true },
+                    { header: 'Pendiente Bs.', value: (r) => r.pendingBs, width: 15, numFmt: '#,##0.00', total: true },
+                    {
+                      header: '% Cobranza',
+                      value: (r) => pctFor(r),
+                      width: 11,
+                      numFmt: '0.0',
+                      align: 'center',
+                    },
+                  ],
+                })
+              }
+            />
+          }
           searchValue={searchInput}
           onSearchChange={setSearchInput}
           searchPlaceholder="Buscar aseguradora…"

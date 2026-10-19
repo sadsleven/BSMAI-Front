@@ -56,6 +56,24 @@ const STATE_TONE: Record<ReceivableOrderState, string> = {
 
 const COLUMNS = 8;
 
+const compareDoc = (a: string, b: string): number =>
+  a.localeCompare(b, 'es', { numeric: true, sensitivity: 'base' });
+
+/**
+ * Orden del reporte: primero las órdenes facturadas (por N° de factura) y
+ * luego las que no tienen factura (por N° de orden).
+ */
+function sortReceivables(rows: ReportReceivableRow[]): ReportReceivableRow[] {
+  return [...rows].sort((a, b) => {
+    const ai = (a.invoiceNumber ?? '').trim();
+    const bi = (b.invoiceNumber ?? '').trim();
+    if (ai && !bi) return -1;
+    if (!ai && bi) return 1;
+    const byDoc = ai && bi ? compareDoc(ai, bi) : 0;
+    return byDoc || compareDoc(a.orderNumber, b.orderNumber) || a.portion.localeCompare(b.portion);
+  });
+}
+
 const EMPTY_SUMMARY: ReportReceivableSummary = {
   count: 0,
   targetUsd: 0,
@@ -158,11 +176,12 @@ export function ReportReceivablesList() {
     setSp(new URLSearchParams(), { replace: true });
   };
 
+  const sortedRows = useMemo(() => sortReceivables(rows), [rows]);
   const paged = useMemo(() => {
     const start = (filters.page - 1) * filters.limit;
-    return rows.slice(start, start + filters.limit);
-  }, [rows, filters.page, filters.limit]);
-  const lastPage = Math.max(1, Math.ceil(rows.length / filters.limit));
+    return sortedRows.slice(start, start + filters.limit);
+  }, [sortedRows, filters.page, filters.limit]);
+  const lastPage = Math.max(1, Math.ceil(sortedRows.length / filters.limit));
 
   const pct = summary.targetUsd > 0 ? (summary.collectedUsd / summary.targetUsd) * 100 : 0;
 
@@ -170,12 +189,6 @@ export function ReportReceivablesList() {
     <ReportShell
       title="Reporte de cuentas por cobrar"
       description={`${formatNumber(summary.count)} orden${summary.count === 1 ? '' : 'es'} en el rango filtrado`}
-      headerRight={
-        <ReportDownloadButton
-          disabled={loading || rows.length === 0}
-          onDownload={() => downloadReceivablesReportXlsx(rows, currentRateBs)}
-        />
-      }
       kpis={
         <KpiRow
           items={[
@@ -215,6 +228,12 @@ export function ReportReceivablesList() {
     >
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
+          actions={
+            <ReportDownloadButton
+              disabled={loading || sortedRows.length === 0}
+              onDownload={() => downloadReceivablesReportXlsx(sortedRows, currentRateBs)}
+            />
+          }
           searchValue={searchInput}
           onSearchChange={setSearchInput}
           searchPlaceholder="Buscar por aseguradora, titular, N° orden…"
@@ -362,7 +381,7 @@ export function ReportReceivablesList() {
         <DataTablePagination
           page={filters.page}
           pageSize={filters.limit}
-          total={rows.length}
+          total={sortedRows.length}
           lastPage={lastPage}
           onPageChange={(p) => updateParam({ page: String(p) }, false)}
           onPageSizeChange={(limit) => updateParam({ limit: String(limit) })}

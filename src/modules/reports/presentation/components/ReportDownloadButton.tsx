@@ -5,7 +5,8 @@ import { notify } from '@/lib/notifications/toast';
 
 /**
  * Botón "Descargar Excel" compartido por los reportes. Maneja su propio estado
- * de carga y notifica errores. Se coloca en el `headerRight` de `ReportShell`.
+ * de carga y notifica errores. Se coloca en el slot `actions` del
+ * `DataTableToolbar`, alineado con la fila de filtros encima de la tabla.
  */
 export function ReportDownloadButton({
   onDownload,

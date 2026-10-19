@@ -172,40 +172,6 @@ export function ReportServicesBilled() {
     <ReportShell
       title="Servicios facturados"
       description="Demanda y revenue estimado por tipo de servicio — monto distribuido equitativamente entre los servicios de cada orden"
-      headerRight={
-        <ReportDownloadButton
-          disabled={loading || aggregated.length === 0}
-          onDownload={() =>
-            downloadReportTableXlsx({
-              filename: 'Servicios-facturados',
-              title: 'Servicios facturados',
-              sheetName: 'SERVICIOS FACTURADOS',
-              rows: aggregated,
-              columns: [
-                { header: '#', value: (_r, i) => i + 1, width: 5, align: 'center' },
-                { header: 'Servicio', value: (r) => r.name, width: 30 },
-                { header: 'Realizaciones', value: (r) => r.uses, width: 13, numFmt: '#,##0', total: true },
-                { header: 'Órdenes distintas', value: (r) => r.ordersCount, width: 14, numFmt: '#,##0', total: true },
-                {
-                  header: '% del volumen',
-                  value: (r) => (totals.uses > 0 ? (r.uses / totals.uses) * 100 : 0),
-                  width: 12,
-                  numFmt: '0.0',
-                  align: 'center',
-                },
-                { header: 'Revenue USD', value: (r) => r.estimatedUsd, width: 14, numFmt: '0.00', total: true },
-                {
-                  header: 'Revenue Bs.',
-                  value: (r) => usdToBs(r.estimatedUsd, usdRate) ?? 0,
-                  width: 15,
-                  numFmt: '#,##0.00',
-                  total: true,
-                },
-              ],
-            })
-          }
-        />
-      }
       kpis={
         <KpiRow
           items={[
@@ -246,6 +212,40 @@ export function ReportServicesBilled() {
 
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
+          actions={
+            <ReportDownloadButton
+              disabled={loading || aggregated.length === 0}
+              onDownload={() =>
+                downloadReportTableXlsx({
+                  filename: 'Servicios-facturados',
+                  title: 'Servicios facturados',
+                  sheetName: 'SERVICIOS FACTURADOS',
+                  rows: aggregated,
+                  columns: [
+                    { header: '#', value: (_r, i) => i + 1, width: 5, align: 'center' },
+                    { header: 'Servicio', value: (r) => r.name, width: 30 },
+                    { header: 'Realizaciones', value: (r) => r.uses, width: 13, numFmt: '#,##0', total: true },
+                    { header: 'Órdenes distintas', value: (r) => r.ordersCount, width: 14, numFmt: '#,##0', total: true },
+                    {
+                      header: '% del volumen',
+                      value: (r) => (totals.uses > 0 ? (r.uses / totals.uses) * 100 : 0),
+                      width: 12,
+                      numFmt: '0.0',
+                      align: 'center',
+                    },
+                    { header: 'Revenue USD', value: (r) => r.estimatedUsd, width: 14, numFmt: '0.00', total: true },
+                    {
+                      header: 'Revenue Bs.',
+                      value: (r) => usdToBs(r.estimatedUsd, usdRate) ?? 0,
+                      width: 15,
+                      numFmt: '#,##0.00',
+                      total: true,
+                    },
+                  ],
+                })
+              }
+            />
+          }
           searchValue={searchInput}
           onSearchChange={setSearchInput}
           searchPlaceholder="Buscar servicio…"

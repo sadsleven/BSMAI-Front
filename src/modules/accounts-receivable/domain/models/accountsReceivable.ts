@@ -51,6 +51,18 @@ export interface AccountsReceivableOrder {
   useFixedRate: boolean;
   targetUsd?: string | number | null;
   targetBs?: string | number | null;
+  /**
+   * Tasa USD/Bs con la que esta orden se cobra EN ESTE LOTE. Sólo en filas
+   * `useFixedRate` (seguro no indexado): cada orden trae su tasa amarrada y es
+   * ajustable por separado desde el detalle del lote.
+   */
+  exchangeRateId?: string | null;
+  exchangeRate?: {
+    id: string;
+    currency?: string;
+    amountBs: string | number;
+    effectiveDate?: string;
+  } | null;
   /** Datos de la orden (el detalle del lote los carga completos para el estado de cuenta). */
   order?: {
     id?: string;
@@ -81,6 +93,8 @@ export interface AccountsReceivableOrder {
 export interface PendingReceivable {
   orderId: string;
   orderNumber: string;
+  /** N° de la factura VIGENTE de la orden; null si no tiene. */
+  invoiceNumber: string | null;
   orderType: string;
   portion?: AroPortion;
   debtorType: AccountsReceivableDebtorType;
@@ -229,6 +243,33 @@ export function batchDebtorId(b: AccountsReceivableBatch): string | null {
 /** Modo de cobro del lote: 'fixed' (Bs tasa fija) o 'usd'. */
 export function batchMode(b: AccountsReceivableBatch): 'usd' | 'fixed' {
   return b.mode ?? 'usd';
+}
+
+/** Tasa USD/Bs vigente de una orden del lote (la del lote, sino la de la orden). */
+export function orderRateOf(
+  row: AccountsReceivableOrder,
+): { id: string; amountBs: string | number } | null {
+  return row.exchangeRate ?? row.order?.fixedExchangeRate ?? null;
+}
+
+/**
+ * Tasa PONDERADA del lote en modo tasa fija (Σ Bs objetivo / Σ USD objetivo).
+ * No hay una sola tasa — cada orden trae la suya — así que ésta es la
+ * referencia para mostrar el equivalente de un cobro en la otra moneda. Es la
+ * misma regla que aplica el backend al convertir. `null` si no hay base.
+ */
+export function fixedWeightedRateBs(
+  b: AccountsReceivableBatch,
+): number | null {
+  let usd = 0;
+  let bs = 0;
+  for (const row of b.orders ?? []) {
+    if (!row.useFixedRate) continue;
+    usd += Number(row.targetUsd ?? 0) || 0;
+    bs += Number(row.targetBs ?? 0) || 0;
+  }
+  if (usd <= 0 || bs <= 0) return null;
+  return Math.round((bs / usd) * 10000) / 10000;
 }
 
 /** Nombre del deudor de una orden pendiente. */

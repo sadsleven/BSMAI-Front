@@ -82,6 +82,8 @@ export interface AccountsPayableOrder {
     order?: {
       id?: string;
       orderNumber: string;
+      /** Espejo del N° de la factura VIGENTE; null mientras la orden no tenga. */
+      invoiceNumber?: string | null;
       billingExchangeRate?: {
         id: string;
         currency: string;
@@ -97,6 +99,8 @@ export interface PendingPayable {
   internalNumber: string;
   orderId: string;
   orderNumber: string;
+  /** N° de la factura VIGENTE de la orden; null si no tiene. */
+  invoiceNumber: string | null;
   providerType: RecipientType;
   doctorId: string | null;
   careCenterId: string | null;
@@ -315,6 +319,20 @@ export function pendingProviderId(p: PendingPayable): string | null {
 /** Número de orden interna del pivot. */
 export function orderInternalNumber(o: AccountsPayableOrder): string {
   return o.internalOrder?.internalNumber ?? '—';
+}
+
+/** Número de la ORDEN (la externa) a la que pertenece la orden interna. */
+export function orderNumberOf(o: AccountsPayableOrder): string {
+  return o.internalOrder?.order?.orderNumber ?? orderInternalNumber(o);
+}
+
+/**
+ * N° de la factura VIGENTE de la orden, o null si no tiene (sin facturar o con
+ * la factura anulada: el espejo de la orden queda en NULL).
+ */
+export function orderInvoiceNumber(o: AccountsPayableOrder): string | null {
+  const n = o.internalOrder?.order?.invoiceNumber?.trim();
+  return n ? n : null;
 }
 
 // ----------------------------------------------------------------------------

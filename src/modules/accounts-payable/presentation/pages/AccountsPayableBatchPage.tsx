@@ -61,6 +61,8 @@ import { accountsPayableGateway } from '../../infrastructure/accountsPayableGate
 import {
   batchAppliesRetention,
   orderInternalNumber,
+  orderInvoiceNumber,
+  orderNumberOf,
   pendingProviderId,
   pendingProviderName,
   personTypeOf,
@@ -358,11 +360,12 @@ export function AccountsPayableBatchPage() {
                       >
                         <div className="min-w-0">
                           <div className="font-mono text-sm font-semibold">
-                            N° {p.internalNumber}
+                            N° {p.orderNumber}
                           </div>
                           <div className="text-[11px] text-muted-foreground truncate">
                             {pendingProviderName(p)} ·{' '}
-                            {p.providerType === 'doctor' ? 'Doctor' : 'Centro'}
+                            {p.providerType === 'doctor' ? 'Doctor' : 'Centro'} · Factura:{' '}
+                            {p.invoiceNumber?.trim() || 'No aplica'}
                           </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
@@ -390,12 +393,11 @@ export function AccountsPayableBatchPage() {
                       className="flex items-center justify-between gap-3 px-3 py-2.5"
                     >
                       <div className="min-w-0">
-                        <div className="font-mono font-semibold">
-                          N° {p.internalNumber}
-                        </div>
+                        <div className="font-mono font-semibold">N° {p.orderNumber}</div>
                         <div className="text-[11px] text-muted-foreground truncate">
                           {pendingProviderName(p)} ·{' '}
-                          {p.providerType === 'doctor' ? 'Doctor' : 'Centro'}
+                          {p.providerType === 'doctor' ? 'Doctor' : 'Centro'} · Factura:{' '}
+                          {p.invoiceNumber?.trim() || 'No aplica'}
                         </div>
                       </div>
                       <div className="flex items-center gap-3 shrink-0">
@@ -1009,10 +1011,11 @@ function BatchDetail({ id }: { id: string }) {
                         />
                         <div className="flex-1 min-w-0">
                           <div className="text-xs font-mono font-semibold">
-                            N° {c.internalNumber}
+                            N° {c.orderNumber}
                           </div>
                           <div className="text-[11px] text-muted-foreground">
-                            {formatMoney(c.grossUsd)} USD
+                            {formatMoney(c.grossUsd)} USD · Factura:{' '}
+                            {c.invoiceNumber?.trim() || 'No aplica'}
                           </div>
                         </div>
                       </label>
@@ -1040,7 +1043,15 @@ function BatchDetail({ id }: { id: string }) {
               key={o.internalOrderId}
               className="flex items-center justify-between py-2 first:pt-0 last:pb-0 gap-3"
             >
-              <span className="font-mono font-medium">N° {orderInternalNumber(o)}</span>
+              <div className="min-w-0">
+                <div className="font-mono font-medium">N° {orderNumberOf(o)}</div>
+                <div className="text-[11px] text-muted-foreground">
+                  Factura: {orderInvoiceNumber(o) ?? 'No aplica'}
+                  {orderInternalNumber(o) !== orderNumberOf(o)
+                    ? ` · Orden interna N° ${orderInternalNumber(o)}`
+                    : null}
+                </div>
+              </div>
               <div className="flex items-center gap-3 shrink-0">
                 <span className="font-mono">{formatMoney(o.grossUsd)} USD</span>
                 <Can permission={PERMISSIONS.ACCOUNTS_PAYABLE.UPDATE}>

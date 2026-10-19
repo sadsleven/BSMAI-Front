@@ -152,31 +152,6 @@ export function ReportDisbursements() {
     <ReportShell
       title="Pagos emitidos"
       description="Salidas registradas a proveedores (doctores y centros de atención)"
-      headerRight={
-        <ReportDownloadButton
-          disabled={loading || filtered.length === 0}
-          onDownload={() =>
-            downloadReportTableXlsx({
-              filename: 'Pagos-emitidos',
-              title: 'Pagos emitidos',
-              sheetName: 'PAGOS EMITIDOS',
-              rows: filtered,
-              columns: [
-                { header: 'Fecha', value: (r) => excelDateCell(r.paymentDate), width: 12, numFmt: 'dd/mm/yyyy', align: 'center' },
-                { header: 'Proveedor', value: (r) => r.providerName, width: 24 },
-                { header: 'Tipo', value: (r) => (r.providerType === 'doctor' ? 'Doctor' : 'Centro'), width: 10 },
-                { header: 'N° Lote', value: (r) => r.payableNumber, width: 12, align: 'center' },
-                { header: 'Método', value: (r) => PAYMENT_TYPE_LABEL[r.type as OrderPaymentType] ?? r.type, width: 16 },
-                { header: 'Referencia', value: (r) => r.referenceNumber ?? '', width: 16 },
-                { header: 'Moneda', value: (r) => r.amountCurrency, width: 9, align: 'center' },
-                { header: 'Monto', value: (r) => r.amountValue, width: 13, numFmt: '#,##0.00' },
-                { header: 'Monto USD', value: (r) => r.amountInUsd, width: 13, numFmt: '0.00', total: true },
-                { header: 'Monto Bs.', value: (r) => r.amountInBs, width: 14, numFmt: '#,##0.00', total: true },
-              ],
-            })
-          }
-        />
-      }
       kpis={
         <KpiRow
           items={[
@@ -212,6 +187,31 @@ export function ReportDisbursements() {
     >
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
+          actions={
+            <ReportDownloadButton
+              disabled={loading || filtered.length === 0}
+              onDownload={() =>
+                downloadReportTableXlsx({
+                  filename: 'Pagos-emitidos',
+                  title: 'Pagos emitidos',
+                  sheetName: 'PAGOS EMITIDOS',
+                  rows: filtered,
+                  columns: [
+                    { header: 'Fecha', value: (r) => excelDateCell(r.paymentDate), width: 12, numFmt: 'dd/mm/yyyy', align: 'center' },
+                    { header: 'Proveedor', value: (r) => r.providerName, width: 24 },
+                    { header: 'Tipo', value: (r) => (r.providerType === 'doctor' ? 'Doctor' : 'Centro'), width: 10 },
+                    { header: 'N° Lote', value: (r) => r.payableNumber, width: 12, align: 'center' },
+                    { header: 'Método', value: (r) => PAYMENT_TYPE_LABEL[r.type as OrderPaymentType] ?? r.type, width: 16 },
+                    { header: 'Referencia', value: (r) => r.referenceNumber ?? '', width: 16 },
+                    { header: 'Moneda', value: (r) => r.amountCurrency, width: 9, align: 'center' },
+                    { header: 'Monto', value: (r) => r.amountValue, width: 13, numFmt: '#,##0.00' },
+                    { header: 'Monto USD', value: (r) => r.amountInUsd, width: 13, numFmt: '0.00', total: true },
+                    { header: 'Monto Bs.', value: (r) => r.amountInBs, width: 14, numFmt: '#,##0.00', total: true },
+                  ],
+                })
+              }
+            />
+          }
           searchValue={searchInput}
           onSearchChange={setSearchInput}
           searchPlaceholder="Buscar por proveedor, referencia, N° lote…"

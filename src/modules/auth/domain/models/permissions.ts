@@ -126,5 +126,7 @@ export const PERMISSIONS = {
     ORDERS_ANALYTICS_LIST: 'reports.orders-analytics.list',
     INSURER_COLLECTIONS_LIST: 'reports.insurer-collections.list',
     PAYMENT_ACCOUNT_INFLOWS_LIST: 'reports.payment-account-inflows.list',
+    INVOICES_LIST: 'reports.invoices.list',
+    INCOME_RELATION_LIST: 'reports.income-relation.list',
   },
 } as const;

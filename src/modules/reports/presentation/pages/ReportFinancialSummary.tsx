@@ -170,37 +170,6 @@ export function ReportFinancialSummary() {
     <ReportShell
       title="Resumen financiero"
       description="Ingresos vs egresos mensuales — basado en pagos efectivamente registrados"
-      headerRight={
-        <ReportDownloadButton
-          disabled={loading || buckets.length === 0}
-          onDownload={() =>
-            downloadReportTableXlsx({
-              filename: 'Resumen-financiero',
-              title: 'Resumen financiero',
-              sheetName: 'RESUMEN FINANCIERO',
-              rows: buckets,
-              columns: [
-                { header: 'Mes', value: (b) => formatMonth(b.month), width: 18 },
-                { header: 'Ingresos', value: (b) => b.income, width: 14, numFmt: '0.00', total: true },
-                { header: 'Egresos a proveedores', value: (b) => b.providerExpense, width: 16, numFmt: '0.00', total: true },
-                { header: 'Egresos a impuestos', value: (b) => b.taxExpense, width: 16, numFmt: '0.00', total: true },
-                { header: 'Total egresos', value: (b) => b.providerExpense + b.taxExpense, width: 14, numFmt: '0.00', total: true },
-                { header: 'Resultado neto', value: (b) => b.income - (b.providerExpense + b.taxExpense), width: 14, numFmt: '0.00', total: true },
-                {
-                  header: 'Margen',
-                  value: (b) => {
-                    const exp = b.providerExpense + b.taxExpense;
-                    return b.income > 0 ? ((b.income - exp) / b.income) * 100 : 0;
-                  },
-                  width: 10,
-                  numFmt: '0.0',
-                  align: 'center',
-                },
-              ],
-            })
-          }
-        />
-      }
       kpis={
         <KpiRow
           items={[
@@ -243,6 +212,37 @@ export function ReportFinancialSummary() {
 
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
+          actions={
+            <ReportDownloadButton
+              disabled={loading || buckets.length === 0}
+              onDownload={() =>
+                downloadReportTableXlsx({
+                  filename: 'Resumen-financiero',
+                  title: 'Resumen financiero',
+                  sheetName: 'RESUMEN FINANCIERO',
+                  rows: buckets,
+                  columns: [
+                    { header: 'Mes', value: (b) => formatMonth(b.month), width: 18 },
+                    { header: 'Ingresos', value: (b) => b.income, width: 14, numFmt: '0.00', total: true },
+                    { header: 'Egresos a proveedores', value: (b) => b.providerExpense, width: 16, numFmt: '0.00', total: true },
+                    { header: 'Egresos a impuestos', value: (b) => b.taxExpense, width: 16, numFmt: '0.00', total: true },
+                    { header: 'Total egresos', value: (b) => b.providerExpense + b.taxExpense, width: 14, numFmt: '0.00', total: true },
+                    { header: 'Resultado neto', value: (b) => b.income - (b.providerExpense + b.taxExpense), width: 14, numFmt: '0.00', total: true },
+                    {
+                      header: 'Margen',
+                      value: (b) => {
+                        const exp = b.providerExpense + b.taxExpense;
+                        return b.income > 0 ? ((b.income - exp) / b.income) * 100 : 0;
+                      },
+                      width: 10,
+                      numFmt: '0.0',
+                      align: 'center',
+                    },
+                  ],
+                })
+              }
+            />
+          }
           hasActiveFilters={hasActiveFilters}
           onClear={clearFilters}
           filters={

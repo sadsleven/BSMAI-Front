@@ -508,6 +508,27 @@ export function GuidePage() {
               </Card>
             </div>
 
+            <h3 className="text-sm font-semibold pt-2">Facturación</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Card title="Facturas">
+                <p>
+                  Listado de facturas emitidas (Paso 4), vigentes y anuladas.
+                  Una fila por factura: cliente, titular, paciente, órdenes
+                  cubiertas, monto $, tasa del día, monto Bs, costo y margen.
+                  Filtra por fecha de emisión, aseguradora, tipo de cliente y
+                  estado.
+                </p>
+              </Card>
+              <Card title="Relación de ingresos">
+                <p>
+                  El libro de facturación del período en orden cronológico. Las
+                  anuladas conservan su renglón sin monto para no saltar el
+                  correlativo. El Excel trae dos hojas: detalle completo y
+                  resumen (fecha, cliente, N° factura, monto $, tasa, monto Bs).
+                </p>
+              </Card>
+            </div>
+
             <h3 className="text-sm font-semibold pt-2">Cuentas por cobrar</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Card title="Cuentas por cobrar (detallado)">
