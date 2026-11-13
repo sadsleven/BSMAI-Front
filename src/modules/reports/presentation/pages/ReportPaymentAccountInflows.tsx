@@ -2,9 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Wallet,
-  ListChecks,
-  ClipboardList,
-  HandCoins,
   Landmark,
 } from 'lucide-react';
 import {
@@ -28,7 +25,6 @@ import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ReportShell } from '../components/ReportShell';
-import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { ReportDownloadButton } from '../components/ReportDownloadButton';
 import { downloadReportTableXlsx, excelDateCell } from '../components/reportsExcel';
@@ -153,6 +149,8 @@ export function ReportPaymentAccountInflows() {
     );
   }, [report.rows, filters.search]);
 
+  const byAccount = report.byAccount;
+
   const paged = useMemo(() => {
     const start = (filters.page - 1) * filters.limit;
     return filteredRows.slice(start, start + filters.limit);
@@ -170,47 +168,10 @@ export function ReportPaymentAccountInflows() {
     setSp(new URLSearchParams(), { replace: true });
   };
 
-  const { totals, byAccount } = report;
-
   return (
     <ReportShell
       title="Dinero recibido por cuenta"
       description="Pagos recibidos en las cuentas propias de AFMI (órdenes y cuentas por cobrar)"
-      kpis={
-        <KpiRow
-          items={[
-            {
-              icon: Wallet,
-              tone: 'success',
-              label: 'Total recibido',
-              value: formatUsd(totals.totalUsd),
-              hint: usdRate
-                ? formatBs(usdToBs(totals.totalUsd, usdRate))
-                : undefined,
-            },
-            {
-              icon: ListChecks,
-              tone: 'blue',
-              label: 'Pagos recibidos',
-              value: formatNumber(totals.totalCount),
-            },
-            {
-              icon: ClipboardList,
-              tone: 'cyan',
-              label: 'Desde órdenes',
-              value: formatUsd(totals.ordersUsd),
-              hint: `${formatNumber(totals.ordersCount)} pagos`,
-            },
-            {
-              icon: HandCoins,
-              tone: 'warning',
-              label: 'Desde cuentas por cobrar',
-              value: formatUsd(totals.receivablesUsd),
-              hint: `${formatNumber(totals.receivablesCount)} cobros`,
-            },
-          ]}
-        />
-      }
     >
       {report.truncated ? (
         <div className="px-4 py-2 text-xs text-warning border border-warning-soft bg-warning-soft rounded-lg">

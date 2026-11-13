@@ -49,7 +49,6 @@ import {
   type PendingReceivable,
 } from '../../domain/models/accountsReceivable';
 import { insuranceGateway } from '@/modules/insurances/infrastructure/insuranceGateway';
-import { QuickExchangeRateModal } from '@/modules/exchange-rates/presentation/components/QuickExchangeRateModal';
 import {
   reportsGateway,
   type ReportReceivableDebtorRow,
@@ -93,8 +92,6 @@ export function AccountsReceivableList() {
   const tabParam = sp.get('tab');
   const tab: Tab =
     tabParam === 'batches' || tabParam === 'pending' ? tabParam : 'summary';
-  // Alta rápida de tasa USD/Bs sin salir del módulo.
-  const [rateModalOpen, setRateModalOpen] = useState(false);
 
   const [searchInput, setSearchInput] = useState(sp.get('search') ?? '');
   const [insurances, setInsurances] = useState<Insurance[]>([]);
@@ -400,14 +397,6 @@ export function AccountsReceivableList() {
               hasActiveFilters={hasActiveFilters}
               onClear={clearFilters}
               filters={debtorFilters}
-              actions={
-                <Can permission={PERMISSIONS.EXCHANGE_RATES.CREATE}>
-                  <Button variant="outline" onClick={() => setRateModalOpen(true)}>
-                    <Plus className="w-4 h-4 mr-1.5" />
-                    Nueva tasa
-                  </Button>
-                </Can>
-              }
             />
             {summaryError ? (
               <div className="px-4 py-2 text-sm text-destructive border-b bg-destructive-soft">
@@ -869,13 +858,6 @@ export function AccountsReceivableList() {
           </div>
         </TabsContent>
       </Tabs>
-
-      <QuickExchangeRateModal
-        open={rateModalOpen}
-        onOpenChange={setRateModalOpen}
-        currency="USD"
-        onCreated={() => setRateModalOpen(false)}
-      />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Receipt, Wallet, Coins, Percent } from 'lucide-react';
+import { Receipt } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -24,7 +24,6 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { insuranceGateway } from '@/modules/insurances/infrastructure/insuranceGateway';
 import type { Insurance } from '@/modules/insurances/domain/models/insurance';
 import { ReportShell } from '../components/ReportShell';
-import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { ReportDownloadButton } from '../components/ReportDownloadButton';
 import { downloadReportTableXlsx, excelDateCell } from '../components/reportsExcel';
@@ -172,9 +171,6 @@ export function ReportInvoices() {
   }, [rows, filters.page, filters.limit]);
   const lastPage = Math.max(1, Math.ceil(rows.length / filters.limit));
 
-  const marginPct =
-    summary.amountUsd > 0 ? (summary.marginUsd / summary.amountUsd) * 100 : 0;
-
   return (
     <ReportShell
       title="Reporte de facturas"
@@ -183,46 +179,6 @@ export function ReportInvoices() {
           ? ` · ${formatNumber(summary.cancelledCount)} anulada${summary.cancelledCount === 1 ? '' : 's'}`
           : ''
       } en el rango filtrado`}
-      kpis={
-        <KpiRow
-          items={[
-            {
-              icon: Wallet,
-              tone: 'blue',
-              label: 'Total facturado',
-              value: formatUsd(summary.amountUsd),
-              hint: formatBs(summary.amountBs),
-            },
-            {
-              icon: Receipt,
-              tone: 'cyan',
-              label: 'Facturas emitidas',
-              value: formatNumber(summary.activeCount),
-              hint:
-                summary.cancelledCount > 0
-                  ? `${formatNumber(summary.cancelledCount)} anuladas`
-                  : 'Sin anuladas',
-            },
-            {
-              icon: Coins,
-              tone: 'warning',
-              label: 'Costo de proveedores',
-              value: formatUsd(summary.costUsd),
-              hint: `Margen ${formatUsd(summary.marginUsd)} (${marginPct.toFixed(1)}%)`,
-            },
-            {
-              icon: Percent,
-              tone: 'success',
-              label: 'Ticket promedio',
-              value: formatUsd(summary.avgUsd),
-              hint:
-                summary.avgRateBs > 0
-                  ? `Tasa promedio ${formatBs(summary.avgRateBs)}`
-                  : undefined,
-            },
-          ]}
-        />
-      }
     >
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar

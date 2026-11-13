@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { PieChart, TrendingUp, Activity, Sigma } from 'lucide-react';
+import { PieChart } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -26,7 +26,6 @@ import {
   type OrderType,
 } from '@/modules/orders/domain/models/order';
 import { ReportShell } from '../components/ReportShell';
-import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { ReportDownloadButton } from '../components/ReportDownloadButton';
 import { downloadReportTableXlsx } from '../components/reportsExcel';
@@ -172,37 +171,6 @@ export function ReportServicesBilled() {
     <ReportShell
       title="Servicios facturados"
       description="Demanda y revenue estimado por tipo de servicio — monto distribuido equitativamente entre los servicios de cada orden"
-      kpis={
-        <KpiRow
-          items={[
-            {
-              icon: PieChart,
-              tone: 'blue',
-              label: 'Servicios distintos',
-              value: formatNumber(aggregated.length),
-            },
-            {
-              icon: Activity,
-              tone: 'cyan',
-              label: 'Total realizaciones',
-              value: formatNumber(totals.uses),
-            },
-            {
-              icon: Sigma,
-              tone: 'success',
-              label: 'Revenue estimado',
-              value: formatUsd(totals.est),
-            },
-            {
-              icon: TrendingUp,
-              tone: 'warning',
-              label: 'Servicio top',
-              value: totals.top ? totals.top.name : '—',
-              hint: totals.top ? `${formatNumber(totals.top.uses)} usos` : undefined,
-            },
-          ]}
-        />
-      }
     >
       {overCap ? (
         <div className="px-4 py-2 text-xs text-warning border border-warning-soft bg-warning-soft rounded-lg">

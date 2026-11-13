@@ -49,7 +49,6 @@ import {
   type Doctor,
 } from '@/modules/doctors/domain/models/doctor';
 import type { CareCenter } from '@/modules/care-centers/domain/models/careCenter';
-import { QuickExchangeRateModal } from '@/modules/exchange-rates/presentation/components/QuickExchangeRateModal';
 import {
   reportsGateway,
   type ReportPayableProviderRow,
@@ -88,8 +87,6 @@ export function AccountsPayableList() {
   const tabParam = sp.get('tab');
   const tab: Tab =
     tabParam === 'batches' || tabParam === 'pending' ? tabParam : 'summary';
-  // Alta rápida de tasa USD/Bs sin salir del módulo (se usa al registrar pagos).
-  const [rateModalOpen, setRateModalOpen] = useState(false);
 
   const [searchInput, setSearchInput] = useState(sp.get('search') ?? '');
   const [doctors, setDoctors] = useState<Doctor[]>([]);
@@ -386,14 +383,6 @@ export function AccountsPayableList() {
               hasActiveFilters={hasActiveFilters}
               onClear={clearFilters}
               filters={providerFilters}
-              actions={
-                <Can permission={PERMISSIONS.EXCHANGE_RATES.CREATE}>
-                  <Button variant="outline" onClick={() => setRateModalOpen(true)}>
-                    <Plus className="w-4 h-4 mr-1.5" />
-                    Nueva tasa
-                  </Button>
-                </Can>
-              }
             />
             {summaryError ? (
               <div className="px-4 py-2 text-sm text-destructive border-b bg-destructive-soft">
@@ -489,13 +478,6 @@ export function AccountsPayableList() {
               onClear={clearFilters}
               filters={providerFilters}
               actions={
-                <div className="flex items-center gap-2">
-                <Can permission={PERMISSIONS.EXCHANGE_RATES.CREATE}>
-                  <Button variant="outline" onClick={() => setRateModalOpen(true)}>
-                    <Plus className="w-4 h-4 mr-1.5" />
-                    Nueva tasa
-                  </Button>
-                </Can>
                 <Can permission={PERMISSIONS.ACCOUNTS_PAYABLE.CREATE}>
                   <Button
                     size="lg"
@@ -512,7 +494,6 @@ export function AccountsPayableList() {
                     )}
                   </Button>
                 </Can>
-                </div>
               }
             />
             {selectedRows.length > 0 && !sharedProvider ? (
@@ -807,15 +788,6 @@ export function AccountsPayableList() {
           </div>
         </TabsContent>
       </Tabs>
-
-      <QuickExchangeRateModal
-        open={rateModalOpen}
-        onOpenChange={setRateModalOpen}
-        currency="USD"
-        // La tasa nueva queda disponible en los selectores del módulo; aquí
-        // sólo se cierra el modal.
-        onCreated={() => setRateModalOpen(false)}
-      />
     </div>
   );
 }

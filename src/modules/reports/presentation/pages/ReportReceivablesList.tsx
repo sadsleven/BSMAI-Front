@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Coins, TrendingUp, AlertCircle, Wallet } from 'lucide-react';
+import { Coins } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -17,8 +17,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
@@ -26,7 +24,8 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { insuranceGateway } from '@/modules/insurances/infrastructure/insuranceGateway';
 import type { Insurance } from '@/modules/insurances/domain/models/insurance';
 import { ReportShell } from '../components/ReportShell';
-import { KpiRow } from '../components/KpiCard';
+import { ReportViewTabs } from '../components/ReportViewTabs';
+import { ToggleFilter } from '../components/ToggleFilter';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { ReportDownloadButton } from '../components/ReportDownloadButton';
 import {
@@ -66,6 +65,11 @@ const STATE_TONE: Record<ReceivableOrderState, string> = {
 };
 
 const COLUMNS = 16;
+
+const REPORT_VIEWS = [
+  { value: 'summary', label: 'Resumen' },
+  { value: 'detail', label: 'Detalle' },
+] as const satisfies readonly { value: 'summary' | 'detail'; label: string }[];
 
 /** Cabecera centrada del cuadro resumen. */
 const TH_CENTER =
@@ -241,77 +245,22 @@ export function ReportReceivablesList() {
   }, [sortedRows, filters.page, filters.limit]);
   const lastPage = Math.max(1, Math.ceil(sortedRows.length / filters.limit));
 
-  const pct = summary.targetUsd > 0 ? (summary.collectedUsd / summary.targetUsd) * 100 : 0;
-
   return (
     <ReportShell
       title="Reporte de cuentas por cobrar"
       description={`${formatNumber(summary.count)} orden${summary.count === 1 ? '' : 'es'} en el rango filtrado`}
-      kpis={
-        <KpiRow
-          items={[
-            {
-              icon: Wallet,
-              tone: 'blue',
-              label: 'Total facturado',
-              value: formatUsd(summary.targetUsd),
-              hint: summary.targetBs > 0 ? `${formatBs(summary.targetBs)} a tasa fija` : 'USD',
-            },
-            {
-              icon: TrendingUp,
-              tone: 'success',
-              label: 'Total cobrado',
-              value: formatUsd(summary.collectedUsd),
-              hint: `${pct.toFixed(1)}% de cobranza (USD)`,
-            },
-            {
-              icon: AlertCircle,
-              tone: 'warning',
-              label: 'Pendiente por cobrar',
-              value: formatUsd(summary.pendingUsd),
-              hint:
-                summary.pendingBs > 0
-                  ? `+ ${formatBs(summary.pendingBs)} (tasa fija) · incluye por cobrar`
-                  : 'Incluye órdenes por cobrar',
-            },
-            {
-              icon: Coins,
-              tone: 'cyan',
-              label: 'Cantidad de órdenes',
-              value: formatNumber(summary.count),
-            },
-          ]}
-        />
-      }
     >
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
           actions={
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                <Switch
-                  id="receivables-only-pending"
-                  checked={onlyPending}
-                  onCheckedChange={(checked) =>
-                    updateParam({ state: checked ? 'uncollected' : undefined })
-                  }
-                />
-                <label
-                  htmlFor="receivables-only-pending"
-                  className="text-sm text-muted-foreground cursor-pointer select-none"
-                >
-                  Solo pendientes
-                </label>
-              </div>
-              <ReportDownloadButton
-                disabled={loading || sortedRows.length === 0}
-                onDownload={() =>
-                  downloadReceivablesReportXlsx(sortedRows, currentRateBs, {
-                    includeCollected: !onlyPending,
-                  })
-                }
-              />
-            </div>
+            <ReportDownloadButton
+              disabled={loading || sortedRows.length === 0}
+              onDownload={() =>
+                downloadReceivablesReportXlsx(sortedRows, currentRateBs, {
+                  includeCollected: !onlyPending,
+                })
+              }
+            />
           }
           searchValue={searchInput}
           onSearchChange={setSearchInput}
@@ -379,6 +328,14 @@ export function ReportReceivablesList() {
                   </SelectItem>
                 </SelectContent>
               </Select>
+              <ToggleFilter
+                id="receivables-only-pending"
+                label="Solo pendientes"
+                checked={onlyPending}
+                onCheckedChange={(checked) =>
+                  updateParam({ state: checked ? 'uncollected' : undefined })
+                }
+              />
             </>
           }
         />
@@ -389,14 +346,16 @@ export function ReportReceivablesList() {
           </div>
         ) : null}
 
-        <div className="px-4 pt-4">
-          <Tabs value={view} onValueChange={(v) => setView(v as 'detail' | 'summary')}>
-            <TabsList>
-              <TabsTrigger value="summary">Resumen</TabsTrigger>
-              <TabsTrigger value="detail">Detalle</TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </div>
+        <ReportViewTabs
+          value={view}
+          onChange={setView}
+          options={REPORT_VIEWS}
+          right={
+            view === 'summary'
+              ? `${formatNumber(debtorSummary.length)} deudor${debtorSummary.length === 1 ? '' : 'es'}`
+              : `${formatNumber(sortedRows.length)} orden${sortedRows.length === 1 ? '' : 'es'}`
+          }
+        />
 
         {view === 'summary' ? (
           <div className="m-4 rounded-lg border overflow-hidden">

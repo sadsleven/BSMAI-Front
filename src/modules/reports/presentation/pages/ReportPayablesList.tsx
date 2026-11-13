@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Banknote, TrendingUp, AlertCircle, Wallet } from 'lucide-react';
+import { Banknote } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -17,8 +17,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
@@ -28,7 +26,8 @@ import { careCenterGateway } from '@/modules/care-centers/infrastructure/careCen
 import { fullName as doctorFullName, type Doctor } from '@/modules/doctors/domain/models/doctor';
 import type { CareCenter } from '@/modules/care-centers/domain/models/careCenter';
 import { ReportShell } from '../components/ReportShell';
-import { KpiRow } from '../components/KpiCard';
+import { ReportViewTabs } from '../components/ReportViewTabs';
+import { ToggleFilter } from '../components/ToggleFilter';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { ReportDownloadButton } from '../components/ReportDownloadButton';
 import {
@@ -45,7 +44,7 @@ import {
   payablesSummaryByProvider,
   pendingUsdOf,
 } from '../../domain/payablesSummary';
-import { formatUsd, formatBs, formatDate, formatNumber } from '../../domain/format';
+import { formatUsd, formatDate, formatNumber } from '../../domain/format';
 import {
   reportsGateway,
   type ReportPayableRow,
@@ -69,6 +68,11 @@ const STATE_TONE: Record<PayableObligationState, string> = {
   paid: 'bg-success-soft text-success',
 };
 
+
+const REPORT_VIEWS = [
+  { value: 'summary', label: 'Resumen' },
+  { value: 'detail', label: 'Detalle' },
+] as const satisfies readonly { value: 'summary' | 'detail'; label: string }[];
 
 /** Cabecera centrada del cuadro resumen. */
 const TH_CENTER =
@@ -261,69 +265,24 @@ export function ReportPayablesList() {
     <ReportShell
       title="Reporte de cuentas por pagar"
       description={`${formatNumber(summary.count)} obligaci${summary.count === 1 ? 'ón' : 'ones'} en el rango filtrado`}
-      kpis={
-        <KpiRow
-          items={[
-            {
-              icon: Wallet,
-              tone: 'blue',
-              label: 'Neto a pagar',
-              value: formatBs(summary.netBs),
-              hint: `Total ${formatUsd(summary.grossUsd)} · tras retenciones`,
-            },
-            {
-              icon: TrendingUp,
-              tone: 'success',
-              label: 'Total pagado',
-              value: formatBs(summary.paidBs),
-              hint: `${summary.netBs > 0 ? ((summary.paidBs / summary.netBs) * 100).toFixed(1) : '0.0'}% de avance`,
-            },
-            {
-              icon: AlertCircle,
-              tone: 'warning',
-              label: 'Pendiente por pagar',
-              value: formatBs(summary.pendingBs),
-              hint: 'Incluye obligaciones por pagar',
-            },
-            {
-              icon: Banknote,
-              tone: 'cyan',
-              label: 'Cantidad de obligaciones',
-              value: formatNumber(summary.count),
-            },
-          ]}
-        />
-      }
     >
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
           actions={
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                <Switch
-                  id="payables-facturacion"
-                  checked={includeFacturacion}
-                  onCheckedChange={setIncludeFacturacion}
-                />
-                <label
-                  htmlFor="payables-facturacion"
-                  className="text-sm text-muted-foreground cursor-pointer select-none"
-                >
-                  Incluir FACTURACION $
-                </label>
-              </div>
-              <ReportDownloadButton
-                disabled={loading || rows.length === 0}
-                onDownload={() => downloadPayablesReportXlsx(rows, { includeFacturacion })}
-              />
+            <>
               {monthlyRows.length > 0 ? (
                 <ReportDownloadButton
+                  variant="outline"
                   label={`Estado de cuenta ${MONTHLY_STATEMENT_LABEL}`}
                   disabled={loading}
                   onDownload={downloadMonthlyStatement}
                 />
               ) : null}
-            </div>
+              <ReportDownloadButton
+                disabled={loading || rows.length === 0}
+                onDownload={() => downloadPayablesReportXlsx(rows, { includeFacturacion })}
+              />
+            </>
           }
           searchValue={searchInput}
           onSearchChange={setSearchInput}
@@ -389,6 +348,12 @@ export function ReportPayablesList() {
                   <SelectItem value="paid">{STATE_LABEL.paid}</SelectItem>
                 </SelectContent>
               </Select>
+              <ToggleFilter
+                id="payables-facturacion"
+                label="Incluir FACTURACION $"
+                checked={includeFacturacion}
+                onCheckedChange={setIncludeFacturacion}
+              />
             </>
           }
         />
@@ -399,14 +364,16 @@ export function ReportPayablesList() {
           </div>
         ) : null}
 
-        <div className="px-4 pt-4">
-          <Tabs value={view} onValueChange={(v) => setView(v as 'detail' | 'summary')}>
-            <TabsList>
-              <TabsTrigger value="summary">Resumen</TabsTrigger>
-              <TabsTrigger value="detail">Detalle</TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </div>
+        <ReportViewTabs
+          value={view}
+          onChange={setView}
+          options={REPORT_VIEWS}
+          right={
+            view === 'summary'
+              ? `${formatNumber(providerSummary.length)} proveedor${providerSummary.length === 1 ? '' : 'es'}`
+              : `${formatNumber(rows.length)} obligaci${rows.length === 1 ? 'ón' : 'ones'}`
+          }
+        />
 
         {view === 'summary' ? (
           <div className="m-4 rounded-lg border overflow-hidden">

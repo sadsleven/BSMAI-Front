@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { TrendingUp, Banknote, Coins, Building2 } from 'lucide-react';
+import { TrendingUp } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -24,7 +24,6 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { insuranceGateway } from '@/modules/insurances/infrastructure/insuranceGateway';
 import type { Insurance } from '@/modules/insurances/domain/models/insurance';
 import { ReportShell } from '../components/ReportShell';
-import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { ReportDownloadButton } from '../components/ReportDownloadButton';
 import { downloadIncomeRelationXlsx } from '../components/reportsExcel';
@@ -32,7 +31,6 @@ import { formatUsd, formatBs, formatDate, formatNumber } from '../../domain/form
 import {
   reportsGateway,
   type InvoiceStatus,
-  type ReportInvoiceClientRow,
   type ReportInvoiceRow,
   type ReportInvoiceSummary,
 } from '../../infrastructure/reportsGateway';
@@ -82,7 +80,6 @@ export function ReportIncomeRelation() {
   );
   const [searchInput, setSearchInput] = useState(filters.search);
   const [rows, setRows] = useState<ReportInvoiceRow[]>([]);
-  const [byClient, setByClient] = useState<ReportInvoiceClientRow[]>([]);
   const [summary, setSummary] = useState<ReportInvoiceSummary>(EMPTY_SUMMARY);
   const [insurances, setInsurances] = useState<Insurance[]>([]);
   const [loading, setLoading] = useState(true);
@@ -119,7 +116,6 @@ export function ReportIncomeRelation() {
         });
         if (cancelled) return;
         setRows(res.rows);
-        setByClient(res.byClient);
         setSummary(res.summary);
       } catch (e) {
         if (!cancelled) setError(getHttpErrorMessage(e, 'No se pudo cargar el reporte'));
@@ -179,10 +175,6 @@ export function ReportIncomeRelation() {
   }, [rows, filters.page, filters.limit]);
   const lastPage = Math.max(1, Math.ceil(rows.length / filters.limit));
 
-  const topClient = byClient[0];
-  const marginPct =
-    summary.amountUsd > 0 ? (summary.marginUsd / summary.amountUsd) * 100 : 0;
-
   return (
     <ReportShell
       title="Relación de ingresos"
@@ -191,43 +183,6 @@ export function ReportIncomeRelation() {
           ? ` · ${formatNumber(summary.cancelledCount)} anulada${summary.cancelledCount === 1 ? '' : 's'}`
           : ''
       }`}
-      kpis={
-        <KpiRow
-          items={[
-            {
-              icon: TrendingUp,
-              tone: 'success',
-              label: 'Ingresos facturados',
-              value: formatUsd(summary.amountUsd),
-              hint: `${formatNumber(summary.activeCount)} facturas · promedio ${formatUsd(summary.avgUsd)}`,
-            },
-            {
-              icon: Banknote,
-              tone: 'blue',
-              label: 'Ingresos en bolívares',
-              value: formatBs(summary.amountBs),
-              hint:
-                summary.avgRateBs > 0
-                  ? `Tasa promedio ${formatBs(summary.avgRateBs)}`
-                  : 'Sin tasa registrada',
-            },
-            {
-              icon: Coins,
-              tone: 'warning',
-              label: 'Costo de proveedores',
-              value: formatUsd(summary.costUsd),
-              hint: `Margen ${formatUsd(summary.marginUsd)} (${marginPct.toFixed(1)}%)`,
-            },
-            {
-              icon: Building2,
-              tone: 'cyan',
-              label: 'Cliente principal',
-              value: topClient?.clientName ?? '—',
-              hint: topClient ? formatUsd(topClient.amountUsd) : undefined,
-            },
-          ]}
-        />
-      }
     >
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar

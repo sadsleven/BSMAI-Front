@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowUpCircle, TrendingUp, Banknote, Receipt } from 'lucide-react';
+import { ArrowUpCircle } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -26,22 +26,18 @@ import {
   type OrderPaymentType,
 } from '@/modules/orders/domain/models/order';
 import { ReportShell } from '../components/ReportShell';
-import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { ReportDownloadButton } from '../components/ReportDownloadButton';
 import { downloadReportTableXlsx, excelDateCell } from '../components/reportsExcel';
-import { formatUsd, formatBs, formatDate, formatNumber } from '../../domain/format';
+import { formatUsd, formatBs, formatDate } from '../../domain/format';
 import { formatMoney } from '@/lib/format/money';
 import {
   reportsGateway,
   type ReportDisbursementRow,
-  type ReportFlowSummary,
 } from '../../infrastructure/reportsGateway';
 import { getHttpErrorMessage } from '@/lib/api';
 
 const COLUMNS = 10;
-
-const EMPTY_SUMMARY: ReportFlowSummary = { count: 0, totalUsd: 0, totalBs: 0 };
 
 /** Tipos válidos para pagos de lotes AP (BE `PAYMENT_TYPES` de accounts-payable):
  * sin `bank_transfer_usd` ni `card`, que sólo existen en pagos de órdenes/AR. */
@@ -69,7 +65,6 @@ export function ReportDisbursements() {
   );
   const [searchInput, setSearchInput] = useState(filters.search);
   const [items, setItems] = useState<ReportDisbursementRow[]>([]);
-  const [summary, setSummary] = useState<ReportFlowSummary>(EMPTY_SUMMARY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -86,7 +81,6 @@ export function ReportDisbursements() {
         });
         if (cancelled) return;
         setItems(res.rows);
-        setSummary(res.summary);
       } catch (e) {
         if (!cancelled) setError(getHttpErrorMessage(e, 'No se pudo cargar el reporte'));
       } finally {
@@ -125,16 +119,6 @@ export function ReportDisbursements() {
     return items.filter((it) => !filters.type || it.type === filters.type);
   }, [items, filters.type]);
 
-  const filteredTotals = useMemo(() => {
-    let usd = 0;
-    let bs = 0;
-    filtered.forEach((it) => {
-      usd += it.amountInUsd;
-      bs += it.amountInBs;
-    });
-    return { usd, bs };
-  }, [filtered]);
-
   const paged = useMemo(() => {
     const start = (filters.page - 1) * filters.limit;
     return filtered.slice(start, start + filters.limit);
@@ -152,38 +136,6 @@ export function ReportDisbursements() {
     <ReportShell
       title="Pagos emitidos"
       description="Salidas registradas a proveedores (doctores y centros de atención)"
-      kpis={
-        <KpiRow
-          items={[
-            {
-              icon: ArrowUpCircle,
-              tone: 'destructive',
-              label: 'Total egresos (Bs)',
-              value: formatBs(summary.totalBs),
-              hint: `${formatNumber(summary.count)} pagos`,
-            },
-            {
-              icon: Banknote,
-              tone: 'blue',
-              label: 'Total egresos (USD)',
-              value: formatUsd(summary.totalUsd),
-            },
-            {
-              icon: Receipt,
-              tone: 'warning',
-              label: 'En filtro (Bs)',
-              value: formatBs(filteredTotals.bs),
-              hint: filters.type ? PAYMENT_TYPE_LABEL[filters.type] : 'Todos los métodos',
-            },
-            {
-              icon: TrendingUp,
-              tone: 'cyan',
-              label: 'Promedio por pago (USD)',
-              value: summary.count > 0 ? formatUsd(summary.totalUsd / summary.count) : '—',
-            },
-          ]}
-        />
-      }
     >
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar

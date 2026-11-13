@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Receipt, AlertCircle, TrendingUp, Wallet } from 'lucide-react';
+import { Receipt } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -24,11 +24,10 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { doctorGateway } from '@/modules/doctors/infrastructure/doctorGateway';
 import { fullName as doctorFullName, type Doctor } from '@/modules/doctors/domain/models/doctor';
 import { ReportShell } from '../components/ReportShell';
-import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { ReportDownloadButton } from '../components/ReportDownloadButton';
 import { downloadReportTableXlsx } from '../components/reportsExcel';
-import { formatBs, formatNumber, formatPercent } from '../../domain/format';
+import { formatBs, formatNumber } from '../../domain/format';
 import {
   reportsGateway,
   type ReportTaxRow,
@@ -140,16 +139,6 @@ export function ReportTaxesRetained() {
     setSp(next, { replace: true });
   };
 
-  const splitByPerson = useMemo(() => {
-    let natural = 0;
-    let legal = 0;
-    rows.forEach((r) => {
-      if (r.personType === 'legal_entity') legal += r.taxAmountBs;
-      else natural += r.taxAmountBs;
-    });
-    return { natural, legal };
-  }, [rows]);
-
   const paged = useMemo(() => {
     const start = (filters.page - 1) * filters.limit;
     return rows.slice(start, start + filters.limit);
@@ -167,39 +156,6 @@ export function ReportTaxesRetained() {
     <ReportShell
       title="Reporte de impuestos retenidos"
       description={`${formatNumber(summary.count)} retenci${summary.count === 1 ? 'ón' : 'ones'} en el rango filtrado`}
-      kpis={
-        <KpiRow
-          items={[
-            {
-              icon: Receipt,
-              tone: 'blue',
-              label: 'Total retenido',
-              value: formatBs(summary.taxAmountBs),
-              hint: `Natural ${formatBs(splitByPerson.natural)} · Jurídico ${formatBs(splitByPerson.legal)}`,
-            },
-            {
-              icon: TrendingUp,
-              tone: 'success',
-              label: 'Pagado al SENIAT',
-              value: formatBs(summary.paidBs),
-              hint: `${summary.taxAmountBs > 0 ? formatPercent((summary.paidBs / summary.taxAmountBs) * 100) : '0%'} de avance`,
-            },
-            {
-              icon: AlertCircle,
-              tone: 'warning',
-              label: 'Pendiente de pago',
-              value: formatBs(summary.pendingBs),
-              hint: 'Incluye retenciones por pagar',
-            },
-            {
-              icon: Wallet,
-              tone: 'cyan',
-              label: 'Cantidad de retenciones',
-              value: formatNumber(summary.count),
-            },
-          ]}
-        />
-      }
     >
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
