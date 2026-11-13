@@ -370,6 +370,8 @@ export function CareCenterList() {
                           {c.businessName}
                         </div>
                         <div className="text-xs text-muted-foreground truncate">
+                          {/* El nombre corto es el que sale en listados y reportes. */}
+                          {c.shortName ? `${c.shortName} · ` : ''}
                           {c.email || '—'}
                         </div>
                       </div>

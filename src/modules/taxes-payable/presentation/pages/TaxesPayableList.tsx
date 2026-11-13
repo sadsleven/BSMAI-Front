@@ -345,7 +345,7 @@ export function TaxesPayableList() {
             ) : null}
 
             <div className="m-4 rounded-lg border overflow-hidden">
-              <Table>
+              <Table stickyHeader>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-10"></TableHead>
@@ -413,7 +413,7 @@ export function TaxesPayableList() {
                               {t.recipientType === 'doctor' ? 'Doctor' : 'Centro'}
                             </div>
                           </TableCell>
-                          <TableCell className="py-3.5 px-4 text-xs font-mono truncate max-w-[160px]">
+                          <TableCell className="py-3.5 px-4 text-xs font-mono max-w-[160px]" wrap>
                             {ordersLabel(t)}
                             {t.settlementDate ? (
                               <div className="text-[11px] text-muted-foreground">
@@ -493,7 +493,7 @@ export function TaxesPayableList() {
             ) : null}
 
             <div className="m-4 rounded-lg border overflow-hidden">
-              <Table>
+              <Table stickyHeader>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">

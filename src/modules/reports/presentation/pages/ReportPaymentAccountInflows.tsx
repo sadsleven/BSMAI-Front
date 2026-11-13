@@ -227,7 +227,7 @@ export function ReportPaymentAccountInflows() {
           </p>
         </div>
         <div className="m-4 rounded-lg border overflow-hidden">
-        <Table>
+        <Table stickyHeader>
           <TableHeader>
             <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Cuenta</TableHead>
@@ -381,7 +381,7 @@ export function ReportPaymentAccountInflows() {
         ) : null}
 
         <div className="m-4 rounded-lg border overflow-hidden">
-        <Table>
+        <Table stickyHeader>
           <TableHeader>
             <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Fecha</TableHead>
@@ -391,16 +391,17 @@ export function ReportPaymentAccountInflows() {
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Documento</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Contraparte</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Referencia</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Moneda</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto USD</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <SkeletonTableRows rows={6} columns={9} />
+              <SkeletonTableRows rows={6} columns={10} />
             ) : paged.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="p-0">
+                <TableCell colSpan={10} className="p-0">
                   <EmptyState
                     icon={Wallet}
                     title={hasActiveFilters ? 'Sin resultados' : 'Sin pagos recibidos'}
@@ -430,7 +431,7 @@ export function ReportPaymentAccountInflows() {
                       {r.source === 'order' ? 'Orden' : 'Por cobrar'}
                     </Badge>
                   </TableCell>
-                  <TableCell className="py-3 px-4 text-sm font-medium truncate max-w-[180px]">
+                  <TableCell className="py-3 px-4 text-sm font-medium max-w-[180px]" wrap>
                     {r.paymentAccountName ?? '—'}
                   </TableCell>
                   <TableCell className="py-3 px-4 text-sm">
@@ -439,12 +440,15 @@ export function ReportPaymentAccountInflows() {
                     </Badge>
                   </TableCell>
                   <TableCell className="py-3 px-4 text-sm font-mono">{r.documentNumber}</TableCell>
-                  <TableCell className="py-3 px-4 text-sm truncate max-w-[160px]">{r.counterpart}</TableCell>
+                  <TableCell className="py-3 px-4 text-sm max-w-[160px]" wrap>{r.counterpart}</TableCell>
                   <TableCell className="py-3 px-4 text-sm font-mono text-muted-foreground">
                     {r.referenceNumber ?? '—'}
                   </TableCell>
+                  <TableCell className="py-3 px-4 text-sm font-mono text-center">
+                    {r.amountCurrency}
+                  </TableCell>
                   <TableCell className="py-3 px-4 text-sm font-mono text-right">
-                    {r.amountCurrency} {formatMoney(r.amountValue)}
+                    {formatMoney(r.amountValue)}
                   </TableCell>
                   <TableCell className="py-3 px-4 text-sm font-mono text-right text-success">
                     {formatUsd(r.amountInUsd)}

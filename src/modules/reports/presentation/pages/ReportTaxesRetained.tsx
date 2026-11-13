@@ -292,7 +292,7 @@ export function ReportTaxesRetained() {
         ) : null}
 
         <div className="m-4 rounded-lg border overflow-hidden">
-        <Table>
+        <Table stickyHeader>
           <TableHeader>
             <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Médico/Centro</TableHead>
@@ -337,7 +337,7 @@ export function ReportTaxesRetained() {
                         {r.personType === 'legal_entity' ? 'Jurídico' : 'Natural'}
                       </Badge>
                     </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm font-mono truncate max-w-[160px]">
+                    <TableCell className="py-3.5 px-4 text-sm font-mono max-w-[160px]" wrap>
                       {orderNums || '—'}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono">

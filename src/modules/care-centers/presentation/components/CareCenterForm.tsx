@@ -96,6 +96,23 @@ export function CareCenterForm({
             />
             <FieldError message={errors.businessName?.message} />
           </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="shortName" className="text-sm font-medium">
+              Nombre corto{' '}
+              <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
+            </Label>
+            <Input
+              id="shortName"
+              placeholder="URIMECA"
+              {...register('shortName')}
+              className={cn('h-9', invalid('shortName'))}
+            />
+            <p className="text-xs text-muted-foreground">
+              Es el nombre que aparece en los listados y reportes. Las facturas y
+              comprobantes siguen usando la razón social completa.
+            </p>
+            <FieldError message={errors.shortName?.message} />
+          </div>
           <div className="space-y-1.5">
             <Label htmlFor="email" className="text-sm font-medium">
               Email{' '}

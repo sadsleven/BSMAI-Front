@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { HandCoins, Plus } from 'lucide-react';
+import { HandCoins, Plus, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -33,6 +33,7 @@ import { getHttpErrorMessage } from '@/lib/api';
 import { formatMoney } from '@/lib/format/money';
 import { accountsReceivableGateway } from '../../infrastructure/accountsReceivableGateway';
 import {
+  batchInvoiceNumbers,
   debtorDisplayName,
   debtorTypeOf,
   pendingBatchKey,
@@ -48,9 +49,18 @@ import {
   type PendingReceivable,
 } from '../../domain/models/accountsReceivable';
 import { insuranceGateway } from '@/modules/insurances/infrastructure/insuranceGateway';
+import { QuickExchangeRateModal } from '@/modules/exchange-rates/presentation/components/QuickExchangeRateModal';
+import {
+  reportsGateway,
+  type ReportReceivableDebtorRow,
+} from '@/modules/reports/infrastructure/reportsGateway';
 import type { Insurance } from '@/modules/insurances/domain/models/insurance';
 
-type Tab = 'pending' | 'batches';
+type Tab = 'pending' | 'batches' | 'summary';
+
+/** Cabecera centrada del cuadro resumen. */
+const TH_CENTER =
+  'text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-center whitespace-nowrap';
 type SortBy = 'receivableNumber' | 'createdAt' | 'updatedAt';
 
 function statusBadge(status: AccountsReceivableStatus) {
@@ -80,7 +90,11 @@ function statusBadge(status: AccountsReceivableStatus) {
 export function AccountsReceivableList() {
   const [sp, setSp] = useSearchParams();
   const navigate = useNavigate();
-  const tab = (sp.get('tab') === 'batches' ? 'batches' : 'pending') as Tab;
+  const tabParam = sp.get('tab');
+  const tab: Tab =
+    tabParam === 'batches' || tabParam === 'pending' ? tabParam : 'summary';
+  // Alta rápida de tasa USD/Bs sin salir del módulo.
+  const [rateModalOpen, setRateModalOpen] = useState(false);
 
   const [searchInput, setSearchInput] = useState(sp.get('search') ?? '');
   const [insurances, setInsurances] = useState<Insurance[]>([]);
@@ -206,11 +220,56 @@ export function AccountsReceivableList() {
     }
   }, [filters]);
 
+  // -------- Resumen por deudor --------
+  const [summaryRows, setSummaryRows] = useState<ReportReceivableDebtorRow[]>([]);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+
+  const fetchSummary = useCallback(async () => {
+    setSummaryLoading(true);
+    setSummaryError(null);
+    try {
+      // Sin rango de fechas: el resumen muestra todo lo que falta por cobrar.
+      const res = await reportsGateway.receivablesByDebtor({
+        groupBy: 'insurance',
+        insuranceId: filters.insuranceId || undefined,
+        // El reporte agrupa en seguro/titular; los lotes de Cashea no tienen
+        // deudor propio, así que ese filtro no viaja.
+        debtorType:
+          filters.debtorType === 'insurance' || filters.debtorType === 'holder'
+            ? filters.debtorType
+            : undefined,
+        search: filters.search || undefined,
+      });
+      setSummaryRows(res.rows);
+    } catch (e) {
+      setSummaryError(getHttpErrorMessage(e, 'No se pudo cargar el resumen'));
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, [filters.insuranceId, filters.debtorType, filters.search]);
+
+  const summaryTotals = useMemo(() => {
+    let target = 0;
+    let collected = 0;
+    let pending = 0;
+    for (const r of summaryRows) {
+      target += r.targetUsd;
+      collected += r.collectedUsd;
+      pending += r.pendingUsd;
+    }
+    return { target, collected, pending };
+  }, [summaryRows]);
+
   useEffect(() => {
     void Promise.resolve().then(() =>
-      tab === 'pending' ? fetchPending() : fetchBatches(),
+      tab === 'pending'
+        ? fetchPending()
+        : tab === 'batches'
+          ? fetchBatches()
+          : fetchSummary(),
     );
-  }, [tab, fetchPending, fetchBatches]);
+  }, [tab, fetchPending, fetchBatches, fetchSummary]);
 
   const onSort = (column: SortBy, dir: SortDir) =>
     updateParam({ sortBy: column, sortDir: dir });
@@ -326,9 +385,112 @@ export function AccountsReceivableList() {
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
         <TabsList>
+          <TabsTrigger value="summary">Resumen</TabsTrigger>
           <TabsTrigger value="pending">Pendientes</TabsTrigger>
           <TabsTrigger value="batches">Lotes</TabsTrigger>
         </TabsList>
+
+        {/* ---------------- Resumen por deudor ---------------- */}
+        <TabsContent value="summary">
+          <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
+            <DataTableToolbar
+              searchValue={searchInput}
+              onSearchChange={setSearchInput}
+              searchPlaceholder="Buscar seguro o titular…"
+              hasActiveFilters={hasActiveFilters}
+              onClear={clearFilters}
+              filters={debtorFilters}
+              actions={
+                <Can permission={PERMISSIONS.EXCHANGE_RATES.CREATE}>
+                  <Button variant="outline" onClick={() => setRateModalOpen(true)}>
+                    <Plus className="w-4 h-4 mr-1.5" />
+                    Nueva tasa
+                  </Button>
+                </Can>
+              }
+            />
+            {summaryError ? (
+              <div className="px-4 py-2 text-sm text-destructive border-b bg-destructive-soft">
+                {summaryError}
+              </div>
+            ) : null}
+            <div className="m-4 rounded-lg border overflow-hidden">
+              <Table stickyHeader>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className={TH_CENTER}>Seguro / Titular</TableHead>
+                    <TableHead className={TH_CENTER}>Tipo</TableHead>
+                    <TableHead className={TH_CENTER}>Órdenes</TableHead>
+                    <TableHead className={TH_CENTER}>Lotes</TableHead>
+                    <TableHead className={TH_CENTER}>Facturado $</TableHead>
+                    <TableHead className={TH_CENTER}>Cobrado $</TableHead>
+                    <TableHead className={TH_CENTER}>Por cobrar $</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {summaryLoading ? (
+                    <SkeletonTableRows rows={6} columns={7} />
+                  ) : summaryRows.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="p-0">
+                        <EmptyState
+                          icon={TrendingUp}
+                          title="Sin cuentas por cobrar"
+                          description="No hay deuda pendiente de seguros ni titulares."
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    <>
+                      {summaryRows.map((r) => (
+                        <TableRow
+                          key={`${r.debtorType}:${r.debtorId ?? r.debtorName}`}
+                          className="hover:bg-[oklch(0.985_0.003_250)]"
+                        >
+                          <TableCell className="py-3 px-3 text-sm font-medium" wrap>
+                            {r.debtorName}
+                          </TableCell>
+                          <TableCell className="py-3 px-3 text-sm text-center text-muted-foreground">
+                            {r.debtorType === 'holder' ? 'Titular' : 'Seguro'}
+                          </TableCell>
+                          <TableCell className="py-3 px-3 text-sm text-center">
+                            {r.ordersCount}
+                          </TableCell>
+                          <TableCell className="py-3 px-3 text-sm text-center">
+                            {r.lotesCount}
+                          </TableCell>
+                          <TableCell className="py-3 px-3 text-sm font-mono text-center">
+                            {formatMoney(r.targetUsd)}
+                          </TableCell>
+                          <TableCell className="py-3 px-3 text-sm font-mono text-center text-success">
+                            {formatMoney(r.collectedUsd)}
+                          </TableCell>
+                          <TableCell className="py-3 px-3 text-sm font-mono text-center font-semibold">
+                            {formatMoney(r.pendingUsd)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow className="bg-muted/40 font-semibold">
+                        <TableCell className="py-3 px-3 text-sm" colSpan={4}>
+                          TOTAL
+                        </TableCell>
+                        <TableCell className="py-3 px-3 text-sm font-mono text-center">
+                          {formatMoney(summaryTotals.target)}
+                        </TableCell>
+                        <TableCell className="py-3 px-3 text-sm font-mono text-center">
+                          {formatMoney(summaryTotals.collected)}
+                        </TableCell>
+                        <TableCell className="py-3 px-3 text-sm font-mono text-center">
+                          {formatMoney(summaryTotals.pending)}
+                        </TableCell>
+                      </TableRow>
+                    </>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        </TabsContent>
 
         {/* ---------------- Pendientes ---------------- */}
         <TabsContent value="pending">
@@ -336,7 +498,7 @@ export function AccountsReceivableList() {
             <DataTableToolbar
               searchValue={searchInput}
               onSearchChange={setSearchInput}
-              searchPlaceholder="Buscar por N° orden o deudor…"
+              searchPlaceholder="Buscar por N° factura, orden o deudor…"
               hasActiveFilters={hasActiveFilters}
               onClear={clearFilters}
               filters={debtorFilters}
@@ -379,6 +541,9 @@ export function AccountsReceivableList() {
                   <TableRow>
                     <TableHead className="w-10"></TableHead>
                     <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      N° factura
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                       N° orden
                     </TableHead>
                     <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
@@ -397,10 +562,10 @@ export function AccountsReceivableList() {
                 </TableHeader>
                 <TableBody>
                   {pendingLoading ? (
-                    <SkeletonTableRows rows={5} columns={6} />
+                    <SkeletonTableRows rows={5} columns={7} />
                   ) : pending.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="p-0">
+                      <TableCell colSpan={7} className="p-0">
                         <EmptyState
                           icon={HandCoins}
                           title={
@@ -425,6 +590,9 @@ export function AccountsReceivableList() {
                             onCheckedChange={() => toggleSelect(pendingRowKey(p))}
                             aria-label="Seleccionar orden"
                           />
+                        </TableCell>
+                        <TableCell className="py-3.5 px-4 font-mono text-sm">
+                          {p.invoiceNumber || '—'}
                         </TableCell>
                         <TableCell className="py-3.5 px-4 font-mono text-sm font-semibold">
                           <span className="inline-flex items-center gap-2">
@@ -498,7 +666,7 @@ export function AccountsReceivableList() {
             <DataTableToolbar
               searchValue={searchInput}
               onSearchChange={setSearchInput}
-              searchPlaceholder="Buscar por N° lote, orden o deudor…"
+              searchPlaceholder="Buscar por N° factura, lote, orden o deudor…"
               hasActiveFilters={hasActiveFilters}
               onClear={clearFilters}
               filters={
@@ -547,6 +715,9 @@ export function AccountsReceivableList() {
                       </SortableHeader>
                     </TableHead>
                     <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      N° factura
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                       Deudor
                     </TableHead>
                     <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
@@ -578,10 +749,10 @@ export function AccountsReceivableList() {
                 </TableHeader>
                 <TableBody>
                   {batchesLoading ? (
-                    <SkeletonTableRows rows={5} columns={8} />
+                    <SkeletonTableRows rows={5} columns={9} />
                   ) : batches.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="p-0">
+                      <TableCell colSpan={9} className="p-0">
                         <EmptyState
                           icon={HandCoins}
                           title={
@@ -613,6 +784,10 @@ export function AccountsReceivableList() {
                         >
                           <TableCell className="py-3.5 px-4 font-mono text-sm font-semibold">
                             {b.receivableNumber}
+                          </TableCell>
+                          <TableCell className="py-3.5 px-4 font-mono text-sm">
+                            {/* Un lote puede cubrir órdenes de varias facturas. */}
+                            {batchInvoiceNumbers(b).join(', ') || '—'}
                           </TableCell>
                           <TableCell className="py-3.5 px-4 text-sm">
                             <div className="flex items-center gap-2 flex-wrap">
@@ -694,6 +869,13 @@ export function AccountsReceivableList() {
           </div>
         </TabsContent>
       </Tabs>
+
+      <QuickExchangeRateModal
+        open={rateModalOpen}
+        onOpenChange={setRateModalOpen}
+        currency="USD"
+        onCreated={() => setRateModalOpen(false)}
+      />
     </div>
   );
 }

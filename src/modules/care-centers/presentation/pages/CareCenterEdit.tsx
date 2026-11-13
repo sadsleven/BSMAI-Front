@@ -53,6 +53,7 @@ export function CareCenterEdit() {
     mode: 'onBlur',
     defaultValues: {
       businessName: '',
+      shortName: '',
       email: '',
       rif: '',
       centerAddress: '',
@@ -73,6 +74,7 @@ export function CareCenterEdit() {
         const c = await careCenterGateway.getById(id);
         methods.reset({
           businessName: c.businessName,
+          shortName: c.shortName ?? '',
           email: c.email ?? '',
           rif: c.rif ?? '',
           centerAddress: c.centerAddress ?? '',
@@ -120,6 +122,7 @@ export function CareCenterEdit() {
     try {
       await careCenterGateway.update(id, {
         businessName: values.businessName,
+        shortName: values.shortName?.trim() ?? '',
         email: values.email?.trim() ?? '',
         rif: values.rif?.trim() || '',
         centerAddress: values.centerAddress?.trim() ?? '',

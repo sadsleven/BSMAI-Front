@@ -44,6 +44,7 @@ export function CareCenterCreate() {
     mode: 'onBlur',
     defaultValues: {
       businessName: '',
+      shortName: '',
       email: '',
       rif: '',
       centerAddress: '',
@@ -63,6 +64,7 @@ export function CareCenterCreate() {
     try {
       await careCenterGateway.create({
         businessName: values.businessName,
+        shortName: values.shortName?.trim() || undefined,
         email: values.email?.trim() || undefined,
         rif: values.rif?.trim() || undefined,
         centerAddress: values.centerAddress?.trim() || undefined,

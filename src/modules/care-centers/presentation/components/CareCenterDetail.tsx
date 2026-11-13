@@ -44,6 +44,7 @@ export function CareCenterDetailBody({
     <div className="divide-y">
           <DetailSection title="Datos del centro">
             <DetailRow label="Razón social" value={center.businessName} />
+            <DetailRow label="Nombre corto" value={center.shortName || "—"} />
             <DetailRow label="RIF" value={center.rif} mono />
             <DetailRow label="Email" value={center.email} />
             <DetailRow label="Dirección del centro" value={center.centerAddress} />

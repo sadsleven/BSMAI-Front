@@ -13,6 +13,14 @@ export interface ReportQuery {
   search?: string;
 }
 
+/** Filtros del reporte de cuentas por cobrar: deudor y estado son distintos. */
+export interface ReceivablesReportQuery extends ReportQuery {
+  /** Tipo de deudor (antes viajaba en `status`). */
+  debtorType?: 'insurance' | 'holder' | '';
+  /** Estado de cobro del lote. `uncollected` incluye las órdenes sin lote. */
+  state?: ReceivableOrderState | '';
+}
+
 // ---- Payables ----
 export type PayableObligationState =
   | 'sin_lote'
@@ -30,9 +38,28 @@ export interface ReportPayablePayment {
   amountBs: number;
 }
 
+/**
+ * Un abono (pago parcial o total) de un lote de cuentas por pagar: lo que
+ * cubre en USD y los pagos concretos que lo respaldan.
+ */
+export interface ReportPayableSettlement {
+  id: string;
+  settlementDate: string | null;
+  coveredUsd: number;
+  grossBs: number;
+  retentionBs: number;
+  netBs: number;
+  payments: ReportPayablePayment[];
+}
+
 export interface ReportPayableRow {
   orderId: string;
   orderNumber: string;
+  /** N° de la factura VIGENTE de la orden; '' si aún no se facturó. */
+  invoiceNumber: string;
+  controlNumber: string;
+  /** Fecha de emisión de la factura vigente; null si aún no se facturó. */
+  invoiceDate: string | null;
   internalNumber: string;
   orderDate: string;
   branchId: string;
@@ -55,6 +82,14 @@ export interface ReportPayableRow {
   paymentDate: string | null;
   paymentReference: string | null;
   payments: ReportPayablePayment[];
+  /** Bruto USD del LOTE completo (se repite en cada fila del lote). */
+  payableGrossUsd: number | null;
+  /** Σ USD ya abonados del lote. */
+  payableCoveredUsd: number | null;
+  /** Saldo USD del lote (bruto − abonado). */
+  payablePendingUsd: number | null;
+  /** Abonos del lote en orden cronológico (incluye los parciales). */
+  settlements: ReportPayableSettlement[];
   state: PayableObligationState;
 }
 
@@ -69,6 +104,10 @@ export interface ReportPayableProviderRow {
   netBs: number;
   paidBs: number;
   pendingBs: number;
+  /** Σ USD ya abonados al proveedor. */
+  paidUsd: number;
+  /** Σ USD que faltan por pagarle (incluye las órdenes aún sin lote). */
+  pendingUsd: number;
 }
 
 export interface ReportPayableSummary {
@@ -106,6 +145,8 @@ export interface ReportReceivableRow {
   serviceKey: string;
   invoiceNumber: string;
   controlNumber: string;
+  /** Fecha de emisión de la factura vigente; null si aún no se facturó. */
+  invoiceDate: string | null;
   costoUsd: number;
   useFixedRate: boolean;
   rateBs: number | null;
@@ -338,7 +379,12 @@ export interface ArcReport {
 }
 
 function params(
-  q: ReportQuery & { groupBy?: string; clientType?: string },
+  q: ReportQuery & {
+    groupBy?: string;
+    clientType?: string;
+    debtorType?: string;
+    state?: string;
+  },
 ): Record<string, string | undefined> {
   return {
     from: q.from,
@@ -352,6 +398,8 @@ function params(
     search: q.search,
     groupBy: q.groupBy,
     clientType: q.clientType || undefined,
+    debtorType: q.debtorType || undefined,
+    state: q.state || undefined,
   };
 }
 
@@ -373,13 +421,13 @@ export const reportsGateway = {
     return data;
   },
   async receivables(
-    q: ReportQuery = {},
+    q: ReceivablesReportQuery = {},
   ): Promise<ReportEnvelope<ReportReceivableRow, ReportReceivableSummary>> {
     const { data } = await api.get(`${BASE}/receivables`, { params: params(q) });
     return data;
   },
   async receivablesByDebtor(
-    q: ReportQuery & { groupBy: 'insurance' | 'holder' },
+    q: ReceivablesReportQuery & { groupBy: 'insurance' | 'holder' },
   ): Promise<ReportEnvelope<ReportReceivableDebtorRow, ReportReceivableSummary>> {
     const { data } = await api.get(`${BASE}/receivables`, {
       params: params({ ...q, groupBy: q.groupBy }),

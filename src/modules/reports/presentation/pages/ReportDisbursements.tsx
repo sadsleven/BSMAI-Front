@@ -39,7 +39,7 @@ import {
 } from '../../infrastructure/reportsGateway';
 import { getHttpErrorMessage } from '@/lib/api';
 
-const COLUMNS = 8;
+const COLUMNS = 10;
 
 const EMPTY_SUMMARY: ReportFlowSummary = { count: 0, totalUsd: 0, totalBs: 0 };
 
@@ -253,14 +253,16 @@ export function ReportDisbursements() {
         ) : null}
 
         <div className="m-4 rounded-lg border overflow-hidden">
-        <Table>
+        <Table stickyHeader>
           <TableHeader>
             <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Fecha</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Proveedor</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Tipo</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Lote</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Método</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Referencia</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Moneda</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto USD</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto Bs.</TableHead>
@@ -290,10 +292,10 @@ export function ReportDisbursements() {
                     {formatDate(it.paymentDate)}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-medium">
-                    <div>{it.providerName}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {it.providerType === 'doctor' ? 'Doctor' : 'Centro'}
-                    </div>
+                    {it.providerName}
+                  </TableCell>
+                  <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                    {it.providerType === 'doctor' ? 'Doctor' : 'Centro'}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono">
                     {it.payableNumber}
@@ -306,8 +308,11 @@ export function ReportDisbursements() {
                   <TableCell className="py-3.5 px-4 text-sm font-mono">
                     {it.referenceNumber ?? '—'}
                   </TableCell>
+                  <TableCell className="py-3.5 px-4 text-sm font-mono text-center">
+                    {it.amountCurrency}
+                  </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                    {it.amountCurrency} {formatMoney(it.amountValue)}
+                    {formatMoney(it.amountValue)}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-destructive">
                     {formatUsd(it.amountInUsd)}

@@ -25,6 +25,11 @@ export interface CareCenterPaymentMethod {
 export interface CareCenter {
   id: string;
   businessName: string;
+  /**
+   * Nombre corto / comercial ("URIMECA"). Es el que se muestra en listados y
+   * reportes; los documentos legales siguen con la razón social completa.
+   */
+  shortName?: string | null;
   email?: string | null;
   rif?: string | null;
   /** Dirección del centro de atención. Opcional. */
@@ -44,6 +49,8 @@ export interface CareCenter {
 
 export interface CreateCareCenterDto {
   businessName: string;
+  /** Nombre corto / comercial. Opcional. */
+  shortName?: string;
   /** Opcional; requerido solo para habilitar acceso (password). `''` en update → null. */
   email?: string;
   rif?: string;

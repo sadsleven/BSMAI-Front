@@ -346,7 +346,7 @@ export function BudgetList() {
         ) : null}
 
         <div className="m-4 overflow-hidden rounded-lg border">
-          <Table>
+          <Table stickyHeader>
             <TableHeader>
               <TableRow className="bg-brand-blue-soft hover:bg-brand-blue-soft">
                 <TableHead className="text-center text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">

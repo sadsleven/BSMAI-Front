@@ -3,6 +3,7 @@ import type {
   OrderRefSummary,
   PaymentCurrency,
 } from '@/modules/orders/domain/models/order';
+import { insuranceLabel } from '@/lib/displayName';
 
 export type AccountsReceivableStatus =
   | 'collected'
@@ -123,6 +124,8 @@ export interface AccountsReceivableBatch {
   orders?: AccountsReceivableOrder[];
   /** Nº de órdenes del lote (agregado por el BE, no requiere `orders`). */
   orderCount?: number;
+  /** N° de factura de las órdenes del lote, sin repetir (agregado por el BE). */
+  invoiceNumbers?: string[];
   payments: AccountsReceivablePayment[];
   /**
    * Ajuste firmado del total a cobrar, en la moneda del lote (Bs si el lote es
@@ -231,7 +234,7 @@ export function debtorDisplayName(b: AccountsReceivableBatch): string {
     const full = `${b.holder.firstName ?? ''} ${b.holder.lastName ?? ''}`.trim();
     return full || b.holder.name || b.holder.cedula || b.holder.rif || '—';
   }
-  if (b.insurance) return b.insurance.name ?? '—';
+  if (b.insurance) return insuranceLabel(b.insurance) || '—';
   return 'Cashea';
 }
 
@@ -241,6 +244,21 @@ export function batchDebtorId(b: AccountsReceivableBatch): string | null {
 }
 
 /** Modo de cobro del lote: 'fixed' (Bs tasa fija) o 'usd'. */
+/**
+ * N° de factura del lote: el BE manda `invoiceNumbers` ya agregado en el
+ * listado; en el detalle se derivan de las órdenes hidratadas. Un lote puede
+ * cubrir varias facturas (o ninguna, si las órdenes aún no se facturaron).
+ */
+export function batchInvoiceNumbers(b: AccountsReceivableBatch): string[] {
+  if (b.invoiceNumbers?.length) return b.invoiceNumbers;
+  const out = new Set<string>();
+  for (const o of b.orders ?? []) {
+    const n = o.order?.invoiceNumber?.trim();
+    if (n) out.add(n);
+  }
+  return [...out].sort((a, z) => a.localeCompare(z, 'es', { numeric: true }));
+}
+
 export function batchMode(b: AccountsReceivableBatch): 'usd' | 'fixed' {
   return b.mode ?? 'usd';
 }

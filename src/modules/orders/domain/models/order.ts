@@ -76,6 +76,13 @@ export interface OrderInternalOrderRow {
   sequencePosition: number;
   /** Monto USD a pagar al proveedor (snapshot al facturar). Null hasta facturar. */
   providerAmountUsd?: string | number | null;
+  /**
+   * Al proveedor ya se le pagó en el acto (órdenes de contado). La obligación
+   * existe, pero no es deuda: no entra en Cuentas por pagar ni en su reporte.
+   */
+  providerPaidOnSite?: boolean;
+  /** Cuándo se marcó como pagada en el acto. */
+  providerPaidOnSiteAt?: string | null;
 }
 
 /** Fila ST + proveedor dentro de una orden (mapea OrderServiceType del BE). */
@@ -482,6 +489,11 @@ export interface BillingProviderInput {
  */
 export interface UpdateProviderAmountsDto {
   providers: BillingProviderInput[];
+  /**
+   * Corrige la marca de "pagado al proveedor en el acto" (sólo contado). El BE
+   * lo rechaza si la orden ya está dentro de un lote de cuentas por pagar.
+   */
+  providerPaidOnSite?: boolean;
 }
 
 export interface BillingOrderDto {
@@ -503,6 +515,11 @@ export interface BillingOrderDto {
   invoiceDate?: string;
   /** ¿Imprime la fila "Tasa de cambio BCV"? Sin enviar, la regla derivada. */
   showExchangeRate?: boolean;
+  /**
+   * Al proveedor se le paga en el acto: la orden se finaliza y NO entra en
+   * Cuentas por pagar. Sólo válido en órdenes de contado.
+   */
+  providerPaidOnSite?: boolean;
   /**
    * Órdenes ADICIONALES que cubre esta misma factura (factura agrupada). Sólo
    * aplica cuando la finalización emite factura.

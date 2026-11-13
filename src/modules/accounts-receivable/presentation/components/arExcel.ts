@@ -144,6 +144,8 @@ export async function downloadEstadoCuentaSeguro(
     cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
     cell.border = thinBorder();
   });
+  // Cabecera inmovilizada: al bajar por el estado de cuenta siguen a la vista.
+  ws.views = [{ state: 'frozen', ySplit: 7, showGridLines: false }];
 
   // Filas de datos: una por orden del lote, cronológicas.
   const pivots = [...(batch.orders ?? [])].sort((a, b) => {
