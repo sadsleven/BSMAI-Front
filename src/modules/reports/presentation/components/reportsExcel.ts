@@ -257,7 +257,6 @@ const RECEIVABLE_STATE_LABEL: Record<string, string> = {
   uncollected: 'Por cobrar',
   partially_collected: 'Cobro parcial',
   collected: 'Cobrada',
-  overcollected: 'Sobre-cobrada',
 };
 
 /** Fecha de emisión que va arriba a la derecha de cada hoja. */

@@ -8,8 +8,7 @@ import { insuranceLabel } from '@/lib/displayName';
 export type AccountsReceivableStatus =
   | 'collected'
   | 'uncollected'
-  | 'partially_collected'
-  | 'overcollected';
+  | 'partially_collected';
 
 /**
  * Tipo de deudor de la cuenta por cobrar. `cashea` = paga la fintech: el lote
@@ -213,7 +212,6 @@ export const STATUS_LABEL: Record<AccountsReceivableStatus, string> = {
   collected: 'Cobrado',
   uncollected: 'No cobrado',
   partially_collected: 'Cobrado parcialmente',
-  overcollected: 'Sobre-cobrado',
 };
 
 export const DEBTOR_TYPE_LABEL: Record<AccountsReceivableDebtorType, string> = {

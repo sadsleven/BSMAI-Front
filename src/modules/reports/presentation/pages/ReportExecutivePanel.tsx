@@ -114,7 +114,6 @@ const AR_STATE_LABEL: Record<ReceivableOrderState, string> = {
   uncollected: 'Por cobrar',
   partially_collected: 'Cobro parcial',
   collected: 'Cobrado',
-  overcollected: 'Sobrecobrado',
 };
 
 const AR_STATE_COLOR: Record<ReceivableOrderState, string> = {
@@ -122,7 +121,6 @@ const AR_STATE_COLOR: Record<ReceivableOrderState, string> = {
   uncollected: CHART_COLORS.destructive,
   partially_collected: CHART_COLORS.warning,
   collected: CHART_COLORS.success,
-  overcollected: CHART_COLORS.cyan,
 };
 
 const AR_STATE_ORDER: ReceivableOrderState[] = [
@@ -130,7 +128,6 @@ const AR_STATE_ORDER: ReceivableOrderState[] = [
   'partially_collected',
   'uncollected',
   'sin_lote',
-  'overcollected',
 ];
 
 /** Precedencia para colapsar las porciones de una orden mixta a UN estado:
@@ -139,7 +136,6 @@ const AR_STATE_PRECEDENCE: ReceivableOrderState[] = [
   'sin_lote',
   'uncollected',
   'partially_collected',
-  'overcollected',
   'collected',
 ];
 

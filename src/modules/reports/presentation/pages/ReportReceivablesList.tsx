@@ -53,7 +53,6 @@ const STATE_LABEL: Record<ReceivableOrderState, string> = {
   uncollected: 'Por cobrar',
   partially_collected: 'Cobro parcial',
   collected: 'Cobrado',
-  overcollected: 'Sobrecobrado',
 };
 
 const STATE_TONE: Record<ReceivableOrderState, string> = {
@@ -61,7 +60,6 @@ const STATE_TONE: Record<ReceivableOrderState, string> = {
   uncollected: 'bg-warning-soft text-warning',
   partially_collected: 'bg-brand-cyan-soft text-brand-blue-strong',
   collected: 'bg-success-soft text-success',
-  overcollected: 'bg-brand-blue-soft text-brand-blue-strong',
 };
 
 const COLUMNS = 16;
@@ -323,9 +321,6 @@ export function ReportReceivablesList() {
                     {STATE_LABEL.partially_collected}
                   </SelectItem>
                   <SelectItem value="collected">{STATE_LABEL.collected}</SelectItem>
-                  <SelectItem value="overcollected">
-                    {STATE_LABEL.overcollected}
-                  </SelectItem>
                 </SelectContent>
               </Select>
               <ToggleFilter

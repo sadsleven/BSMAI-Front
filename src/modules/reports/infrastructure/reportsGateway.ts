@@ -124,8 +124,7 @@ export type ReceivableOrderState =
   | 'sin_lote'
   | 'uncollected'
   | 'partially_collected'
-  | 'collected'
-  | 'overcollected';
+  | 'collected';
 
 export interface ReportReceivableRow {
   orderId: string;

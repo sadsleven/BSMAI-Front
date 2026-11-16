@@ -69,10 +69,6 @@ function statusBadge(status: AccountsReceivableStatus) {
       bg: 'bg-brand-cyan-soft text-brand-blue-strong',
       dot: 'bg-brand-cyan',
     },
-    overcollected: {
-      bg: 'bg-brand-blue-soft text-brand-blue-strong',
-      dot: 'bg-brand-blue',
-    },
     uncollected: { bg: 'bg-warning-soft text-warning', dot: 'bg-warning' },
   };
   const c = map[status];
@@ -676,7 +672,6 @@ export function AccountsReceivableList() {
                         Cobrado parcialmente
                       </SelectItem>
                       <SelectItem value="collected">Cobrado</SelectItem>
-                      <SelectItem value="overcollected">Sobre-cobrado</SelectItem>
                     </SelectContent>
                   </Select>
                   {debtorFilters}
