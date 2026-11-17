@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Banknote, TrendingUp, AlertCircle, Wallet } from 'lucide-react';
+import { Banknote } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -17,7 +17,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
 import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
@@ -27,11 +26,25 @@ import { careCenterGateway } from '@/modules/care-centers/infrastructure/careCen
 import { fullName as doctorFullName, type Doctor } from '@/modules/doctors/domain/models/doctor';
 import type { CareCenter } from '@/modules/care-centers/domain/models/careCenter';
 import { ReportShell } from '../components/ReportShell';
-import { KpiRow } from '../components/KpiCard';
+import { ReportViewTabs } from '../components/ReportViewTabs';
+import { ToggleFilter } from '../components/ToggleFilter';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { ReportDownloadButton } from '../components/ReportDownloadButton';
-import { downloadPayablesReportXlsx } from '../components/reportsExcel';
-import { formatUsd, formatBs, formatDate, formatNumber } from '../../domain/format';
+import {
+  downloadMonthlyStatementXlsx,
+  downloadPayablesReportXlsx,
+  formatPayablePaymentRef,
+  reportRowDate,
+} from '../components/reportsExcel';
+import {
+  isMonthlyStatementProvider,
+  MONTHLY_STATEMENT_LABEL,
+} from '../../domain/monthlyStatement';
+import {
+  payablesSummaryByProvider,
+  pendingUsdOf,
+} from '../../domain/payablesSummary';
+import { formatUsd, formatDate, formatNumber } from '../../domain/format';
 import {
   reportsGateway,
   type ReportPayableRow,
@@ -39,6 +52,7 @@ import {
   type PayableObligationState,
 } from '../../infrastructure/reportsGateway';
 import { getHttpErrorMessage } from '@/lib/api';
+import { careCenterLabel } from '@/lib/displayName';
 
 const STATE_LABEL: Record<PayableObligationState, string> = {
   sin_lote: 'Por pagar',
@@ -54,7 +68,15 @@ const STATE_TONE: Record<PayableObligationState, string> = {
   paid: 'bg-success-soft text-success',
 };
 
-const COLUMNS = 8;
+
+const REPORT_VIEWS = [
+  { value: 'summary', label: 'Resumen' },
+  { value: 'detail', label: 'Detalle' },
+] as const satisfies readonly { value: 'summary' | 'detail'; label: string }[];
+
+/** Cabecera centrada del cuadro resumen. */
+const TH_CENTER =
+  'text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-center whitespace-nowrap';
 
 const EMPTY_SUMMARY: ReportPayableSummary = {
   count: 0,
@@ -89,6 +111,8 @@ export function ReportPayablesList() {
   const [error, setError] = useState<string | null>(null);
   // La columna FACTURACION $ sale del Excel sólo si se pide expresamente.
   const [includeFacturacion, setIncludeFacturacion] = useState(false);
+  // Vista: el detalle renglón por renglón o el cuadro resumen por proveedor.
+  const [view, setView] = useState<'detail' | 'summary'>('detail');
 
   useEffect(() => {
     (async () => {
@@ -176,76 +200,93 @@ export function ReportPayablesList() {
     setSp(new URLSearchParams(), { replace: true });
   };
 
+  // Las columnas de la tabla son las del Excel (hoja "LISTA GENERAL" + las de
+  // pago de la hoja por proveedor), en el mismo orden, con el N° de factura
+  // adelantado a la 2ª columna. FACTURACION $ sólo si el switch está activo.
+  const columnCount = includeFacturacion ? 14 : 13;
+
   const paged = useMemo(() => {
     const start = (filters.page - 1) * filters.limit;
     return rows.slice(start, start + filters.limit);
   }, [rows, filters.page, filters.limit]);
   const lastPage = Math.max(1, Math.ceil(rows.length / filters.limit));
 
+  // Cuadro resumen: cuánto se le debe a cada proveedor, de mayor a menor. Se
+  // calcula sobre las mismas filas del detalle, así que respeta los filtros.
+  const providerSummary = useMemo(
+    () => payablesSummaryByProvider(rows),
+    [rows],
+  );
+  const summaryTotals = useMemo(() => {
+    let gross = 0;
+    let paid = 0;
+    let pending = 0;
+    for (const p of providerSummary) {
+      gross += p.grossUsd;
+      paid += p.paidUsd;
+      pending += p.pendingUsd;
+    }
+    return { gross, paid, pending };
+  }, [providerSummary]);
+
+  // Las obligaciones del proveedor con estado de cuenta mensual (RISLAB) van
+  // en su propio documento, no en el libro general.
+  const monthlyRows = useMemo(
+    () => rows.filter((r) => isMonthlyStatementProvider(r.providerName)),
+    [rows],
+  );
+
+  /**
+   * Descarga el estado de cuenta mensual. Si hay fecha "desde", primero pide
+   * lo anterior a esa fecha para arrancar con el SALDO ANTERIOR: sin eso el
+   * documento partiría de cero y no cuadraría con lo que el proveedor lleva.
+   */
+  const downloadMonthlyStatement = async (): Promise<void> => {
+    let openingBalanceUsd = 0;
+    if (filters.from) {
+      const dayBefore = new Date(`${filters.from}T12:00:00Z`);
+      dayBefore.setUTCDate(dayBefore.getUTCDate() - 1);
+      const previous = await reportsGateway.payables({
+        to: dayBefore.toISOString().slice(0, 10),
+        careCenterId: monthlyRows[0]?.providerId ?? undefined,
+        doctorId: undefined,
+      });
+      openingBalanceUsd = pendingUsdOf(
+        previous.rows.filter((r) => isMonthlyStatementProvider(r.providerName)),
+      );
+    }
+    await downloadMonthlyStatementXlsx(monthlyRows, {
+      providerName: monthlyRows[0]?.providerName,
+      openingBalanceUsd,
+    });
+  };
+
   return (
     <ReportShell
       title="Reporte de cuentas por pagar"
       description={`${formatNumber(summary.count)} obligaci${summary.count === 1 ? 'ón' : 'ones'} en el rango filtrado`}
-      kpis={
-        <KpiRow
-          items={[
-            {
-              icon: Wallet,
-              tone: 'blue',
-              label: 'Neto a pagar',
-              value: formatBs(summary.netBs),
-              hint: `Total ${formatUsd(summary.grossUsd)} · tras retenciones`,
-            },
-            {
-              icon: TrendingUp,
-              tone: 'success',
-              label: 'Total pagado',
-              value: formatBs(summary.paidBs),
-              hint: `${summary.netBs > 0 ? ((summary.paidBs / summary.netBs) * 100).toFixed(1) : '0.0'}% de avance`,
-            },
-            {
-              icon: AlertCircle,
-              tone: 'warning',
-              label: 'Pendiente por pagar',
-              value: formatBs(summary.pendingBs),
-              hint: 'Incluye obligaciones por pagar',
-            },
-            {
-              icon: Banknote,
-              tone: 'cyan',
-              label: 'Cantidad de obligaciones',
-              value: formatNumber(summary.count),
-            },
-          ]}
-        />
-      }
     >
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
           actions={
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                <Switch
-                  id="payables-facturacion"
-                  checked={includeFacturacion}
-                  onCheckedChange={setIncludeFacturacion}
+            <>
+              {monthlyRows.length > 0 ? (
+                <ReportDownloadButton
+                  variant="outline"
+                  label={`Estado de cuenta ${MONTHLY_STATEMENT_LABEL}`}
+                  disabled={loading}
+                  onDownload={downloadMonthlyStatement}
                 />
-                <label
-                  htmlFor="payables-facturacion"
-                  className="text-sm text-muted-foreground cursor-pointer select-none"
-                >
-                  Incluir FACTURACION $
-                </label>
-              </div>
+              ) : null}
               <ReportDownloadButton
                 disabled={loading || rows.length === 0}
                 onDownload={() => downloadPayablesReportXlsx(rows, { includeFacturacion })}
               />
-            </div>
+            </>
           }
           searchValue={searchInput}
           onSearchChange={setSearchInput}
-          searchPlaceholder="Buscar por proveedor, orden interna…"
+          searchPlaceholder="Buscar por N° factura, proveedor, orden interna…"
           hasActiveFilters={hasActiveFilters}
           onClear={clearFilters}
           filters={
@@ -286,7 +327,7 @@ export function ReportPayablesList() {
                   <SelectItem value="all">Centro: todos</SelectItem>
                   {careCenters.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
-                      {c.businessName}
+                      {careCenterLabel(c)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -307,6 +348,12 @@ export function ReportPayablesList() {
                   <SelectItem value="paid">{STATE_LABEL.paid}</SelectItem>
                 </SelectContent>
               </Select>
+              <ToggleFilter
+                id="payables-facturacion"
+                label="Incluir FACTURACION $"
+                checked={includeFacturacion}
+                onCheckedChange={setIncludeFacturacion}
+              />
             </>
           }
         />
@@ -317,26 +364,131 @@ export function ReportPayablesList() {
           </div>
         ) : null}
 
+        <ReportViewTabs
+          value={view}
+          onChange={setView}
+          options={REPORT_VIEWS}
+          right={
+            view === 'summary'
+              ? `${formatNumber(providerSummary.length)} proveedor${providerSummary.length === 1 ? '' : 'es'}`
+              : `${formatNumber(rows.length)} obligaci${rows.length === 1 ? 'ón' : 'ones'}`
+          }
+        />
+
+        {view === 'summary' ? (
+          <div className="m-4 rounded-lg border overflow-hidden">
+            <Table stickyHeader>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className={TH_CENTER}>Nombre</TableHead>
+                  <TableHead className={TH_CENTER}>Tipo</TableHead>
+                  <TableHead className={TH_CENTER}>Órdenes</TableHead>
+                  <TableHead className={TH_CENTER}>Total $</TableHead>
+                  <TableHead className={TH_CENTER}>Abonado $</TableHead>
+                  <TableHead className={TH_CENTER}>Órdenes por pagar $</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <SkeletonTableRows rows={6} columns={6} />
+                ) : providerSummary.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="p-0">
+                      <EmptyState
+                        icon={Banknote}
+                        title={hasActiveFilters ? 'Sin resultados' : 'Sin cuentas por pagar'}
+                        description={
+                          hasActiveFilters
+                            ? 'Ajusta los filtros para ver más resultados.'
+                            : 'Aún no hay obligaciones de pago a proveedores.'
+                        }
+                      />
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  <>
+                    {providerSummary.map((prov) => (
+                      <TableRow
+                        key={prov.key}
+                        className="hover:bg-[oklch(0.985_0.003_250)]"
+                      >
+                        <TableCell className="py-3 px-3 text-sm font-medium" wrap>
+                          {prov.name}
+                          {/* Su deuda va en un documento aparte, no en el libro general. */}
+                          {isMonthlyStatementProvider(prov.name) ? (
+                            <Badge
+                              variant="outline"
+                              className="ml-2 text-[10px] border-transparent bg-brand-cyan-soft text-brand-blue-strong"
+                            >
+                              Estado de cuenta aparte
+                            </Badge>
+                          ) : null}
+                        </TableCell>
+                        <TableCell className="py-3 px-3 text-sm text-center text-muted-foreground">
+                          {prov.providerType === 'doctor' ? 'Doctor' : 'Centro'}
+                        </TableCell>
+                        <TableCell className="py-3 px-3 text-sm text-center">
+                          {formatNumber(prov.ordersCount)}
+                        </TableCell>
+                        <TableCell className="py-3 px-3 text-sm font-mono text-center">
+                          {formatUsd(prov.grossUsd)}
+                        </TableCell>
+                        <TableCell className="py-3 px-3 text-sm font-mono text-center text-success">
+                          {formatUsd(prov.paidUsd)}
+                        </TableCell>
+                        <TableCell className="py-3 px-3 text-sm font-mono text-center font-semibold">
+                          {formatUsd(prov.pendingUsd)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow className="bg-muted/40 font-semibold">
+                      <TableCell className="py-3 px-3 text-sm" colSpan={3}>
+                        TOTAL
+                      </TableCell>
+                      <TableCell className="py-3 px-3 text-sm font-mono text-center">
+                        {formatUsd(summaryTotals.gross)}
+                      </TableCell>
+                      <TableCell className="py-3 px-3 text-sm font-mono text-center">
+                        {formatUsd(summaryTotals.paid)}
+                      </TableCell>
+                      <TableCell className="py-3 px-3 text-sm font-mono text-center">
+                        {formatUsd(summaryTotals.pending)}
+                      </TableCell>
+                    </TableRow>
+                  </>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        ) : (
         <div className="m-4 rounded-lg border overflow-hidden">
-        <Table>
+        <Table stickyHeader>
           <TableHeader>
             <TableRow>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Fecha</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Proveedor</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Paciente</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Procedimiento</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Orden</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Total USD</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Neto Bs.</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Estado</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Fecha</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">N° Factura</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Proveedor</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Nombre del paciente</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">N° Orden</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Seguros</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Procedimiento</TableHead>
+              {includeFacturacion ? (
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Facturación $</TableHead>
+              ) : null}
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Órdenes por pagar $</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Órdenes pagadas $</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Monto pagado $</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Fecha de pago</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Ref. del pago</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Estado</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <SkeletonTableRows rows={6} columns={COLUMNS} />
+              <SkeletonTableRows rows={6} columns={columnCount} />
             ) : paged.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={COLUMNS} className="p-0">
+                <TableCell colSpan={columnCount} className="p-0">
                   <EmptyState
                     icon={Banknote}
                     title={hasActiveFilters ? 'Sin resultados' : 'Sin cuentas por pagar'}
@@ -349,46 +501,82 @@ export function ReportPayablesList() {
                 </TableCell>
               </TableRow>
             ) : (
-              paged.map((r) => (
-                <TableRow
-                  key={r.orderId + r.internalNumber}
-                  className="hover:bg-[oklch(0.985_0.003_250)]"
-                >
-                  <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
-                    {formatDate(r.orderDate)}
-                  </TableCell>
-                  <TableCell className="py-3.5 px-4 text-sm font-medium">
-                    <div>{r.providerName}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {r.providerType === 'doctor' ? 'Doctor' : 'Centro'}
-                      {r.insuranceName ? ` · ${r.insuranceName}` : ''}
-                    </div>
-                  </TableCell>
-                  <TableCell className="py-3.5 px-4 text-sm truncate">
-                    {r.patientName || '—'}
-                  </TableCell>
-                  <TableCell className="py-3.5 px-4 text-sm truncate max-w-[220px]">
-                    {r.procedure || '—'}
-                  </TableCell>
-                  <TableCell className="py-3.5 px-4 text-sm font-mono">
-                    {r.internalNumber}
-                  </TableCell>
-                  <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                    {formatUsd(r.grossUsd)}
-                  </TableCell>
-                  <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                    {formatBs(r.netBs)}
-                  </TableCell>
-                  <TableCell className="py-3.5 px-4">
-                    <Badge
-                      variant="outline"
-                      className={`text-xs ${STATE_TONE[r.state]} border-transparent`}
-                    >
-                      {STATE_LABEL[r.state]}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))
+              paged.map((r) => {
+                const paid = r.state === 'paid';
+                const refs = (r.payments ?? []).map(formatPayablePaymentRef);
+                return (
+                  <TableRow
+                    key={r.orderId + r.internalNumber}
+                    className="hover:bg-[oklch(0.985_0.003_250)]"
+                  >
+                    <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                      {/* Fecha de FACTURA; si la orden aún no se facturó, la suya. */}
+                      {formatDate(reportRowDate(r) ?? r.orderDate)}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono whitespace-nowrap">
+                      {r.invoiceNumber || '—'}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-medium max-w-[220px]" wrap>
+                      <div>{r.providerName}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {r.providerType === 'doctor' ? 'Doctor' : 'Centro'}
+                      </div>
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm">
+                      {r.patientName || '—'}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono whitespace-nowrap">
+                      {r.internalNumber}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm">
+                      {r.insuranceName || 'AFMI'}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm max-w-[260px]" wrap>
+                      {r.procedure || '—'}
+                    </TableCell>
+                    {includeFacturacion ? (
+                      <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
+                        {formatUsd(r.facturacionUsd ?? 0)}
+                      </TableCell>
+                    ) : null}
+                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
+                      {paid ? '—' : formatUsd(r.grossUsd ?? 0)}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
+                      {paid ? formatUsd(r.grossUsd ?? 0) : '—'}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
+                      {/* Lo abonado es del LOTE (se repite en sus renglones) e
+                          incluye los pagos parciales, no sólo los lotes saldados. */}
+                      {r.payableCoveredUsd ? formatUsd(r.payableCoveredUsd) : '—'}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                      {r.paymentDate ? formatDate(r.paymentDate) : '—'}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-xs max-w-[280px]" wrap>
+                      {refs.length > 0 ? (
+                        <div className="space-y-0.5">
+                          {refs.map((ref, i) => (
+                            <div key={i} title={ref}>
+                              {ref}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        (r.paymentReference ?? '—')
+                      )}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4">
+                      <Badge
+                        variant="outline"
+                        className={`text-xs ${STATE_TONE[r.state]} border-transparent`}
+                      >
+                        {STATE_LABEL[r.state]}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>
@@ -403,6 +591,7 @@ export function ReportPayablesList() {
           itemLabel="obligaciones"
         />
         </div>
+        )}
       </div>
     </ReportShell>
   );

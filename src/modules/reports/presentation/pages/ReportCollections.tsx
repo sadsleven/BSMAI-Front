@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowDownCircle, TrendingUp, Banknote, ListChecks } from 'lucide-react';
+import { ArrowDownCircle } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -26,20 +26,18 @@ import {
   type OrderPaymentType,
 } from '@/modules/orders/domain/models/order';
 import { ReportShell } from '../components/ReportShell';
-import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { ReportDownloadButton } from '../components/ReportDownloadButton';
 import { downloadReportTableXlsx, excelDateCell } from '../components/reportsExcel';
-import { formatUsd, formatBs, formatDate, formatNumber } from '../../domain/format';
+import { formatUsd, formatBs, formatDate } from '../../domain/format';
 import { formatMoney } from '@/lib/format/money';
 import {
   reportsGateway,
   type ReportCollectionRow,
-  type ReportFlowSummary,
 } from '../../infrastructure/reportsGateway';
 import { getHttpErrorMessage } from '@/lib/api';
 
-const COLUMNS = 8;
+const COLUMNS = 10;
 
 const DEBTOR_TYPE_LABEL: Record<ReportCollectionRow['debtorType'], string> = {
   insurance: 'Seguro',
@@ -115,31 +113,6 @@ export function ReportCollections() {
     return items.filter((it) => !filters.type || it.type === filters.type);
   }, [items, filters.type]);
 
-  // KPIs derivados de las filas visibles: así el filtro de método (client-side)
-  // afecta totales, conteo y promedio igual que a la tabla y al Excel.
-  const summary: ReportFlowSummary = useMemo(() => {
-    let totalUsd = 0;
-    let totalBs = 0;
-    filtered.forEach((it) => {
-      totalUsd += it.amountInUsd;
-      totalBs += it.amountInBs;
-    });
-    return {
-      count: filtered.length,
-      totalUsd: Math.round(totalUsd * 100) / 100,
-      totalBs: Math.round(totalBs * 100) / 100,
-    };
-  }, [filtered]);
-
-  const topMethod = useMemo(() => {
-    const byType = new Map<string, number>();
-    filtered.forEach((it) => byType.set(it.type, (byType.get(it.type) ?? 0) + it.amountInUsd));
-    const top = Array.from(byType.entries()).sort((a, b) => b[1] - a[1])[0];
-    return top
-      ? { label: PAYMENT_TYPE_LABEL[top[0] as OrderPaymentType] ?? top[0], amount: top[1] }
-      : { label: '—', amount: 0 };
-  }, [filtered]);
-
   const paged = useMemo(() => {
     const start = (filters.page - 1) * filters.limit;
     return filtered.slice(start, start + filters.limit);
@@ -157,38 +130,6 @@ export function ReportCollections() {
     <ReportShell
       title="Cobros recibidos"
       description="Pagos registrados desde aseguradoras y titulares (cuentas por cobrar)"
-      kpis={
-        <KpiRow
-          items={[
-            {
-              icon: ArrowDownCircle,
-              tone: 'success',
-              label: 'Total cobrado (USD)',
-              value: formatUsd(summary.totalUsd),
-              hint: formatBs(summary.totalBs),
-            },
-            {
-              icon: ListChecks,
-              tone: 'blue',
-              label: 'Cobros registrados',
-              value: formatNumber(summary.count),
-            },
-            {
-              icon: Banknote,
-              tone: 'cyan',
-              label: 'Método principal',
-              value: topMethod.label,
-              hint: topMethod.amount ? formatUsd(topMethod.amount) : undefined,
-            },
-            {
-              icon: TrendingUp,
-              tone: 'warning',
-              label: 'Promedio por cobro (USD)',
-              value: summary.count > 0 ? formatUsd(summary.totalUsd / summary.count) : '—',
-            },
-          ]}
-        />
-      }
     >
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
@@ -256,14 +197,16 @@ export function ReportCollections() {
         ) : null}
 
         <div className="m-4 rounded-lg border overflow-hidden">
-        <Table>
+        <Table stickyHeader>
           <TableHeader>
             <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Fecha</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Deudor</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Tipo</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Lote</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Método</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Referencia</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Moneda</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto USD</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto Bs.</TableHead>
@@ -293,10 +236,10 @@ export function ReportCollections() {
                     {formatDate(it.paymentDate)}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-medium">
-                    <div>{it.debtorName}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {DEBTOR_TYPE_LABEL[it.debtorType] ?? it.debtorType}
-                    </div>
+                    {it.debtorName}
+                  </TableCell>
+                  <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                    {DEBTOR_TYPE_LABEL[it.debtorType] ?? it.debtorType}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono">
                     {it.receivableNumber}
@@ -309,8 +252,11 @@ export function ReportCollections() {
                   <TableCell className="py-3.5 px-4 text-sm font-mono">
                     {it.referenceNumber ?? '—'}
                   </TableCell>
+                  <TableCell className="py-3.5 px-4 text-sm font-mono text-center">
+                    {it.amountCurrency}
+                  </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                    {it.amountCurrency} {formatMoney(it.amountValue)}
+                    {formatMoney(it.amountValue)}
                   </TableCell>
                   <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-success">
                     {formatUsd(it.amountInUsd)}

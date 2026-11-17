@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Clock4, AlertCircle, TrendingDown, Hourglass } from 'lucide-react';
+import { Clock4 } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -20,7 +20,6 @@ import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ReportShell } from '../components/ReportShell';
-import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { ReportDownloadButton } from '../components/ReportDownloadButton';
 import { downloadReportTableXlsx } from '../components/reportsExcel';
@@ -105,16 +104,6 @@ export function ReportAging() {
     <ReportShell
       title="Antigüedad de saldos"
       description={`Distribución del saldo pendiente por días — modo ${isReceivable ? 'cuentas por cobrar' : 'cuentas por pagar'}`}
-      kpis={
-        <KpiRow
-          items={[
-            { icon: Hourglass, tone: 'success', label: '0–30 días', value: fmt(valueOf(byBucket('0-30'))) },
-            { icon: Clock4, tone: 'cyan', label: '31–60 días', value: fmt(valueOf(byBucket('31-60'))) },
-            { icon: TrendingDown, tone: 'warning', label: '61–90 días', value: fmt(valueOf(byBucket('61-90'))) },
-            { icon: AlertCircle, tone: 'destructive', label: 'Más de 90 días', value: fmt(valueOf(byBucket('90+'))) },
-          ]}
-        />
-      }
     >
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
@@ -171,7 +160,7 @@ export function ReportAging() {
         ) : null}
 
         <div className="m-4 rounded-lg border overflow-hidden">
-        <Table>
+        <Table stickyHeader>
           <TableHeader>
             <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Antigüedad</TableHead>

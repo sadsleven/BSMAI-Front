@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { FileSpreadsheet, Receipt, Users, Wallet, TrendingUp } from 'lucide-react';
+import { FileSpreadsheet, Receipt } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -25,7 +25,6 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { notify } from '@/lib/notifications/toast';
 import { getHttpErrorMessage } from '@/lib/api';
 import { ReportShell } from '../components/ReportShell';
-import { KpiRow } from '../components/KpiCard';
 import { downloadArcXlsx } from '../components/arcExcel';
 import { formatBs, formatNumber } from '../../domain/format';
 import {
@@ -154,18 +153,6 @@ export function ReportArc() {
     return list;
   }, [report, filters.providerType, filters.search]);
 
-  const totals = useMemo(() => {
-    let lines = 0;
-    let baseBs = 0;
-    let retainedBs = 0;
-    beneficiaries.forEach((b) => {
-      lines += b.lines.length;
-      baseBs += b.totalBaseBs;
-      retainedBs += b.totalRetainedBs;
-    });
-    return { lines, baseBs, retainedBs };
-  }, [beneficiaries]);
-
   const paged = useMemo(() => {
     const start = (filters.page - 1) * filters.limit;
     return beneficiaries.slice(start, start + filters.limit);
@@ -184,37 +171,6 @@ export function ReportArc() {
     <ReportShell
       title="Comprobantes ARC"
       description={`Comprobante anual de retenciones (Decreto 1.808) · ejercicio fiscal ${filters.year}`}
-      kpis={
-        <KpiRow
-          items={[
-            {
-              icon: Users,
-              tone: 'blue',
-              label: 'Beneficiarios',
-              value: formatNumber(beneficiaries.length),
-              hint: 'Médicos y centros con retenciones en el año',
-            },
-            {
-              icon: Receipt,
-              tone: 'cyan',
-              label: 'Retenciones',
-              value: formatNumber(totals.lines),
-            },
-            {
-              icon: Wallet,
-              tone: 'warning',
-              label: 'Base total',
-              value: formatBs(totals.baseBs),
-            },
-            {
-              icon: TrendingUp,
-              tone: 'success',
-              label: 'Retenido total',
-              value: formatBs(totals.retainedBs),
-            },
-          ]}
-        />
-      }
     >
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
@@ -261,7 +217,7 @@ export function ReportArc() {
         ) : null}
 
         <div className="m-4 rounded-lg border overflow-hidden">
-          <Table>
+          <Table stickyHeader>
             <TableHeader>
               <TableRow>
                 <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Beneficiario</TableHead>

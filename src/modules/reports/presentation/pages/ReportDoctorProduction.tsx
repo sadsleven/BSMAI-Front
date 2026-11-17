@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { UserCog, TrendingUp, Crown, Stethoscope } from 'lucide-react';
+import { UserCog } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -20,7 +20,6 @@ import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ReportShell } from '../components/ReportShell';
-import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { ReportDownloadButton } from '../components/ReportDownloadButton';
 import { downloadReportTableXlsx } from '../components/reportsExcel';
@@ -98,12 +97,6 @@ export function ReportDoctorProduction() {
       .sort((a, b) => b.grossUsd - a.grossUsd);
   }, [rows, filters.providerType, filters.search]);
 
-  const top = filtered[0];
-  const totalOrders = filtered.reduce((s, r) => s + r.ordersCount, 0);
-  const totalGrossUsd = filtered.reduce((s, r) => s + r.grossUsd, 0);
-  const totalPaidBs = filtered.reduce((s, r) => s + r.paidBs, 0);
-  const totalPendingBs = filtered.reduce((s, r) => s + r.pendingBs, 0);
-
   const hasActiveFilters =
     !!filters.search || !!filters.from || !!filters.to || !!filters.providerType;
   const clearFilters = () => {
@@ -115,40 +108,6 @@ export function ReportDoctorProduction() {
     <ReportShell
       title="Producción por médico"
       description="Volumen de órdenes y monto generado por cada proveedor (doctor o centro de atención)"
-      kpis={
-        <KpiRow
-          items={[
-            {
-              icon: UserCog,
-              tone: 'blue',
-              label: 'Proveedores activos',
-              value: formatNumber(filtered.length),
-              hint: `${formatNumber(totalOrders)} órdenes`,
-            },
-            {
-              icon: Stethoscope,
-              tone: 'cyan',
-              label: 'Total facturado al proveedor',
-              value: formatUsd(totalGrossUsd),
-              hint: 'Bruto, antes de retenciones',
-            },
-            {
-              icon: TrendingUp,
-              tone: 'success',
-              label: 'Pagado',
-              value: formatBs(totalPaidBs),
-              hint: `Pendiente ${formatBs(totalPendingBs)}`,
-            },
-            {
-              icon: Crown,
-              tone: 'warning',
-              label: 'Top proveedor',
-              value: top ? top.providerName : '—',
-              hint: top ? formatUsd(top.grossUsd) : undefined,
-            },
-          ]}
-        />
-      }
     >
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
@@ -215,7 +174,7 @@ export function ReportDoctorProduction() {
         ) : null}
 
         <div className="m-4 rounded-lg border overflow-hidden">
-        <Table>
+        <Table stickyHeader>
           <TableHeader>
             <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">#</TableHead>
@@ -223,8 +182,8 @@ export function ReportDoctorProduction() {
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Tipo</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Órdenes</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Lotes</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">TotalUSD</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">TotalBs.</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Total USD</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Total Bs.</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Neto Bs.</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Pagado Bs.</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Pendiente Bs.</TableHead>

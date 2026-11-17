@@ -763,6 +763,10 @@ export const careCenterSchema = z
       .string({ error: 'La razón social es obligatoria' })
       .min(2, 'La razón social debe tener al menos 2 caracteres')
       .max(200, 'La razón social no puede superar 200 caracteres'),
+    shortName: z
+      .string()
+      .max(100, 'El nombre corto no puede superar 100 caracteres')
+      .optional(),
     email: optionalEmailSchema,
     rif: optionalRifSchema,
     centerAddress: z

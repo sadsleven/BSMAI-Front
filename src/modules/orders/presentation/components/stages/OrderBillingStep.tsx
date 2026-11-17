@@ -179,6 +179,19 @@ export function OrderBillingStep({
   const [generateInvoice, setGenerateInvoice] = useState<boolean>(
     isInsurance || !!invoiceActive,
   );
+  /**
+   * Órdenes de contado: al proveedor se le paga ahí mismo, así que la orden no
+   * debe entrar en Cuentas por pagar. Viene encendido por defecto (es lo
+   * habitual en contado) y se puede corregir después, mientras la orden no
+   * esté dentro de un lote de pago.
+   */
+  const isCash = order.type === 'cash';
+  const paidOnSiteSaved = (order.internalOrders ?? []).some(
+    (io) => io.providerPaidOnSite,
+  );
+  const [providerPaidOnSite, setProviderPaidOnSite] = useState<boolean>(
+    isFinalized ? paidOnSiteSaved : isCash,
+  );
   /** ¿Esta finalización emite factura? */
   const invoiceEnabled = isInsurance || generateInvoice;
   /**
@@ -615,6 +628,7 @@ export function OrderBillingStep({
         })),
         billingExchangeRateId: invoiceRateId,
         generateInvoice: invoiceEnabled,
+        ...(isCash ? { providerPaidOnSite } : {}),
         ...(invoiceEnabled ? { invoiceNumber, invoiceDate } : {}),
         ...(invoiceEnabled && groupedSelection.length
           ? { coveredOrderIds: groupedSelection }
@@ -622,7 +636,11 @@ export function OrderBillingStep({
         ...(isInsurance ? { showExchangeRate: showRate } : {}),
       });
       notify.success(
-        invoiceEnabled ? 'Orden finalizada' : 'Orden finalizada sin factura',
+        isCash && providerPaidOnSite
+          ? 'Orden finalizada · pagada al proveedor'
+          : invoiceEnabled
+            ? 'Orden finalizada'
+            : 'Orden finalizada sin factura',
       );
       onSaved();
     } catch (err) {
@@ -666,6 +684,7 @@ export function OrderBillingStep({
             p.providerType === 'care_center' ? p.providerId : undefined,
           amount: p.amount!,
         })),
+        ...(isCash ? { providerPaidOnSite } : {}),
       });
       notify.success('Montos a proveedor actualizados');
       onSaved();
@@ -817,6 +836,25 @@ export function OrderBillingStep({
               checked={generateInvoice}
               onCheckedChange={setGenerateInvoice}
             />
+          </div>
+        ) : null}
+
+        {isCash ? (
+          <div className="rounded-lg border bg-card p-3 mb-4">
+            <FormSwitch
+              id="providerPaidOnSite"
+              label="Pagado al proveedor en el acto"
+              description="En las órdenes de contado al médico o al centro se le paga el mismo día. Con esto encendido la orden se finaliza pagada y no aparece en Cuentas por pagar."
+              checked={providerPaidOnSite}
+              onCheckedChange={setProviderPaidOnSite}
+              disabled={amountsLocked || (isFinalized && !canSetProviderAmount)}
+            />
+            {isFinalized ? (
+              <p className="text-xs text-muted-foreground mt-2">
+                Para cambiarlo, la orden no puede estar dentro de un lote de
+                cuentas por pagar. Guarda con "Guardar montos".
+              </p>
+            ) : null}
           </div>
         ) : null}
 

@@ -24,6 +24,7 @@ import {
   type OrderStatus,
 } from '../../domain/models/order';
 import { OrderChangeHistory } from './OrderChangeHistory';
+import { careCenterLabel } from '@/lib/displayName';
 
 export type OrderDetailProps = {
   orderId: string | null;
@@ -111,7 +112,16 @@ export function OrderDetailBody({
       <DetailSection title="General">
         <DetailRow label="N° orden" value={order.orderNumber} mono />
         <DetailRow label="Sucursal" value={order.branch?.name} />
-        <DetailRow label="Tipo" value={ORDER_TYPE_LABEL[order.type]} />
+        <DetailRow
+          label="Tipo"
+          value={
+            // En contado se avisa si al proveedor ya se le pagó en el acto: esa
+            // orden no entra en cuentas por pagar.
+            (order.internalOrders ?? []).some((io) => io.providerPaidOnSite)
+              ? `${ORDER_TYPE_LABEL[order.type]} · pagada al proveedor`
+              : ORDER_TYPE_LABEL[order.type]
+          }
+        />
         <DetailRow
           label="Estado"
           value={
@@ -229,7 +239,7 @@ export function OrderDetailBody({
                     <span className="ml-2 text-xs text-muted-foreground">
                       {row.providerType === 'doctor'
                         ? holderDisplayName(row.doctor ?? undefined)
-                        : (row.careCenter?.businessName ?? '—')}
+                        : (careCenterLabel(row.careCenter) || '—')}
                       {row.specialty?.name ? ` · ${row.specialty.name}` : ''}
                     </span>
                   </li>

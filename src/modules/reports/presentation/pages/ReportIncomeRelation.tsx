@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { TrendingUp, Banknote, Coins, Building2 } from 'lucide-react';
+import { TrendingUp } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -24,7 +24,6 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { insuranceGateway } from '@/modules/insurances/infrastructure/insuranceGateway';
 import type { Insurance } from '@/modules/insurances/domain/models/insurance';
 import { ReportShell } from '../components/ReportShell';
-import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { ReportDownloadButton } from '../components/ReportDownloadButton';
 import { downloadIncomeRelationXlsx } from '../components/reportsExcel';
@@ -32,13 +31,20 @@ import { formatUsd, formatBs, formatDate, formatNumber } from '../../domain/form
 import {
   reportsGateway,
   type InvoiceStatus,
-  type ReportInvoiceClientRow,
   type ReportInvoiceRow,
   type ReportInvoiceSummary,
 } from '../../infrastructure/reportsGateway';
 import { getHttpErrorMessage } from '@/lib/api';
 
-const COLUMNS = 9;
+// Columnas de la tabla en pantalla. Son MENOS que las del Excel: el cliente
+// pidió dejar sólo lo que aporta al revisar (sin remesa, titular, RIF del
+// titular, N° de control ni tasa) y todo centrado.
+const COLUMNS = 10;
+
+/** Cabecera centrada, sin corte de palabras. */
+const TH = 'text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-center whitespace-nowrap';
+/** Celda centrada. */
+const TD = 'py-3.5 px-3 text-sm text-center';
 
 const EMPTY_SUMMARY: ReportInvoiceSummary = {
   count: 0,
@@ -74,7 +80,6 @@ export function ReportIncomeRelation() {
   );
   const [searchInput, setSearchInput] = useState(filters.search);
   const [rows, setRows] = useState<ReportInvoiceRow[]>([]);
-  const [byClient, setByClient] = useState<ReportInvoiceClientRow[]>([]);
   const [summary, setSummary] = useState<ReportInvoiceSummary>(EMPTY_SUMMARY);
   const [insurances, setInsurances] = useState<Insurance[]>([]);
   const [loading, setLoading] = useState(true);
@@ -111,7 +116,6 @@ export function ReportIncomeRelation() {
         });
         if (cancelled) return;
         setRows(res.rows);
-        setByClient(res.byClient);
         setSummary(res.summary);
       } catch (e) {
         if (!cancelled) setError(getHttpErrorMessage(e, 'No se pudo cargar el reporte'));
@@ -171,10 +175,6 @@ export function ReportIncomeRelation() {
   }, [rows, filters.page, filters.limit]);
   const lastPage = Math.max(1, Math.ceil(rows.length / filters.limit));
 
-  const topClient = byClient[0];
-  const marginPct =
-    summary.amountUsd > 0 ? (summary.marginUsd / summary.amountUsd) * 100 : 0;
-
   return (
     <ReportShell
       title="Relación de ingresos"
@@ -183,43 +183,6 @@ export function ReportIncomeRelation() {
           ? ` · ${formatNumber(summary.cancelledCount)} anulada${summary.cancelledCount === 1 ? '' : 's'}`
           : ''
       }`}
-      kpis={
-        <KpiRow
-          items={[
-            {
-              icon: TrendingUp,
-              tone: 'success',
-              label: 'Ingresos facturados',
-              value: formatUsd(summary.amountUsd),
-              hint: `${formatNumber(summary.activeCount)} facturas · promedio ${formatUsd(summary.avgUsd)}`,
-            },
-            {
-              icon: Banknote,
-              tone: 'blue',
-              label: 'Ingresos en bolívares',
-              value: formatBs(summary.amountBs),
-              hint:
-                summary.avgRateBs > 0
-                  ? `Tasa promedio ${formatBs(summary.avgRateBs)}`
-                  : 'Sin tasa registrada',
-            },
-            {
-              icon: Coins,
-              tone: 'warning',
-              label: 'Costo de proveedores',
-              value: formatUsd(summary.costUsd),
-              hint: `Margen ${formatUsd(summary.marginUsd)} (${marginPct.toFixed(1)}%)`,
-            },
-            {
-              icon: Building2,
-              tone: 'cyan',
-              label: 'Cliente principal',
-              value: topClient?.clientName ?? '—',
-              hint: topClient ? formatUsd(topClient.amountUsd) : undefined,
-            },
-          ]}
-        />
-      }
     >
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
@@ -299,18 +262,19 @@ export function ReportIncomeRelation() {
         ) : null}
 
         <div className="m-4 rounded-lg border overflow-hidden">
-          <Table>
+          <Table stickyHeader>
             <TableHeader>
               <TableRow>
-                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Fecha</TableHead>
-                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Cliente</TableHead>
-                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Paciente</TableHead>
-                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Factura</TableHead>
-                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Orden interna</TableHead>
-                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Monto facturado $</TableHead>
-                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Tasa del día</TableHead>
-                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Monto facturado Bs.</TableHead>
-                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Costo $</TableHead>
+                <TableHead className={TH}>Fecha</TableHead>
+                <TableHead className={TH}>Cliente</TableHead>
+                <TableHead className={TH}>Paciente</TableHead>
+                <TableHead className={TH}>Médico tratante</TableHead>
+                <TableHead className={TH}>N° Clave</TableHead>
+                <TableHead className={TH}>N° Factura</TableHead>
+                <TableHead className={TH}>N° Orden interna</TableHead>
+                <TableHead className={TH}>Monto facturado $</TableHead>
+                <TableHead className={TH}>Monto facturado Bs.</TableHead>
+                <TableHead className={TH}>Costo $</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -332,13 +296,17 @@ export function ReportIncomeRelation() {
                 </TableRow>
               ) : (
                 paged.map((r) => {
+                  // Las anuladas conservan su renglón (el correlativo no se
+                  // salta) pero sin datos ni montos: igual que en el Excel.
                   const cancelled = r.status === 'cancelled';
+                  const dash = (v: string | null | undefined) =>
+                    cancelled ? '—' : v || '—';
                   return (
                     <TableRow key={r.invoiceId} className="hover:bg-[oklch(0.985_0.003_250)]">
-                      <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                      <TableCell className={`${TD} text-muted-foreground whitespace-nowrap`}>
                         {formatDate(r.invoiceDate)}
                       </TableCell>
-                      <TableCell className="py-3.5 px-4 text-sm">
+                      <TableCell className={TD}>
                         {cancelled ? (
                           <Badge
                             variant="outline"
@@ -347,36 +315,30 @@ export function ReportIncomeRelation() {
                             Anulada
                           </Badge>
                         ) : (
-                          <>
-                            <div className="font-medium truncate">{r.clientName}</div>
-                            <div className="text-xs text-muted-foreground truncate">
-                              Titular: {r.holderName}
-                            </div>
-                          </>
+                          <span className="font-medium">{r.clientName}</span>
                         )}
                       </TableCell>
-                      <TableCell className="py-3.5 px-4 text-sm truncate">
-                        {cancelled ? '—' : r.patientName || '—'}
+                      <TableCell className={TD}>{dash(r.patientName)}</TableCell>
+                      <TableCell className={`${TD} max-w-[220px] truncate`}>
+                        {dash(r.doctorName)}
                       </TableCell>
-                      <TableCell className="py-3.5 px-4 text-sm font-mono">
-                        <div>{r.invoiceNumber}</div>
-                        <div className="text-xs text-muted-foreground">
-                          Control: {r.controlNumber || '—'}
-                        </div>
+                      <TableCell className={`${TD} font-mono whitespace-nowrap`}>
+                        {dash(r.serviceKey)}
                       </TableCell>
-                      <TableCell className="py-3.5 px-4 text-sm font-mono">
+                      <TableCell className={`${TD} font-mono whitespace-nowrap`}>
+                        {r.invoiceNumber}
+                      </TableCell>
+                      <TableCell className={`${TD} font-mono`}>
                         {cancelled ? '—' : r.internalNumbers || r.orderNumbers}
                       </TableCell>
-                      <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
+                      <TableCell className={`${TD} font-mono`}>
                         {cancelled ? '—' : formatUsd(r.amountUsd)}
                       </TableCell>
-                      <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-muted-foreground">
-                        {cancelled || r.rateBs == null ? '—' : formatBs(r.rateBs)}
+                      <TableCell className={`${TD} font-mono`}>
+                        {/* Las anuladas van en 0,00, igual que en el Excel. */}
+                        {cancelled ? formatBs(0) : r.amountBs == null ? '—' : formatBs(r.amountBs)}
                       </TableCell>
-                      <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                        {cancelled || r.amountBs == null ? '—' : formatBs(r.amountBs)}
-                      </TableCell>
-                      <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-muted-foreground">
+                      <TableCell className={`${TD} font-mono text-muted-foreground`}>
                         {cancelled ? '—' : formatUsd(r.costUsd)}
                       </TableCell>
                     </TableRow>

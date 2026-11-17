@@ -23,6 +23,10 @@ import {
   HandCoins,
   Receipt,
   ChevronDown,
+  Library,
+  Cog,
+  PanelLeftClose,
+  PanelLeftOpen,
   Coins,
   Banknote,
   BarChart3,
@@ -45,6 +49,7 @@ import { getFullName } from '@/modules/auth/domain/models/authUser';
 import { usePermissions } from '@/modules/auth/presentation/hooks/usePermissions';
 import { PERMISSIONS } from '@/modules/auth/domain/models/permissions';
 import { notify } from '@/lib/notifications/toast';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 type NavItem = {
   icon: LucideIcon;
@@ -56,6 +61,8 @@ type NavItem = {
 
 type NavSection = {
   title: string;
+  /** Shown in the mini (collapsed) sidebar. */
+  icon: LucideIcon;
   items: NavItem[];
 };
 
@@ -64,8 +71,8 @@ export type SidebarContentProps = {
   onNavigate?: () => void;
 };
 
-/** Inner UI of the sidebar — reusable in desktop aside and mobile drawer. */
-export function SidebarContent({ onNavigate }: SidebarContentProps) {
+/** Nav model + shared state behind both the full and the mini sidebar. */
+function useSidebarNav() {
   const location = useLocation();
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
@@ -85,6 +92,7 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
   const sections: NavSection[] = [
     {
       title: 'Principal',
+      icon: Home,
       items: [
         { icon: Home, label: 'Inicio', href: '/', show: !isProvider },
         {
@@ -151,6 +159,7 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
     },*/
     {
       title: 'Catálogos',
+      icon: Library,
       items: [
         {
           icon: Stethoscope,
@@ -180,6 +189,7 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
     },
     {
       title: 'Reportes',
+      icon: BarChart3,
       items: [
         {
           icon: LayoutDashboard,
@@ -281,6 +291,7 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
     },
     {
       title: 'Administración',
+      icon: Cog,
       items: [
         {
           icon: Users,
@@ -379,6 +390,31 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
       return next;
     });
   };
+
+  return {
+    user,
+    initials,
+    primaryRole,
+    visibleSections,
+    isItemActive,
+    openSections,
+    toggleSection,
+    handleLogout,
+  };
+}
+
+/** Inner UI of the sidebar — reusable in desktop aside and mobile drawer. */
+export function SidebarContent({ onNavigate }: SidebarContentProps) {
+  const {
+    user,
+    initials,
+    primaryRole,
+    visibleSections,
+    isItemActive,
+    openSections,
+    toggleSection,
+    handleLogout,
+  } = useSidebarNav();
 
   return (
     <div className="flex flex-col h-full">
@@ -492,11 +528,173 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
   );
 }
 
-/** Desktop sticky sidebar. Hidden below md. */
-export function Sidebar() {
+/**
+ * Icon-only sidebar body (mini). Each section is a button that opens a flyout
+ * with its links, so the whole nav stays reachable at 64px wide.
+ */
+function SidebarMiniContent() {
+  const { user, initials, primaryRole, visibleSections, isItemActive, handleLogout } =
+    useSidebarNav();
+  const [openFlyout, setOpenFlyout] = useState<string | null>(null);
+
   return (
-    <aside className="hidden md:flex w-64 h-screen sticky top-0 self-start bg-sidebar border-r border-sidebar-border flex-col shrink-0 z-30">
-      <SidebarContent />
+    <div className="flex flex-col h-full">
+      {/* Brand */}
+      <div className="px-2 py-[18px] border-b border-sidebar-border flex justify-center">
+        <div
+          title="AFMI — Sistema de gestión médica"
+          className="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-cyan to-brand-blue flex items-center justify-center overflow-hidden shadow-sm"
+        >
+          <img
+            src="/logo-afmi-cuadrado.png"
+            alt="AFMI"
+            className="w-full h-full object-contain p-0.5"
+          />
+        </div>
+      </div>
+
+      {/* Nav */}
+      <nav className="flex-1 px-2 py-3 overflow-y-auto flex flex-col items-center gap-1">
+        {visibleSections.map((section) => {
+          const SectionIcon = section.icon;
+          const items = section.items.filter((i) => i.show);
+          const sectionActive = items.some((i) => isItemActive(i.href));
+          return (
+            <Popover
+              key={section.title}
+              open={openFlyout === section.title}
+              onOpenChange={(open) => setOpenFlyout(open ? section.title : null)}
+            >
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  title={section.title}
+                  aria-label={section.title}
+                  className={cn(
+                    'relative w-10 h-10 rounded-lg flex items-center justify-center transition-colors',
+                    sectionActive
+                      ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                      : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                  )}
+                >
+                  {sectionActive && (
+                    <span
+                      aria-hidden
+                      className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full bg-brand-cyan"
+                    />
+                  )}
+                  <SectionIcon className="w-[18px] h-[18px]" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                side="right"
+                align="start"
+                sideOffset={10}
+                className="w-64 p-1.5 max-h-[70vh] overflow-y-auto"
+              >
+                <div className="px-2 py-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+                  {section.title}
+                </div>
+                <ul className="space-y-0.5">
+                  {items.map((item) => {
+                    const Icon = item.icon;
+                    const active = isItemActive(item.href);
+                    return (
+                      <li key={item.href}>
+                        <Link
+                          to={item.href}
+                          onClick={() => setOpenFlyout(null)}
+                          className={cn(
+                            'flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors',
+                            active
+                              ? 'bg-sidebar-accent text-sidebar-accent-foreground font-semibold'
+                              : 'text-foreground/85 font-medium hover:bg-muted',
+                          )}
+                        >
+                          <Icon className="w-4 h-4 shrink-0" />
+                          <span className="truncate">{item.label}</span>
+                          {typeof item.badge === 'number' && item.badge > 0 && (
+                            <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-brand-cyan text-white">
+                              {item.badge}
+                            </span>
+                          )}
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </PopoverContent>
+            </Popover>
+          );
+        })}
+      </nav>
+
+      {/* Footer */}
+      <div className="p-2 border-t border-sidebar-border flex flex-col items-center gap-2">
+        <div
+          title={user ? `${getFullName(user)}${primaryRole ? ` · ${primaryRole}` : ''}` : ''}
+          className="w-8 h-8 rounded-full bg-gradient-to-br from-brand-cyan to-brand-blue flex items-center justify-center text-white text-xs font-bold"
+        >
+          {initials}
+        </div>
+        <button
+          type="button"
+          onClick={handleLogout}
+          title="Cerrar sesión"
+          aria-label="Cerrar sesión"
+          className="p-2 rounded-md text-muted-foreground hover:bg-destructive-soft hover:text-destructive transition-colors"
+        >
+          <LogOut className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const COLLAPSED_KEY = 'afmi:sidebar-collapsed';
+
+function readCollapsed(): boolean {
+  try {
+    return localStorage.getItem(COLLAPSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** Desktop sticky sidebar. Collapsible to a 64px mini rail. Hidden below md. */
+export function Sidebar() {
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(COLLAPSED_KEY, collapsed ? '1' : '0');
+    } catch {
+      /* storage no disponible: el estado vive sólo en memoria */
+    }
+  }, [collapsed]);
+
+  return (
+    <aside
+      className={cn(
+        'hidden md:flex h-screen sticky top-0 self-start bg-sidebar border-r border-sidebar-border flex-col shrink-0 z-30 transition-[width] duration-200',
+        collapsed ? 'w-16' : 'w-64',
+      )}
+    >
+      <button
+        type="button"
+        onClick={() => setCollapsed((c) => !c)}
+        aria-pressed={collapsed}
+        aria-label={collapsed ? 'Expandir menú' : 'Contraer menú'}
+        title={collapsed ? 'Expandir menú' : 'Contraer menú'}
+        className="absolute -right-3 top-6 z-40 w-6 h-6 rounded-full border border-sidebar-border bg-sidebar text-muted-foreground shadow-sm flex items-center justify-center hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+      >
+        {collapsed ? (
+          <PanelLeftOpen className="w-3.5 h-3.5" />
+        ) : (
+          <PanelLeftClose className="w-3.5 h-3.5" />
+        )}
+      </button>
+      {collapsed ? <SidebarMiniContent /> : <SidebarContent />}
     </aside>
   );
 }

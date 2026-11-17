@@ -4,17 +4,17 @@ import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 export type ReportShellProps = {
   title: string;
   description?: string;
-  kpis?: ReactNode;
   children: ReactNode;
 };
 
-/** Common page chrome for reports: breadcrumbs + h1 + KPI row + content. */
-export function ReportShell({
-  title,
-  description,
-  kpis,
-  children,
-}: ReportShellProps) {
+/**
+ * Common page chrome for reports: breadcrumbs + h1 + content.
+ *
+ * Los reportes no llevan fila de KPIs arriba (pedido del cliente, 13/11/2026):
+ * los totales viven en el cuadro resumen y en el pie de la tabla. El panel
+ * ejecutivo es la excepción y arma sus propios `KpiRow` dentro del contenido.
+ */
+export function ReportShell({ title, description, children }: ReportShellProps) {
   return (
     <div className="space-y-6">
       <PageBreadcrumbs />
@@ -26,7 +26,6 @@ export function ReportShell({
           <p className="text-sm text-muted-foreground">{description}</p>
         ) : null}
       </div>
-      {kpis}
       {children}
     </div>
   );

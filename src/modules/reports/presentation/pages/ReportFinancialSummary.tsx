@@ -1,10 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  ArrowDownCircle,
-  ArrowUpCircle,
   BarChart3,
-  PercentCircle,
 } from 'lucide-react';
 import {
   Table,
@@ -22,7 +19,6 @@ import { accountsPayableGateway } from '@/modules/accounts-payable/infrastructur
 import { settlementNetUsd } from '@/modules/accounts-payable/domain/models/accountsPayable';
 import { taxesPayableGateway } from '@/modules/taxes-payable/infrastructure/taxesPayableGateway';
 import { ReportShell } from '../components/ReportShell';
-import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { ReportDownloadButton } from '../components/ReportDownloadButton';
 import { downloadReportTableXlsx } from '../components/reportsExcel';
@@ -139,21 +135,6 @@ export function ReportFinancialSummary() {
     return Array.from(map.values()).sort((a, b) => (a.month < b.month ? 1 : -1));
   }, [arPayments, apPayments, taxPayments, filters.from, filters.to]);
 
-  const totals = useMemo(() => {
-    let income = 0;
-    let providerExpense = 0;
-    let taxExpense = 0;
-    buckets.forEach((b) => {
-      income += b.income;
-      providerExpense += b.providerExpense;
-      taxExpense += b.taxExpense;
-    });
-    const expense = providerExpense + taxExpense;
-    const net = income - expense;
-    const margin = income > 0 ? (net / income) * 100 : 0;
-    return { income, providerExpense, taxExpense, expense, net, margin };
-  }, [buckets]);
-
   const updateParam = (patch: Record<string, string | undefined>) => {
     const next = new URLSearchParams(sp);
     for (const [k, v] of Object.entries(patch)) {
@@ -170,39 +151,6 @@ export function ReportFinancialSummary() {
     <ReportShell
       title="Resumen financiero"
       description="Ingresos vs egresos mensuales — basado en pagos efectivamente registrados"
-      kpis={
-        <KpiRow
-          items={[
-            {
-              icon: ArrowDownCircle,
-              tone: 'success',
-              label: 'Ingresos',
-              value: formatUsd(totals.income),
-              hint: 'Cobros recibidos',
-            },
-            {
-              icon: ArrowUpCircle,
-              tone: 'destructive',
-              label: 'Egresos',
-              value: formatUsd(totals.expense),
-              hint: `Proveedores ${formatUsd(totals.providerExpense)} · Impuestos ${formatUsd(totals.taxExpense)}`,
-            },
-            {
-              icon: BarChart3,
-              tone: totals.net >= 0 ? 'blue' : 'destructive',
-              label: 'Resultado neto',
-              value: formatUsd(totals.net),
-            },
-            {
-              icon: PercentCircle,
-              tone: 'cyan',
-              label: 'Margen',
-              value: formatPercent(totals.margin),
-              hint: 'Neto sobre ingresos',
-            },
-          ]}
-        />
-      }
     >
       {overCap ? (
         <div className="px-4 py-2 text-xs text-warning border border-warning-soft bg-warning-soft rounded-lg">
@@ -261,7 +209,7 @@ export function ReportFinancialSummary() {
         ) : null}
 
         <div className="m-4 rounded-lg border overflow-hidden">
-        <Table>
+        <Table stickyHeader>
           <TableHeader>
             <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Mes</TableHead>

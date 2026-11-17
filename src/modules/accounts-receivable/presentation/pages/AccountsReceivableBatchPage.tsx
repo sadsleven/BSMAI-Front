@@ -1715,7 +1715,6 @@ const STATUS_TEXT: Record<AccountsReceivableBatch['status'], string> = {
   collected: 'Cobrado',
   uncollected: 'No cobrado',
   partially_collected: 'Cobrado parcialmente',
-  overcollected: 'Sobre-cobrado',
 };
 
 function SummaryTile({

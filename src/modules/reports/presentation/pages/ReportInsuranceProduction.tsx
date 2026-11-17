@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ShieldCheck, TrendingUp, Crown, Wallet } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -13,7 +13,6 @@ import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ReportShell } from '../components/ReportShell';
-import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { ReportDownloadButton } from '../components/ReportDownloadButton';
 import { downloadReportTableXlsx } from '../components/reportsExcel';
@@ -103,23 +102,6 @@ export function ReportInsuranceProduction() {
   const pctFor = (r: { billedUsd: number; collectedTotalUsd: number }) =>
     r.billedUsd > 0 ? (r.collectedTotalUsd / r.billedUsd) * 100 : 0;
 
-  const totals = useMemo(() => {
-    let billed = 0;
-    let collected = 0;
-    let pending = 0;
-    let orders = 0;
-    let anyBs = false;
-    filtered.forEach((r) => {
-      billed += r.billedUsd;
-      collected += r.collectedTotalUsd;
-      pending += r.pendingTotalUsd;
-      orders += r.ordersCount;
-      if (r.targetBs > 0 || r.collectedBs > 0 || r.pendingBs > 0) anyBs = true;
-    });
-    return { billed, collected, pending, orders, anyBs };
-  }, [filtered]);
-
-  const top = filtered[0];
   const hasActiveFilters = !!filters.search || !!filters.from || !!filters.to;
   const clearFilters = () => {
     setSearchInput('');
@@ -130,40 +112,6 @@ export function ReportInsuranceProduction() {
     <ReportShell
       title="Producción por aseguradora"
       description="Volumen y recaudo por cada compañía de seguros"
-      kpis={
-        <KpiRow
-          items={[
-            {
-              icon: ShieldCheck,
-              tone: 'blue',
-              label: 'Aseguradoras activas',
-              value: formatNumber(filtered.length),
-              hint: `${formatNumber(totals.orders)} órdenes`,
-            },
-            {
-              icon: Wallet,
-              tone: 'cyan',
-              label: 'Total facturado',
-              value: formatUsd(totals.billed),
-              hint: totals.anyBs ? 'Incluye porción Bs (tasa fija) a tasa vigente' : undefined,
-            },
-            {
-              icon: TrendingUp,
-              tone: 'success',
-              label: 'Cobrado',
-              value: formatUsd(totals.collected),
-              hint: `${totals.billed > 0 ? formatPercent((totals.collected / totals.billed) * 100) : '—'}`,
-            },
-            {
-              icon: Crown,
-              tone: 'warning',
-              label: 'Top aseguradora',
-              value: top ? top.debtorName : '—',
-              hint: top ? formatUsd(top.billedUsd) : undefined,
-            },
-          ]}
-        />
-      }
     >
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
@@ -220,7 +168,7 @@ export function ReportInsuranceProduction() {
         ) : null}
 
         <div className="m-4 rounded-lg border overflow-hidden">
-        <Table>
+        <Table stickyHeader>
           <TableHeader>
             <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">#</TableHead>

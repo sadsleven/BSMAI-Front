@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Receipt, Wallet, Coins, Percent } from 'lucide-react';
+import { Receipt } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -24,7 +24,6 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { insuranceGateway } from '@/modules/insurances/infrastructure/insuranceGateway';
 import type { Insurance } from '@/modules/insurances/domain/models/insurance';
 import { ReportShell } from '../components/ReportShell';
-import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { ReportDownloadButton } from '../components/ReportDownloadButton';
 import { downloadReportTableXlsx, excelDateCell } from '../components/reportsExcel';
@@ -37,7 +36,7 @@ import {
 } from '../../infrastructure/reportsGateway';
 import { getHttpErrorMessage } from '@/lib/api';
 
-const COLUMNS = 9;
+const COLUMNS = 18;
 
 const EMPTY_SUMMARY: ReportInvoiceSummary = {
   count: 0,
@@ -172,9 +171,6 @@ export function ReportInvoices() {
   }, [rows, filters.page, filters.limit]);
   const lastPage = Math.max(1, Math.ceil(rows.length / filters.limit));
 
-  const marginPct =
-    summary.amountUsd > 0 ? (summary.marginUsd / summary.amountUsd) * 100 : 0;
-
   return (
     <ReportShell
       title="Reporte de facturas"
@@ -183,46 +179,6 @@ export function ReportInvoices() {
           ? ` · ${formatNumber(summary.cancelledCount)} anulada${summary.cancelledCount === 1 ? '' : 's'}`
           : ''
       } en el rango filtrado`}
-      kpis={
-        <KpiRow
-          items={[
-            {
-              icon: Wallet,
-              tone: 'blue',
-              label: 'Total facturado',
-              value: formatUsd(summary.amountUsd),
-              hint: formatBs(summary.amountBs),
-            },
-            {
-              icon: Receipt,
-              tone: 'cyan',
-              label: 'Facturas emitidas',
-              value: formatNumber(summary.activeCount),
-              hint:
-                summary.cancelledCount > 0
-                  ? `${formatNumber(summary.cancelledCount)} anuladas`
-                  : 'Sin anuladas',
-            },
-            {
-              icon: Coins,
-              tone: 'warning',
-              label: 'Costo de proveedores',
-              value: formatUsd(summary.costUsd),
-              hint: `Margen ${formatUsd(summary.marginUsd)} (${marginPct.toFixed(1)}%)`,
-            },
-            {
-              icon: Percent,
-              tone: 'success',
-              label: 'Ticket promedio',
-              value: formatUsd(summary.avgUsd),
-              hint:
-                summary.avgRateBs > 0
-                  ? `Tasa promedio ${formatBs(summary.avgRateBs)}`
-                  : undefined,
-            },
-          ]}
-        />
-      }
     >
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
@@ -236,6 +192,9 @@ export function ReportInvoices() {
                   sheetName: 'FACTURAS',
                   rows,
                   columns: [
+                    // El estado va primero: es lo que se mira al revisar el
+                    // listado de facturación (pedido del cliente, 28/10/2026).
+                    { header: 'Estado', value: (r) => (r.status === 'cancelled' ? 'ANULADA' : 'VIGENTE'), width: 12, align: 'center' },
                     { header: 'Fecha', value: (r) => excelDateCell(r.invoiceDate), width: 12, numFmt: 'dd/mm/yyyy', align: 'center' },
                     { header: 'N° Factura', value: (r) => r.invoiceNumber, width: 13, numFmt: '@', align: 'center' },
                     { header: 'N° Control', value: (r) => r.controlNumber, width: 13, numFmt: '@', align: 'center' },
@@ -253,7 +212,6 @@ export function ReportInvoices() {
                     { header: 'Monto Bs.', value: (r) => r.amountBs ?? '', width: 16, numFmt: '#,##0.00', total: true },
                     { header: 'Costo $', value: (r) => r.costUsd, width: 12, numFmt: '0.00', total: true },
                     { header: 'Margen $', value: (r) => r.marginUsd, width: 12, numFmt: '0.00', total: true },
-                    { header: 'Estado', value: (r) => (r.status === 'cancelled' ? 'ANULADA' : 'VIGENTE'), width: 12, align: 'center' },
                   ],
                 })
               }
@@ -324,18 +282,28 @@ export function ReportInvoices() {
         ) : null}
 
         <div className="m-4 rounded-lg border overflow-hidden">
-          <Table>
+          <Table stickyHeader>
             <TableHeader>
               <TableRow>
-                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Fecha</TableHead>
-                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Factura</TableHead>
-                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Cliente</TableHead>
-                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Paciente</TableHead>
-                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Orden</TableHead>
-                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Monto $</TableHead>
-                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Tasa</TableHead>
-                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right">Monto Bs.</TableHead>
-                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Estado</TableHead>
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Estado</TableHead>
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Fecha</TableHead>
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">N° Factura</TableHead>
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">N° Control</TableHead>
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Cliente</TableHead>
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Tipo</TableHead>
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Titular</TableHead>
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">RIF/C.I. titular</TableHead>
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Paciente</TableHead>
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Médico tratante</TableHead>
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">N° Orden interna</TableHead>
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Órdenes</TableHead>
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Sucursal</TableHead>
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right whitespace-nowrap">Monto $</TableHead>
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right whitespace-nowrap">Tasa del día</TableHead>
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right whitespace-nowrap">Monto Bs.</TableHead>
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right whitespace-nowrap">Costo $</TableHead>
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-right whitespace-nowrap">Margen $</TableHead>
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Estado</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -360,41 +328,6 @@ export function ReportInvoices() {
                   const cancelled = r.status === 'cancelled';
                   return (
                     <TableRow key={r.invoiceId} className="hover:bg-[oklch(0.985_0.003_250)]">
-                      <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
-                        {formatDate(r.invoiceDate)}
-                      </TableCell>
-                      <TableCell className="py-3.5 px-4 text-sm font-mono">
-                        <div>{r.invoiceNumber}</div>
-                        <div className="text-xs text-muted-foreground">
-                          Control: {r.controlNumber || '—'}
-                        </div>
-                      </TableCell>
-                      <TableCell className="py-3.5 px-4 text-sm">
-                        <div className="font-medium truncate">{r.clientName}</div>
-                        <div className="text-xs text-muted-foreground truncate">
-                          {CLIENT_TYPE_LABEL[r.clientType]} · Titular: {r.holderName}
-                        </div>
-                      </TableCell>
-                      <TableCell className="py-3.5 px-4 text-sm truncate">
-                        {r.patientName || '—'}
-                      </TableCell>
-                      <TableCell className="py-3.5 px-4 text-sm font-mono">
-                        <div>{r.internalNumbers || r.orderNumbers}</div>
-                        {r.ordersCount > 1 ? (
-                          <div className="text-xs text-muted-foreground">
-                            {r.ordersCount} órdenes
-                          </div>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                        {cancelled ? '—' : formatUsd(r.amountUsd)}
-                      </TableCell>
-                      <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-muted-foreground">
-                        {r.rateBs != null ? formatBs(r.rateBs) : '—'}
-                      </TableCell>
-                      <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                        {cancelled || r.amountBs == null ? '—' : formatBs(r.amountBs)}
-                      </TableCell>
                       <TableCell className="py-3.5 px-4">
                         <Badge
                           variant="outline"
@@ -406,6 +339,55 @@ export function ReportInvoices() {
                         >
                           {cancelled ? 'Anulada' : 'Vigente'}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                        {formatDate(r.invoiceDate)}
+                      </TableCell>
+                      <TableCell className="py-3.5 px-4 text-sm font-mono whitespace-nowrap">
+                        {r.invoiceNumber}
+                      </TableCell>
+                      <TableCell className="py-3.5 px-4 text-sm font-mono whitespace-nowrap">
+                        {r.controlNumber || '—'}
+                      </TableCell>
+                      <TableCell className="py-3.5 px-4 text-sm font-medium">
+                        {r.clientName}
+                      </TableCell>
+                      <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                        {CLIENT_TYPE_LABEL[r.clientType]}
+                      </TableCell>
+                      <TableCell className="py-3.5 px-4 text-sm">{r.holderName || '—'}</TableCell>
+                      <TableCell className="py-3.5 px-4 text-sm font-mono whitespace-nowrap">
+                        {r.holderId || '—'}
+                      </TableCell>
+                      <TableCell className="py-3.5 px-4 text-sm">
+                        {r.patientName || '—'}
+                      </TableCell>
+                      <TableCell className="py-3.5 px-4 text-sm max-w-[200px]" wrap>
+                        {r.doctorName || '—'}
+                      </TableCell>
+                      <TableCell className="py-3.5 px-4 text-sm font-mono">
+                        {r.internalNumbers || r.orderNumbers}
+                      </TableCell>
+                      <TableCell className="py-3.5 px-4 text-sm text-center">
+                        {r.ordersCount}
+                      </TableCell>
+                      <TableCell className="py-3.5 px-4 text-sm text-muted-foreground">
+                        {r.branchName ?? '—'}
+                      </TableCell>
+                      <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
+                        {cancelled ? '—' : formatUsd(r.amountUsd)}
+                      </TableCell>
+                      <TableCell className="py-3.5 px-4 text-sm font-mono text-right text-muted-foreground">
+                        {r.rateBs != null ? formatBs(r.rateBs) : '—'}
+                      </TableCell>
+                      <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
+                        {cancelled || r.amountBs == null ? '—' : formatBs(r.amountBs)}
+                      </TableCell>
+                      <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
+                        {cancelled ? '—' : formatUsd(r.costUsd)}
+                      </TableCell>
+                      <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
+                        {cancelled ? '—' : formatUsd(r.marginUsd)}
                       </TableCell>
                     </TableRow>
                   );

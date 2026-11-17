@@ -69,6 +69,7 @@ import { getUserBranches } from '@/lib/auth/branches';
 import { cn } from '@/lib/utils';
 import { lastAccessibleStep } from '../../domain/wizardStep';
 import { OrderCancelModal } from '../components/OrderCancelModal';
+import { careCenterLabel } from '@/lib/displayName';
 
 type SortBy = 'orderNumber' | 'orderDate' | 'appointmentDate' | 'priceAmount' | 'createdAt' | 'updatedAt';
 type DeletionFilter = 'active' | 'deleted' | 'all';
@@ -319,7 +320,7 @@ export function OrderList() {
       if (r.providerType === 'doctor' && r.doctor) {
         names.add(`${r.doctor.firstName ?? ''} ${r.doctor.lastName ?? ''}`.trim());
       } else if (r.providerType === 'care_center' && r.careCenter) {
-        names.add(r.careCenter.businessName ?? '');
+        names.add(careCenterLabel(r.careCenter));
       }
     }
     if (names.size === 0) return '—';
@@ -472,7 +473,7 @@ export function OrderList() {
         ) : null}
 
         <div className="m-4 rounded-lg border overflow-hidden">
-        <Table>
+        <Table stickyHeader>
           <TableHeader>
             {/* Acciones va PRIMERO (única tabla del sistema con este orden),
                 luego N° orden, Titular/Paciente, Tipo y Estado; las fechas y el

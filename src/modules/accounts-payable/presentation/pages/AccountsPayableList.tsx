@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, Wallet } from 'lucide-react';
+import { Plus, TrendingUp, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -33,6 +33,7 @@ import { getHttpErrorMessage } from '@/lib/api';
 import { formatMoney } from '@/lib/format/money';
 import { accountsPayableGateway } from '../../infrastructure/accountsPayableGateway';
 import {
+  batchInvoiceNumbers,
   pendingProviderId,
   pendingProviderName,
   recipientName,
@@ -48,8 +49,16 @@ import {
   type Doctor,
 } from '@/modules/doctors/domain/models/doctor';
 import type { CareCenter } from '@/modules/care-centers/domain/models/careCenter';
+import {
+  reportsGateway,
+  type ReportPayableProviderRow,
+} from '@/modules/reports/infrastructure/reportsGateway';
 
-type Tab = 'pending' | 'batches';
+type Tab = 'pending' | 'batches' | 'summary';
+
+/** Cabecera centrada del cuadro resumen. */
+const TH_CENTER =
+  'text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-center whitespace-nowrap';
 type SortBy = 'payableNumber' | 'createdAt' | 'updatedAt';
 
 function statusBadge(status: AccountsPayableStatus) {
@@ -75,7 +84,9 @@ function statusBadge(status: AccountsPayableStatus) {
 export function AccountsPayableList() {
   const [sp, setSp] = useSearchParams();
   const navigate = useNavigate();
-  const tab = (sp.get('tab') === 'batches' ? 'batches' : 'pending') as Tab;
+  const tabParam = sp.get('tab');
+  const tab: Tab =
+    tabParam === 'batches' || tabParam === 'pending' ? tabParam : 'summary';
 
   const [searchInput, setSearchInput] = useState(sp.get('search') ?? '');
   const [doctors, setDoctors] = useState<Doctor[]>([]);
@@ -209,11 +220,50 @@ export function AccountsPayableList() {
     }
   }, [filters]);
 
+  // -------- Resumen por proveedor --------
+  const [summaryRows, setSummaryRows] = useState<ReportPayableProviderRow[]>([]);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+
+  const fetchSummary = useCallback(async () => {
+    setSummaryLoading(true);
+    setSummaryError(null);
+    try {
+      // Sin rango de fechas: el resumen muestra todo lo que se debe hoy.
+      const res = await reportsGateway.payablesByProvider({
+        doctorId: filters.doctorId || undefined,
+        careCenterId: filters.careCenterId || undefined,
+        search: filters.search || undefined,
+      });
+      setSummaryRows(res.rows);
+    } catch (e) {
+      setSummaryError(getHttpErrorMessage(e, 'No se pudo cargar el resumen'));
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, [filters.doctorId, filters.careCenterId, filters.search]);
+
+  const summaryTotals = useMemo(() => {
+    let gross = 0;
+    let paid = 0;
+    let pending = 0;
+    for (const r of summaryRows) {
+      gross += r.grossUsd;
+      paid += r.paidUsd;
+      pending += r.pendingUsd;
+    }
+    return { gross, paid, pending };
+  }, [summaryRows]);
+
   useEffect(() => {
     void Promise.resolve().then(() =>
-      tab === 'pending' ? fetchPending() : fetchBatches(),
+      tab === 'pending'
+        ? fetchPending()
+        : tab === 'batches'
+          ? fetchBatches()
+          : fetchSummary(),
     );
-  }, [tab, fetchPending, fetchBatches]);
+  }, [tab, fetchPending, fetchBatches, fetchSummary]);
 
   const onSort = (column: SortBy, dir: SortDir) =>
     updateParam({ sortBy: column, sortDir: dir });
@@ -318,9 +368,104 @@ export function AccountsPayableList() {
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
         <TabsList>
+          <TabsTrigger value="summary">Resumen</TabsTrigger>
           <TabsTrigger value="pending">Pendientes</TabsTrigger>
           <TabsTrigger value="batches">Lotes</TabsTrigger>
         </TabsList>
+
+        {/* ---------------- Resumen por proveedor ---------------- */}
+        <TabsContent value="summary">
+          <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
+            <DataTableToolbar
+              searchValue={searchInput}
+              onSearchChange={setSearchInput}
+              searchPlaceholder="Buscar proveedor…"
+              hasActiveFilters={hasActiveFilters}
+              onClear={clearFilters}
+              filters={providerFilters}
+            />
+            {summaryError ? (
+              <div className="px-4 py-2 text-sm text-destructive border-b bg-destructive-soft">
+                {summaryError}
+              </div>
+            ) : null}
+            <div className="m-4 rounded-lg border overflow-hidden">
+              <Table stickyHeader>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className={TH_CENTER}>Proveedor</TableHead>
+                    <TableHead className={TH_CENTER}>Tipo</TableHead>
+                    <TableHead className={TH_CENTER}>Órdenes</TableHead>
+                    <TableHead className={TH_CENTER}>Lotes</TableHead>
+                    <TableHead className={TH_CENTER}>Total $</TableHead>
+                    <TableHead className={TH_CENTER}>Abonado $</TableHead>
+                    <TableHead className={TH_CENTER}>Órdenes por pagar $</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {summaryLoading ? (
+                    <SkeletonTableRows rows={6} columns={7} />
+                  ) : summaryRows.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="p-0">
+                        <EmptyState
+                          icon={TrendingUp}
+                          title="Sin cuentas por pagar"
+                          description="No hay deuda pendiente con proveedores."
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    <>
+                      {summaryRows.map((r) => (
+                        <TableRow
+                          key={`${r.providerType}:${r.providerId ?? r.providerName}`}
+                          className="hover:bg-[oklch(0.985_0.003_250)]"
+                        >
+                          <TableCell className="py-3 px-3 text-sm font-medium" wrap>
+                            {r.providerName}
+                          </TableCell>
+                          <TableCell className="py-3 px-3 text-sm text-center text-muted-foreground">
+                            {r.providerType === 'doctor' ? 'Doctor' : 'Centro'}
+                          </TableCell>
+                          <TableCell className="py-3 px-3 text-sm text-center">
+                            {r.ordersCount}
+                          </TableCell>
+                          <TableCell className="py-3 px-3 text-sm text-center">
+                            {r.lotesCount}
+                          </TableCell>
+                          <TableCell className="py-3 px-3 text-sm font-mono text-center">
+                            {formatMoney(r.grossUsd)}
+                          </TableCell>
+                          <TableCell className="py-3 px-3 text-sm font-mono text-center text-success">
+                            {formatMoney(r.paidUsd)}
+                          </TableCell>
+                          <TableCell className="py-3 px-3 text-sm font-mono text-center font-semibold">
+                            {formatMoney(r.pendingUsd)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow className="bg-muted/40 font-semibold">
+                        <TableCell className="py-3 px-3 text-sm" colSpan={4}>
+                          TOTAL
+                        </TableCell>
+                        <TableCell className="py-3 px-3 text-sm font-mono text-center">
+                          {formatMoney(summaryTotals.gross)}
+                        </TableCell>
+                        <TableCell className="py-3 px-3 text-sm font-mono text-center">
+                          {formatMoney(summaryTotals.paid)}
+                        </TableCell>
+                        <TableCell className="py-3 px-3 text-sm font-mono text-center">
+                          {formatMoney(summaryTotals.pending)}
+                        </TableCell>
+                      </TableRow>
+                    </>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        </TabsContent>
 
         {/* ---------------- Pendientes ---------------- */}
         <TabsContent value="pending">
@@ -328,7 +473,7 @@ export function AccountsPayableList() {
             <DataTableToolbar
               searchValue={searchInput}
               onSearchChange={setSearchInput}
-              searchPlaceholder="Buscar por N° orden interna…"
+              searchPlaceholder="Buscar por N° factura u orden interna…"
               hasActiveFilters={hasActiveFilters}
               onClear={clearFilters}
               filters={providerFilters}
@@ -369,6 +514,9 @@ export function AccountsPayableList() {
                   <TableRow>
                     <TableHead className="w-10"></TableHead>
                     <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      N° factura
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                       N° orden interna
                     </TableHead>
                     <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
@@ -390,10 +538,10 @@ export function AccountsPayableList() {
                 </TableHeader>
                 <TableBody>
                   {pendingLoading ? (
-                    <SkeletonTableRows rows={5} columns={7} />
+                    <SkeletonTableRows rows={5} columns={8} />
                   ) : pending.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="p-0">
+                      <TableCell colSpan={8} className="p-0">
                         <EmptyState
                           icon={Wallet}
                           title={
@@ -418,6 +566,9 @@ export function AccountsPayableList() {
                             onCheckedChange={() => toggleSelect(p.internalOrderId)}
                             aria-label="Seleccionar orden"
                           />
+                        </TableCell>
+                        <TableCell className="py-3.5 px-4 font-mono text-sm">
+                          {p.invoiceNumber || '—'}
                         </TableCell>
                         <TableCell className="py-3.5 px-4 font-mono text-sm font-semibold">
                           {p.internalNumber}
@@ -464,7 +615,7 @@ export function AccountsPayableList() {
             <DataTableToolbar
               searchValue={searchInput}
               onSearchChange={setSearchInput}
-              searchPlaceholder="Buscar por N° lote u orden interna…"
+              searchPlaceholder="Buscar por N° factura, lote u orden interna…"
               hasActiveFilters={hasActiveFilters}
               onClear={clearFilters}
               filters={
@@ -512,6 +663,9 @@ export function AccountsPayableList() {
                       </SortableHeader>
                     </TableHead>
                     <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      N° factura
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                       Proveedor
                     </TableHead>
                     <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
@@ -543,10 +697,10 @@ export function AccountsPayableList() {
                 </TableHeader>
                 <TableBody>
                   {batchesLoading ? (
-                    <SkeletonTableRows rows={5} columns={8} />
+                    <SkeletonTableRows rows={5} columns={9} />
                   ) : batches.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="p-0">
+                      <TableCell colSpan={9} className="p-0">
                         <EmptyState
                           icon={Wallet}
                           title={
@@ -571,6 +725,10 @@ export function AccountsPayableList() {
                       >
                         <TableCell className="py-3.5 px-4 font-mono text-sm font-semibold">
                           {b.payableNumber}
+                        </TableCell>
+                        <TableCell className="py-3.5 px-4 font-mono text-sm">
+                          {/* Un lote puede cubrir órdenes de varias facturas. */}
+                          {batchInvoiceNumbers(b).join(', ') || '—'}
                         </TableCell>
                         <TableCell className="py-3.5 px-4 text-sm">
                           <div>{recipientName(b)}</div>

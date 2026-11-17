@@ -4,6 +4,7 @@ import type {
 } from '@/modules/orders/domain/models/order';
 import type { RecipientPaymentMethod } from '@/modules/orders/presentation/components/OrderPaymentForm';
 import type { SeniatPersonType } from '@/lib/taxes/seniatRetention';
+import { careCenterLabel } from '@/lib/displayName';
 
 export type AccountsPayableStatus = 'paid' | 'unpaid' | 'partially_paid';
 export type RecipientType = 'doctor' | 'care_center';
@@ -164,6 +165,8 @@ export interface AccountsPayableBatch {
   // Transient (provistos por el BE).
   /** Nº de órdenes del lote (agregado por el BE, no requiere `orders`). */
   orderCount?: number;
+  /** N° de factura de las órdenes del lote, sin repetir (agregado por el BE). */
+  invoiceNumbers?: string[];
   /** Nº de abonos registrados. */
   settlementCount?: number;
   grossUsd?: number;
@@ -255,13 +258,16 @@ export const STATUS_LABEL: Record<AccountsPayableStatus, string> = {
   partially_paid: 'Pagado parcialmente',
 };
 
-/** Nombre del proveedor (doctor o centro) de un lote. */
+/**
+ * Nombre del proveedor (doctor o centro) de un lote. Los centros se muestran
+ * con su nombre corto cuando lo tienen (listados, no documentos legales).
+ */
 export function recipientName(b: AccountsPayableBatch): string {
   if (b.recipientType === 'doctor') {
     const d = b.doctor;
     return d ? `${d.firstName ?? ''} ${d.lastName ?? ''}`.trim() || '—' : '—';
   }
-  return b.careCenter?.businessName ?? '—';
+  return careCenterLabel(b.careCenter) || '—';
 }
 
 /** Nombre del proveedor de una orden pendiente. */
@@ -333,6 +339,21 @@ export function orderNumberOf(o: AccountsPayableOrder): string {
 export function orderInvoiceNumber(o: AccountsPayableOrder): string | null {
   const n = o.internalOrder?.order?.invoiceNumber?.trim();
   return n ? n : null;
+}
+
+/**
+ * N° de factura del lote para el listado: el BE manda `invoiceNumbers` ya
+ * agregado; en el detalle se derivan de las órdenes hidratadas. Un lote puede
+ * cubrir varias facturas (o ninguna, si las órdenes aún no se facturaron).
+ */
+export function batchInvoiceNumbers(b: AccountsPayableBatch): string[] {
+  if (b.invoiceNumbers?.length) return b.invoiceNumbers;
+  const out = new Set<string>();
+  for (const o of b.orders ?? []) {
+    const n = orderInvoiceNumber(o);
+    if (n) out.add(n);
+  }
+  return [...out].sort((a, z) => a.localeCompare(z, 'es', { numeric: true }));
 }
 
 // ----------------------------------------------------------------------------

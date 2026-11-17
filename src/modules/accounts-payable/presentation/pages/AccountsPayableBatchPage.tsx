@@ -1267,6 +1267,8 @@ function BatchDetail({ id }: { id: string }) {
                     onSelect={(v) => patch({ rateId: v })}
                     disabled={busy}
                     label="Tasa del pago (USD/Bs)"
+                    // Si la tasa del día aún no está cargada, se crea desde acá.
+                    allowCreate
                   />
                 </div>
 

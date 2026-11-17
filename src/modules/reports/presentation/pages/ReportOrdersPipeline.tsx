@@ -40,12 +40,11 @@ import {
   type OrderType,
 } from '@/modules/orders/domain/models/order';
 import { ReportShell } from '../components/ReportShell';
-import { KpiRow, type KpiTone } from '../components/KpiCard';
+import type { KpiTone } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { ReportDownloadButton } from '../components/ReportDownloadButton';
 import { downloadReportTableXlsx, excelDateCell } from '../components/reportsExcel';
 import {
-  formatUsd,
   formatDate,
   formatNumber,
   daysBetween,
@@ -173,26 +172,6 @@ export function ReportOrdersPipeline() {
     });
   }, [rows, filters.search, filters.from, filters.to, filters.status, filters.type]);
 
-  const byStatus = useMemo(() => {
-    const counts: Record<OrderStatus, { count: number; amountBs: number }> = {
-      draft: { count: 0, amountBs: 0 },
-      in_progress: { count: 0, amountBs: 0 },
-      attended: { count: 0, amountBs: 0 },
-      report_issued: { count: 0, amountBs: 0 },
-      finalized: { count: 0, amountBs: 0 },
-      cancelled: { count: 0, amountBs: 0 },
-    };
-    filtered.forEach((o) => {
-      counts[o.status].count += 1;
-      const rate = o.billingExchangeRate ? Number(o.billingExchangeRate.amountBs) : 0;
-      const amount = Number(o.priceAmount) || 0;
-      counts[o.status].amountBs += rate > 0 ? amount * rate : 0;
-    });
-    return counts;
-  }, [filtered]);
-
-  const top4 = STATUS_ORDER.filter((s) => s !== 'cancelled').slice(0, 4);
-
   const paged = useMemo(() => {
     const start = (filters.page - 1) * filters.limit;
     return filtered.slice(start, start + filters.limit);
@@ -214,17 +193,6 @@ export function ReportOrdersPipeline() {
     <ReportShell
       title="Seguimiento de órdenes"
       description="Distribución de órdenes por etapa del flujo y tiempo en cada estado"
-      kpis={
-        <KpiRow
-          items={top4.map((st) => ({
-            icon: STATUS_META[st].icon,
-            tone: STATUS_META[st].tone,
-            label: ORDER_STATUS_LABEL[st],
-            value: formatNumber(byStatus[st].count),
-            hint: byStatus[st].amountBs > 0 ? formatUsd(byStatus[st].amountBs) : undefined,
-          }))}
-        />
-      }
     >
       {overCap ? (
         <div className="px-4 py-2 text-xs text-warning border border-warning-soft bg-warning-soft rounded-lg">
@@ -314,7 +282,7 @@ export function ReportOrdersPipeline() {
         ) : null}
 
         <div className="m-4 rounded-lg border overflow-hidden">
-        <Table>
+        <Table stickyHeader>
           <TableHeader>
             <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Orden</TableHead>
@@ -324,7 +292,7 @@ export function ReportOrdersPipeline() {
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Tipo</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Estado</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Días en sistema</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto USD</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

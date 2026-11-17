@@ -2,9 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Wallet,
-  ListChecks,
-  ClipboardList,
-  HandCoins,
   Landmark,
 } from 'lucide-react';
 import {
@@ -28,7 +25,6 @@ import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ReportShell } from '../components/ReportShell';
-import { KpiRow } from '../components/KpiCard';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { ReportDownloadButton } from '../components/ReportDownloadButton';
 import { downloadReportTableXlsx, excelDateCell } from '../components/reportsExcel';
@@ -153,6 +149,8 @@ export function ReportPaymentAccountInflows() {
     );
   }, [report.rows, filters.search]);
 
+  const byAccount = report.byAccount;
+
   const paged = useMemo(() => {
     const start = (filters.page - 1) * filters.limit;
     return filteredRows.slice(start, start + filters.limit);
@@ -170,47 +168,10 @@ export function ReportPaymentAccountInflows() {
     setSp(new URLSearchParams(), { replace: true });
   };
 
-  const { totals, byAccount } = report;
-
   return (
     <ReportShell
       title="Dinero recibido por cuenta"
       description="Pagos recibidos en las cuentas propias de AFMI (órdenes y cuentas por cobrar)"
-      kpis={
-        <KpiRow
-          items={[
-            {
-              icon: Wallet,
-              tone: 'success',
-              label: 'Total recibido',
-              value: formatUsd(totals.totalUsd),
-              hint: usdRate
-                ? formatBs(usdToBs(totals.totalUsd, usdRate))
-                : undefined,
-            },
-            {
-              icon: ListChecks,
-              tone: 'blue',
-              label: 'Pagos recibidos',
-              value: formatNumber(totals.totalCount),
-            },
-            {
-              icon: ClipboardList,
-              tone: 'cyan',
-              label: 'Desde órdenes',
-              value: formatUsd(totals.ordersUsd),
-              hint: `${formatNumber(totals.ordersCount)} pagos`,
-            },
-            {
-              icon: HandCoins,
-              tone: 'warning',
-              label: 'Desde cuentas por cobrar',
-              value: formatUsd(totals.receivablesUsd),
-              hint: `${formatNumber(totals.receivablesCount)} cobros`,
-            },
-          ]}
-        />
-      }
     >
       {report.truncated ? (
         <div className="px-4 py-2 text-xs text-warning border border-warning-soft bg-warning-soft rounded-lg">
@@ -227,7 +188,7 @@ export function ReportPaymentAccountInflows() {
           </p>
         </div>
         <div className="m-4 rounded-lg border overflow-hidden">
-        <Table>
+        <Table stickyHeader>
           <TableHeader>
             <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Cuenta</TableHead>
@@ -381,7 +342,7 @@ export function ReportPaymentAccountInflows() {
         ) : null}
 
         <div className="m-4 rounded-lg border overflow-hidden">
-        <Table>
+        <Table stickyHeader>
           <TableHeader>
             <TableRow>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Fecha</TableHead>
@@ -391,16 +352,17 @@ export function ReportPaymentAccountInflows() {
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Documento</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Contraparte</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Referencia</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Moneda</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto</TableHead>
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto USD</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <SkeletonTableRows rows={6} columns={9} />
+              <SkeletonTableRows rows={6} columns={10} />
             ) : paged.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="p-0">
+                <TableCell colSpan={10} className="p-0">
                   <EmptyState
                     icon={Wallet}
                     title={hasActiveFilters ? 'Sin resultados' : 'Sin pagos recibidos'}
@@ -430,7 +392,7 @@ export function ReportPaymentAccountInflows() {
                       {r.source === 'order' ? 'Orden' : 'Por cobrar'}
                     </Badge>
                   </TableCell>
-                  <TableCell className="py-3 px-4 text-sm font-medium truncate max-w-[180px]">
+                  <TableCell className="py-3 px-4 text-sm font-medium max-w-[180px]" wrap>
                     {r.paymentAccountName ?? '—'}
                   </TableCell>
                   <TableCell className="py-3 px-4 text-sm">
@@ -439,12 +401,15 @@ export function ReportPaymentAccountInflows() {
                     </Badge>
                   </TableCell>
                   <TableCell className="py-3 px-4 text-sm font-mono">{r.documentNumber}</TableCell>
-                  <TableCell className="py-3 px-4 text-sm truncate max-w-[160px]">{r.counterpart}</TableCell>
+                  <TableCell className="py-3 px-4 text-sm max-w-[160px]" wrap>{r.counterpart}</TableCell>
                   <TableCell className="py-3 px-4 text-sm font-mono text-muted-foreground">
                     {r.referenceNumber ?? '—'}
                   </TableCell>
+                  <TableCell className="py-3 px-4 text-sm font-mono text-center">
+                    {r.amountCurrency}
+                  </TableCell>
                   <TableCell className="py-3 px-4 text-sm font-mono text-right">
-                    {r.amountCurrency} {formatMoney(r.amountValue)}
+                    {formatMoney(r.amountValue)}
                   </TableCell>
                   <TableCell className="py-3 px-4 text-sm font-mono text-right text-success">
                     {formatUsd(r.amountInUsd)}

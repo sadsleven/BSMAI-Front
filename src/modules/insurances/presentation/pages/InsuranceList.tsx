@@ -352,11 +352,14 @@ export function InsuranceList() {
                       </div>
                       <div className="min-w-0">
                         <div className="font-semibold text-foreground truncate">{i.name}</div>
-                        {i.description && (
+                        {/* El nombre corto es el que sale en listados y reportes. */}
+                        {i.shortName || i.description ? (
                           <div className="text-xs text-muted-foreground truncate max-w-md">
+                            {i.shortName ? <span className="font-medium">{i.shortName}</span> : null}
+                            {i.shortName && i.description ? ' · ' : ''}
                             {i.description}
                           </div>
-                        )}
+                        ) : null}
                       </div>
                     </div>
                   </TableCell>

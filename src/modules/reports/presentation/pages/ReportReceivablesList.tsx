@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Coins, TrendingUp, AlertCircle, Wallet } from 'lucide-react';
+import { Coins } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -24,10 +24,20 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { insuranceGateway } from '@/modules/insurances/infrastructure/insuranceGateway';
 import type { Insurance } from '@/modules/insurances/domain/models/insurance';
 import { ReportShell } from '../components/ReportShell';
-import { KpiRow } from '../components/KpiCard';
+import { ReportViewTabs } from '../components/ReportViewTabs';
+import { ToggleFilter } from '../components/ToggleFilter';
 import { DateRangeFilter } from '../components/DateRangeFilter';
 import { ReportDownloadButton } from '../components/ReportDownloadButton';
-import { downloadReceivablesReportXlsx } from '../components/reportsExcel';
+import {
+  downloadReceivablesReportXlsx,
+  reportRowDate,
+} from '../components/reportsExcel';
+import {
+  costRowKeys,
+  receivableAmounts,
+  receivablesSummaryByDebtor,
+  receivablesSummaryTotals,
+} from '../../domain/receivablesSummary';
 import { formatUsd, formatBs, formatDate, formatNumber } from '../../domain/format';
 import { useUsdRate } from '../../domain/useUsdRate';
 import {
@@ -43,7 +53,6 @@ const STATE_LABEL: Record<ReceivableOrderState, string> = {
   uncollected: 'Por cobrar',
   partially_collected: 'Cobro parcial',
   collected: 'Cobrado',
-  overcollected: 'Sobrecobrado',
 };
 
 const STATE_TONE: Record<ReceivableOrderState, string> = {
@@ -51,10 +60,18 @@ const STATE_TONE: Record<ReceivableOrderState, string> = {
   uncollected: 'bg-warning-soft text-warning',
   partially_collected: 'bg-brand-cyan-soft text-brand-blue-strong',
   collected: 'bg-success-soft text-success',
-  overcollected: 'bg-brand-blue-soft text-brand-blue-strong',
 };
 
-const COLUMNS = 8;
+const COLUMNS = 16;
+
+const REPORT_VIEWS = [
+  { value: 'summary', label: 'Resumen' },
+  { value: 'detail', label: 'Detalle' },
+] as const satisfies readonly { value: 'summary' | 'detail'; label: string }[];
+
+/** Cabecera centrada del cuadro resumen. */
+const TH_CENTER =
+  'text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground text-center whitespace-nowrap';
 
 const compareDoc = (a: string, b: string): number =>
   a.localeCompare(b, 'es', { numeric: true, sensitivity: 'base' });
@@ -94,7 +111,9 @@ export function ReportReceivablesList() {
       from: sp.get('from') ?? '',
       to: sp.get('to') ?? '',
       insuranceId: sp.get('insuranceId') ?? '',
-      status: sp.get('status') ?? '',
+      // `debtorType` filtra seguro/titular; `state`, el estado de cobro.
+      debtorType: sp.get('debtorType') ?? '',
+      state: sp.get('state') ?? '',
     }),
     [sp],
   );
@@ -130,7 +149,11 @@ export function ReportReceivablesList() {
           from: filters.from || undefined,
           to: filters.to || undefined,
           insuranceId: filters.insuranceId || undefined,
-          status: filters.status || undefined,
+          debtorType: (filters.debtorType || undefined) as
+            | 'insurance'
+            | 'holder'
+            | undefined,
+          state: (filters.state || undefined) as ReceivableOrderState | undefined,
           search: filters.search || undefined,
         });
         if (cancelled) return;
@@ -145,7 +168,14 @@ export function ReportReceivablesList() {
     return () => {
       cancelled = true;
     };
-  }, [filters.from, filters.to, filters.insuranceId, filters.status, filters.search]);
+  }, [
+    filters.from,
+    filters.to,
+    filters.insuranceId,
+    filters.debtorType,
+    filters.state,
+    filters.search,
+  ]);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -170,73 +200,69 @@ export function ReportReceivablesList() {
   };
 
   const hasActiveFilters =
-    !!filters.search || !!filters.from || !!filters.to || !!filters.insuranceId || !!filters.status;
+    !!filters.search ||
+    !!filters.from ||
+    !!filters.to ||
+    !!filters.insuranceId ||
+    !!filters.debtorType ||
+    !!filters.state;
   const clearFilters = () => {
     setSearchInput('');
     setSp(new URLSearchParams(), { replace: true });
   };
 
+  // Vista: el detalle orden por orden o el cuadro resumen por deudor.
+  const [view, setView] = useState<'detail' | 'summary'>('detail');
+
   const sortedRows = useMemo(() => sortReceivables(rows), [rows]);
+
+  // Cuadro resumen por deudor: el MISMO cálculo que la primera hoja del Excel.
+  const debtorSummary = useMemo(
+    () => receivablesSummaryByDebtor(sortedRows, currentRateBs),
+    [sortedRows, currentRateBs],
+  );
+
+  const debtorTotals = useMemo(
+    () => receivablesSummaryTotals(debtorSummary),
+    [debtorSummary],
+  );
+
+  // Interruptor "solo pendientes": por defecto el documento trae lo que falta
+  // cobrar; apagado, incluye también las órdenes ya cobradas.
+  const onlyPending = filters.state === 'uncollected';
+  /**
+   * Filas que llevan el COSTO impreso. El costo es por ORDEN: una orden mixta
+   * emite dos filas (porción fija + indexada) con el mismo costo, y el Excel
+   * sólo lo imprime en la primera — la tabla replica ese criterio para que los
+   * dos cuadren.
+   */
+  const costoRowKeys = useMemo(() => costRowKeys(sortedRows), [sortedRows]);
   const paged = useMemo(() => {
     const start = (filters.page - 1) * filters.limit;
     return sortedRows.slice(start, start + filters.limit);
   }, [sortedRows, filters.page, filters.limit]);
   const lastPage = Math.max(1, Math.ceil(sortedRows.length / filters.limit));
 
-  const pct = summary.targetUsd > 0 ? (summary.collectedUsd / summary.targetUsd) * 100 : 0;
-
   return (
     <ReportShell
       title="Reporte de cuentas por cobrar"
       description={`${formatNumber(summary.count)} orden${summary.count === 1 ? '' : 'es'} en el rango filtrado`}
-      kpis={
-        <KpiRow
-          items={[
-            {
-              icon: Wallet,
-              tone: 'blue',
-              label: 'Total facturado',
-              value: formatUsd(summary.targetUsd),
-              hint: summary.targetBs > 0 ? `${formatBs(summary.targetBs)} a tasa fija` : 'USD',
-            },
-            {
-              icon: TrendingUp,
-              tone: 'success',
-              label: 'Total cobrado',
-              value: formatUsd(summary.collectedUsd),
-              hint: `${pct.toFixed(1)}% de cobranza (USD)`,
-            },
-            {
-              icon: AlertCircle,
-              tone: 'warning',
-              label: 'Pendiente por cobrar',
-              value: formatUsd(summary.pendingUsd),
-              hint:
-                summary.pendingBs > 0
-                  ? `+ ${formatBs(summary.pendingBs)} (tasa fija) · incluye por cobrar`
-                  : 'Incluye órdenes por cobrar',
-            },
-            {
-              icon: Coins,
-              tone: 'cyan',
-              label: 'Cantidad de órdenes',
-              value: formatNumber(summary.count),
-            },
-          ]}
-        />
-      }
     >
       <div className="bg-card rounded-xl border shadow-xs overflow-hidden">
         <DataTableToolbar
           actions={
             <ReportDownloadButton
               disabled={loading || sortedRows.length === 0}
-              onDownload={() => downloadReceivablesReportXlsx(sortedRows, currentRateBs)}
+              onDownload={() =>
+                downloadReceivablesReportXlsx(sortedRows, currentRateBs, {
+                  includeCollected: !onlyPending,
+                })
+              }
             />
           }
           searchValue={searchInput}
           onSearchChange={setSearchInput}
-          searchPlaceholder="Buscar por aseguradora, titular, N° orden…"
+          searchPlaceholder="Buscar por N° factura, aseguradora, titular, N° orden…"
           hasActiveFilters={hasActiveFilters}
           onClear={clearFilters}
           filters={
@@ -265,9 +291,9 @@ export function ReportReceivablesList() {
                 </SelectContent>
               </Select>
               <Select
-                value={filters.status || 'all'}
+                value={filters.debtorType || 'all'}
                 onValueChange={(v) =>
-                  updateParam({ status: v === 'all' ? undefined : v })
+                  updateParam({ debtorType: v === 'all' ? undefined : v })
                 }
               >
                 <SelectTrigger className="h-9 w-48">
@@ -279,6 +305,32 @@ export function ReportReceivablesList() {
                   <SelectItem value="holder">Solo titulares</SelectItem>
                 </SelectContent>
               </Select>
+              <Select
+                value={filters.state || 'all'}
+                onValueChange={(v) =>
+                  updateParam({ state: v === 'all' ? undefined : v })
+                }
+              >
+                <SelectTrigger className="h-9 w-48">
+                  <SelectValue placeholder="Estado de cobro" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Estado: todas</SelectItem>
+                  <SelectItem value="uncollected">{STATE_LABEL.uncollected}</SelectItem>
+                  <SelectItem value="partially_collected">
+                    {STATE_LABEL.partially_collected}
+                  </SelectItem>
+                  <SelectItem value="collected">{STATE_LABEL.collected}</SelectItem>
+                </SelectContent>
+              </Select>
+              <ToggleFilter
+                id="receivables-only-pending"
+                label="Solo pendientes"
+                checked={onlyPending}
+                onCheckedChange={(checked) =>
+                  updateParam({ state: checked ? 'uncollected' : undefined })
+                }
+              />
             </>
           }
         />
@@ -289,18 +341,108 @@ export function ReportReceivablesList() {
           </div>
         ) : null}
 
+        <ReportViewTabs
+          value={view}
+          onChange={setView}
+          options={REPORT_VIEWS}
+          right={
+            view === 'summary'
+              ? `${formatNumber(debtorSummary.length)} deudor${debtorSummary.length === 1 ? '' : 'es'}`
+              : `${formatNumber(sortedRows.length)} orden${sortedRows.length === 1 ? '' : 'es'}`
+          }
+        />
+
+        {view === 'summary' ? (
+          <div className="m-4 rounded-lg border overflow-hidden">
+            <Table stickyHeader>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className={TH_CENTER}>Seguro / Titular</TableHead>
+                  <TableHead className={TH_CENTER}>Tipo</TableHead>
+                  <TableHead className={TH_CENTER}>Órdenes</TableHead>
+                  <TableHead className={TH_CENTER}>Monto facturado $</TableHead>
+                  <TableHead className={TH_CENTER}>
+                    {currentRateBs
+                      ? `Monto actualizado (Tasa: ${formatNumber(currentRateBs, 2)})`
+                      : 'Monto actualizado $'}
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <SkeletonTableRows rows={6} columns={5} />
+                ) : debtorSummary.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="p-0">
+                      <EmptyState
+                        icon={Coins}
+                        title={hasActiveFilters ? 'Sin resultados' : 'Sin cuentas por cobrar'}
+                        description={
+                          hasActiveFilters
+                            ? 'Ajusta los filtros para ver más resultados.'
+                            : 'Aún no hay órdenes por cobrar.'
+                        }
+                      />
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  <>
+                    {debtorSummary.map((d) => (
+                      <TableRow key={d.key} className="hover:bg-[oklch(0.985_0.003_250)]">
+                        <TableCell className="py-3 px-3 text-sm font-medium" wrap>
+                          {d.name}
+                        </TableCell>
+                        <TableCell className="py-3 px-3 text-sm text-center text-muted-foreground">
+                          {d.type === 'holder' ? 'Titular' : 'Seguro'}
+                        </TableCell>
+                        <TableCell className="py-3 px-3 text-sm text-center">
+                          {formatNumber(d.count)}
+                        </TableCell>
+                        <TableCell className="py-3 px-3 text-sm font-mono text-center">
+                          {formatUsd(d.usd)}
+                        </TableCell>
+                        <TableCell className="py-3 px-3 text-sm font-mono text-center font-semibold">
+                          {formatUsd(d.updatedUsd)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow className="bg-muted/40 font-semibold">
+                      <TableCell className="py-3 px-3 text-sm" colSpan={3}>
+                        TOTAL
+                      </TableCell>
+                      <TableCell className="py-3 px-3 text-sm font-mono text-center">
+                        {formatUsd(debtorTotals.usd)}
+                      </TableCell>
+                      <TableCell className="py-3 px-3 text-sm font-mono text-center">
+                        {formatUsd(debtorTotals.updatedUsd)}
+                      </TableCell>
+                    </TableRow>
+                  </>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        ) : (
         <div className="m-4 rounded-lg border overflow-hidden">
-        <Table>
+        <Table stickyHeader>
           <TableHeader>
             <TableRow>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Fecha</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Cliente</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Paciente</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Factura</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">N° Orden</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto USD</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Monto Bs.</TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">Estado</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Fecha</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">N° Factura</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Cliente</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Titular</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">RIF titular</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Paciente</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">RIF paciente</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Médico tratante</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">N° Clave</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">N° Control</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">N° Orden interna</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Monto facturado $</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Tasa del día</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Monto Bs.</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Costo $</TableHead>
+              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">Estado</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -322,46 +464,60 @@ export function ReportReceivablesList() {
               </TableRow>
             ) : (
               paged.map((r) => {
-                const usd =
-                  r.targetUsd != null
-                    ? r.targetUsd
-                    : r.targetBs != null && r.rateBs
-                      ? r.targetBs / r.rateBs
-                      : null;
-                const bs =
-                  r.targetBs != null
-                    ? r.targetBs
-                    : r.targetUsd != null && currentRateBs
-                      ? r.targetUsd * currentRateBs
-                      : null;
+                const { usd, rate, bs } = receivableAmounts(r, currentRateBs);
                 return (
                   <TableRow
                     key={`${r.orderId}-${r.portion}`}
                     className="hover:bg-[oklch(0.985_0.003_250)]"
                   >
                     <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
-                      {formatDate(r.orderDate)}
+                      {/* Fecha de FACTURA; si la orden aún no se facturó, la suya. */}
+                      {formatDate(reportRowDate(r) ?? r.orderDate)}
                     </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm">
-                      <div className="font-medium truncate">{r.debtorName}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {r.debtorType === 'holder' ? 'Titular' : 'Seguro'} · Titular: {r.holderName}
-                      </div>
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm truncate">
-                      {r.patientName || '—'}
-                    </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm font-mono">
+                    <TableCell className="py-3.5 px-4 text-sm font-mono whitespace-nowrap">
                       {r.invoiceNumber || '—'}
                     </TableCell>
-                    <TableCell className="py-3.5 px-4 text-sm font-mono">
+                    <TableCell className="py-3.5 px-4 text-sm">
+                      <div className="font-medium">{r.debtorName}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {r.debtorType === 'holder' ? 'Titular' : 'Seguro'}
+                      </div>
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm">{r.holderName || '—'}</TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono whitespace-nowrap">
+                      {r.holderId || '—'}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm">
+                      {r.patientName || '—'}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono whitespace-nowrap">
+                      {r.patientId || '—'}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm max-w-[220px]" wrap>
+                      {r.doctorName || '—'}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono whitespace-nowrap">
+                      {r.serviceKey || '—'}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono whitespace-nowrap">
+                      {r.controlNumber || '—'}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono whitespace-nowrap">
                       {r.orderNumber}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
-                      {usd != null ? formatUsd(usd) : '—'}
+                      {formatUsd(usd)}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
+                      {rate != null ? formatNumber(rate, 2) : '—'}
                     </TableCell>
                     <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
                       {bs != null ? formatBs(bs) : '—'}
+                    </TableCell>
+                    <TableCell className="py-3.5 px-4 text-sm font-mono text-right">
+                      {costoRowKeys.has(`${r.orderId}-${r.portion}`)
+                        ? formatUsd(r.costoUsd ?? 0)
+                        : '—'}
                     </TableCell>
                     <TableCell className="py-3.5 px-4">
                       <Badge
@@ -388,6 +544,7 @@ export function ReportReceivablesList() {
           itemLabel="órdenes"
         />
         </div>
+        )}
       </div>
     </ReportShell>
   );

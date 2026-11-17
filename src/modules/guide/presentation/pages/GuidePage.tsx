@@ -458,8 +458,7 @@ export function GuidePage() {
               <p>
                 Para registrar un cobro: marca las cuentas (deben compartir
                 deudor) y elige "Registrar cobro". Los cobros se acumulan; la
-                cuenta pasa a <code>collected</code> al alcanzar el target o{' '}
-                <code>overcollected</code> si lo supera.
+                cuenta pasa a <code>collected</code> al alcanzar el target.
               </p>
               <p>
                 Para Cashea, el target es el neto (restante menos comisión y
