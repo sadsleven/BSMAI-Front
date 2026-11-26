@@ -5,6 +5,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -35,6 +36,7 @@ import {
 import {
   costRowKeys,
   receivableAmounts,
+  receivableAmountsAtInvoiceRate,
   receivablesSummaryByDebtor,
   receivablesSummaryTotals,
 } from '../../domain/receivablesSummary';
@@ -237,6 +239,27 @@ export function ReportReceivablesList() {
    * dos cuadren.
    */
   const costoRowKeys = useMemo(() => costRowKeys(sortedRows), [sortedRows]);
+
+  // Totales del detalle: se calculan sobre TODAS las filas (no sólo la página
+  // actual) para que el pie de tabla refleje el monto completo del reporte.
+  const detailTotals = useMemo(() => {
+    let usd = 0;
+    let bs = 0;
+    let costo = 0;
+    const seenOrders = new Set<string>();
+    for (const r of sortedRows) {
+      const { usd: rowUsd, bs: rowBs } = receivableAmountsAtInvoiceRate(r, currentRateBs);
+      usd += rowUsd;
+      bs += rowBs ?? 0;
+      // El costo es por ORDEN: sólo se suma en el primer renglón de cada una.
+      if (!seenOrders.has(r.orderId)) {
+        seenOrders.add(r.orderId);
+        costo += r.costoUsd ?? 0;
+      }
+    }
+    return { usd, bs, costo };
+  }, [sortedRows, currentRateBs]);
+
   const paged = useMemo(() => {
     const start = (filters.page - 1) * filters.limit;
     return sortedRows.slice(start, start + filters.limit);
@@ -361,6 +384,7 @@ export function ReportReceivablesList() {
                   <TableHead className={TH_CENTER}>Tipo</TableHead>
                   <TableHead className={TH_CENTER}>Órdenes</TableHead>
                   <TableHead className={TH_CENTER}>Monto facturado $</TableHead>
+                  <TableHead className={TH_CENTER}>Cobrado $</TableHead>
                   <TableHead className={TH_CENTER}>
                     {currentRateBs
                       ? `Monto actualizado (Tasa: ${formatNumber(currentRateBs, 2)})`
@@ -370,10 +394,10 @@ export function ReportReceivablesList() {
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <SkeletonTableRows rows={6} columns={5} />
+                  <SkeletonTableRows rows={6} columns={6} />
                 ) : debtorSummary.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="p-0">
+                    <TableCell colSpan={6} className="p-0">
                       <EmptyState
                         icon={Coins}
                         title={hasActiveFilters ? 'Sin resultados' : 'Sin cuentas por cobrar'}
@@ -401,6 +425,9 @@ export function ReportReceivablesList() {
                         <TableCell className="py-3 px-3 text-sm font-mono text-center">
                           {formatUsd(d.usd)}
                         </TableCell>
+                        <TableCell className="py-3 px-3 text-sm font-mono text-center text-success">
+                          {formatUsd(d.collectedUsd)}
+                        </TableCell>
                         <TableCell className="py-3 px-3 text-sm font-mono text-center font-semibold">
                           {formatUsd(d.updatedUsd)}
                         </TableCell>
@@ -412,6 +439,9 @@ export function ReportReceivablesList() {
                       </TableCell>
                       <TableCell className="py-3 px-3 text-sm font-mono text-center">
                         {formatUsd(debtorTotals.usd)}
+                      </TableCell>
+                      <TableCell className="py-3 px-3 text-sm font-mono text-center">
+                        {formatUsd(debtorTotals.collectedUsd)}
                       </TableCell>
                       <TableCell className="py-3 px-3 text-sm font-mono text-center">
                         {formatUsd(debtorTotals.updatedUsd)}
@@ -464,7 +494,7 @@ export function ReportReceivablesList() {
               </TableRow>
             ) : (
               paged.map((r) => {
-                const { usd, rate, bs } = receivableAmounts(r, currentRateBs);
+                const { usd, rate, bs } = receivableAmountsAtInvoiceRate(r, currentRateBs);
                 return (
                   <TableRow
                     key={`${r.orderId}-${r.portion}`}
@@ -532,6 +562,24 @@ export function ReportReceivablesList() {
               })
             )}
           </TableBody>
+          <TableFooter>
+            <TableRow className="bg-muted/40 font-semibold hover:bg-muted/40">
+              <TableCell colSpan={11} className="py-3 px-4 text-sm text-right">
+                TOTAL
+              </TableCell>
+              <TableCell className="py-3 px-4 text-sm font-mono text-right">
+                {formatUsd(detailTotals.usd)}
+              </TableCell>
+              <TableCell className="py-3 px-4 text-sm" />
+              <TableCell className="py-3 px-4 text-sm font-mono text-right">
+                {detailTotals.bs ? formatBs(detailTotals.bs) : '—'}
+              </TableCell>
+              <TableCell className="py-3 px-4 text-sm font-mono text-right">
+                {formatUsd(detailTotals.costo)}
+              </TableCell>
+              <TableCell className="py-3 px-4 text-sm" />
+            </TableRow>
+          </TableFooter>
         </Table>
 
         <DataTablePagination

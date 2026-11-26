@@ -383,7 +383,12 @@ export async function downloadBudgetApsPdf(budget: Budget): Promise<void> {
   const grid = new SheetGrid('aps');
   grid.setRowHeight(1, 38.25);
 
-  const servicio = data.lines.map((l) => l.name).join(' + ');
+  const servicio =
+    data.lines.length > 1
+      ? data.lines
+          .map((l) => `${l.name} ($${l.totalUsd.toFixed(2)})`)
+          .join(', ')
+      : data.lines.map((l) => l.name).join(', ');
   const referring = [budget.referringDoctorName, budget.referringSpecialtyName]
     .map((s) => (s ?? '').trim())
     .filter(Boolean)

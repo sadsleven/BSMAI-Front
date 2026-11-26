@@ -16,6 +16,8 @@ export interface ReceivableDebtorSummary {
    * vigente: es lo que realmente vale hoy ese cobro.
    */
   updatedUsd: number;
+  /** USD efectivamente cobrados al deudor. */
+  collectedUsd: number;
 }
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
@@ -44,6 +46,30 @@ export function receivableAmounts(
   }
   const usd = r.targetUsd ?? 0;
   const rate = currentRateBs && currentRateBs > 0 ? currentRateBs : null;
+  const bs = rate != null ? usd * rate : null;
+  return { usd, rate, bs };
+}
+
+/**
+ * Monto $, tasa y Bs usando la tasa de la FACTURA cuando existe. Para reportes
+ * estáticos (Excel y tabla) que deben reflejar los valores al momento de la
+ * emisión, no la revaluación a la tasa vigente.
+ *
+ * - Tasa fija: igual que `receivableAmounts`.
+ * - Indexada: usa `r.rateBs` (tasa de la factura) en vez de la tasa actual.
+ */
+export function receivableAmountsAtInvoiceRate(
+  r: ReportReceivableRow,
+  fallbackRateBs: number | null,
+): { usd: number; rate: number | null; bs: number | null } {
+  const invoiceRate = r.rateBs && r.rateBs > 0 ? r.rateBs : null;
+  const rate = invoiceRate ?? (fallbackRateBs && fallbackRateBs > 0 ? fallbackRateBs : null);
+  if (r.useFixedRate) {
+    const bs = r.targetBs ?? null;
+    const usd = bs != null && rate ? bs / rate : (r.targetUsd ?? 0);
+    return { usd, rate, bs };
+  }
+  const usd = r.targetUsd ?? 0;
   const bs = rate != null ? usd * rate : null;
   return { usd, rate, bs };
 }
@@ -77,6 +103,7 @@ export function receivablesSummaryByDebtor(
       g.count += 1;
       g.usd += usd;
       g.updatedUsd += updatedUsd;
+      g.collectedUsd += r.collectedUsd ?? 0;
     } else {
       groups.set(key, {
         key,
@@ -85,25 +112,37 @@ export function receivablesSummaryByDebtor(
         count: 1,
         usd,
         updatedUsd,
+        collectedUsd: r.collectedUsd ?? 0,
       });
     }
   }
   return Array.from(groups.values())
-    .map((g) => ({ ...g, usd: round2(g.usd), updatedUsd: round2(g.updatedUsd) }))
+    .map((g) => ({
+      ...g,
+      usd: round2(g.usd),
+      updatedUsd: round2(g.updatedUsd),
+      collectedUsd: round2(g.collectedUsd),
+    }))
     .sort((a, b) => b.usd - a.usd);
 }
 
 /** Totales del pie del cuadro resumen. */
 export function receivablesSummaryTotals(
   debtors: ReceivableDebtorSummary[],
-): { usd: number; updatedUsd: number } {
+): { usd: number; updatedUsd: number; collectedUsd: number } {
   let usd = 0;
   let updatedUsd = 0;
+  let collectedUsd = 0;
   for (const d of debtors) {
     usd += d.usd;
     updatedUsd += d.updatedUsd;
+    collectedUsd += d.collectedUsd;
   }
-  return { usd: round2(usd), updatedUsd: round2(updatedUsd) };
+  return {
+    usd: round2(usd),
+    updatedUsd: round2(updatedUsd),
+    collectedUsd: round2(collectedUsd),
+  };
 }
 
 /**

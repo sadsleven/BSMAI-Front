@@ -60,6 +60,7 @@ import {
   activeInvoice,
   deriveControlNumber,
   formatInvoiceNumber,
+  ORDER_STATUS_LABEL,
   ORDER_TYPE_LABEL,
   orderUserDisplayName,
   otherCoveredOrders,
@@ -1085,7 +1086,7 @@ export function OrderBillingStep({
             <FormSwitch
               id="groupInvoice"
               label="Agrupar otras órdenes en esta factura"
-              description="Emite una sola factura por varias órdenes del mismo titular que todavía no tengan factura, sin importar el tipo de orden ni la sucursal. Sus servicios salen en este mismo documento, cada uno con su N° de orden. No cambia nada en cuentas por cobrar ni por pagar."
+              description="Emite una sola factura por varias órdenes del mismo titular que todavía no tengan factura, sin importar el tipo de orden ni la sucursal. Las órdenes que no estén finalizadas se finalizan automáticamente con los montos sugeridos. Sus servicios salen en este mismo documento, cada uno con su N° de orden. No cambia nada en cuentas por cobrar ni por pagar."
               checked={groupInvoice}
               onCheckedChange={toggleGroupInvoice}
             />
@@ -1102,9 +1103,10 @@ export function OrderBillingStep({
             ) : candidates.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 No hay otras órdenes para agrupar. Aquí sólo aparecen las
-                órdenes <span className="font-medium">ya finalizadas</span> del{' '}
-                <span className="font-medium">mismo titular</span> que todavía{' '}
-                <span className="font-medium">no tengan factura</span>.
+                órdenes del <span className="font-medium">mismo titular</span>{' '}
+                que todavía{' '}
+                <span className="font-medium">no tengan factura</span> (en
+                atención, informe emitido o finalizada sin factura).
               </p>
             ) : (
               <>
@@ -1145,6 +1147,15 @@ export function OrderBillingStep({
                                 ? ` · ${c.branchName}`
                                 : ''}
                             </div>
+                            {c.status !== 'finalized' && (
+                              <div className="text-xs text-warning mt-0.5">
+                                {c.status === 'report_issued'
+                                  ? '⚠ Informe emitido — se finalizará al agrupar'
+                                  : c.status === 'attended'
+                                    ? '⚠ Atendida — se finalizará al agrupar'
+                                    : ORDER_STATUS_LABEL[c.status]}
+                              </div>
+                            )}
                           </div>
                           <div className="text-sm font-mono shrink-0">
                             {formatMoney(Number(c.priceAmount) || 0)} $

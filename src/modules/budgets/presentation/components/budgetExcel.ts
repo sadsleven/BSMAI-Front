@@ -617,7 +617,12 @@ export async function downloadBudgetApsXlsx(budget: Budget): Promise<void> {
   boxRow(2);
 
   // R3..R14 — Un par etiqueta/valor por fila, en el orden del formulario.
-  const servicio = doc.lines.map((l) => l.name).join(' + ');
+  const servicio =
+    doc.lines.length > 1
+      ? doc.lines
+          .map((l) => `${l.name} ($${l.totalUsd.toFixed(2)})`)
+          .join(', ')
+      : doc.lines.map((l) => l.name).join(', ');
   const referring = [budget.referringDoctorName, budget.referringSpecialtyName]
     .map((s) => (s ?? '').trim())
     .filter(Boolean)

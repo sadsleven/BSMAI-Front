@@ -156,6 +156,15 @@ export interface ReportReceivableRow {
   receivableId: string | null;
   receivableNumber: string | null;
   state: ReceivableOrderState;
+  /**
+   * USD cobrados del lote (solo en la primera fila de cada lote, 0 en las demás).
+   * Para sumar cobrado por deudor en el resumen sin duplicar.
+   */
+  collectedUsd: number;
+  /**
+   * Bs cobrados del lote (solo en la primera fila de cada lote, 0 en las demás).
+   */
+  collectedBs: number;
 }
 
 export interface ReportReceivableDebtorRow {

@@ -122,6 +122,8 @@ function filaCobrable(
     receivableId: null,
     receivableNumber: null,
     state: 'uncollected',
+    collectedUsd: 0,
+    collectedBs: 0,
     ...partial,
   };
 }

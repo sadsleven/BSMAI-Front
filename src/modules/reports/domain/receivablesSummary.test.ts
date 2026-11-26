@@ -38,6 +38,8 @@ function fila(partial: Partial<ReportReceivableRow>): ReportReceivableRow {
     receivableId: null,
     receivableNumber: null,
     state: 'uncollected',
+    collectedUsd: 0,
+    collectedBs: 0,
     ...partial,
   };
 }
@@ -139,6 +141,7 @@ describe('receivablesSummaryByDebtor', () => {
     const totales = receivablesSummaryTotals(filas);
     expect(totales.usd).toBe(1100); // 980 + 100 + 20
     expect(totales.updatedUsd).toBe(1050); // 980 + 50 + 20
+    expect(totales.collectedUsd).toBe(0);
   });
 
   it('redondea a dos decimales y no arrastra error flotante', () => {
@@ -154,7 +157,7 @@ describe('receivablesSummaryByDebtor', () => {
 
   it('sin filas devuelve una lista vacía y totales en cero', () => {
     expect(receivablesSummaryByDebtor([], 800)).toEqual([]);
-    expect(receivablesSummaryTotals([])).toEqual({ usd: 0, updatedUsd: 0 });
+    expect(receivablesSummaryTotals([])).toEqual({ usd: 0, updatedUsd: 0, collectedUsd: 0 });
   });
 });
 

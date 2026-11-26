@@ -5,6 +5,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -235,6 +236,28 @@ export function ReportPayablesList() {
     () => rows.filter((r) => isMonthlyStatementProvider(r.providerName)),
     [rows],
   );
+
+  // Totales del detalle: se calculan sobre TODAS las filas (no sólo la página
+  // actual) para que el pie de tabla refleje el monto completo del reporte.
+  const detailTotals = useMemo(() => {
+    let porPagar = 0;
+    let pagadas = 0;
+    let abonado = 0;
+    // Lo abonado es del LOTE y se repite en cada fila: se cuenta una sola vez,
+    // en la última orden de cada lote (mismo criterio que el listado).
+    const lastIdxByBatch = new Map<string, number>();
+    rows.forEach((r, i) => {
+      if (r.payableId) lastIdxByBatch.set(r.payableId, i);
+    });
+    rows.forEach((r, i) => {
+      const paid = r.state === 'paid';
+      if (paid) pagadas += r.grossUsd ?? 0;
+      else porPagar += r.grossUsd ?? 0;
+      if (r.payableId && lastIdxByBatch.get(r.payableId) === i)
+        abonado += r.payableCoveredUsd ?? 0;
+    });
+    return { porPagar, pagadas, abonado };
+  }, [rows]);
 
   /**
    * Descarga el estado de cuenta mensual. Si hay fecha "desde", primero pide
@@ -579,6 +602,23 @@ export function ReportPayablesList() {
               })
             )}
           </TableBody>
+          <TableFooter>
+            <TableRow className="bg-muted/40 font-semibold hover:bg-muted/40">
+              <TableCell colSpan={columnCount - 6} className="py-3 px-4 text-sm text-right">
+                TOTAL
+              </TableCell>
+              <TableCell className="py-3 px-4 text-sm font-mono text-right">
+                {formatUsd(detailTotals.porPagar)}
+              </TableCell>
+              <TableCell className="py-3 px-4 text-sm font-mono text-right">
+                {formatUsd(detailTotals.pagadas)}
+              </TableCell>
+              <TableCell className="py-3 px-4 text-sm font-mono text-right">
+                {formatUsd(detailTotals.abonado)}
+              </TableCell>
+              <TableCell className="py-3 px-4 text-sm" colSpan={3} />
+            </TableRow>
+          </TableFooter>
         </Table>
 
         <DataTablePagination
