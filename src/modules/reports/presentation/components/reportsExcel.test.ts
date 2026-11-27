@@ -297,12 +297,24 @@ describe('Excel de cuentas por pagar', () => {
     const cabecera = buscarFila(resumen, 'NOMBRE')!;
     expect(textoFila(resumen, cabecera)).toEqual([
       'NOMBRE',
-      'ORDENES POR PAGAR $',
+      'TOTAL $',
+      'ABONADO $',
+      'ÓRDENES POR PAGAR $',
     ]);
-    // DR. GRANADO debe 115 (415 − 300) y va primero; CENTRO RX debe 5.
-    expect(textoFila(resumen, cabecera + 1)).toEqual(['DR. GRANADO', '115']);
-    expect(textoFila(resumen, cabecera + 2)).toEqual(['CENTRO RX', '5']);
-    expect(textoFila(resumen, cabecera + 3)).toEqual(['TOTAL', '120']);
+    // DR. GRANADO: 415 facturado, 300 abonado, debe 115. Va primero.
+    expect(textoFila(resumen, cabecera + 1)).toEqual([
+      'DR. GRANADO',
+      '415',
+      '300',
+      '115',
+    ]);
+    expect(textoFila(resumen, cabecera + 2)).toEqual([
+      'CENTRO RX',
+      '5',
+      '0',
+      '5',
+    ]);
+    expect(textoFila(resumen, cabecera + 3)).toEqual(['TOTAL', '420', '300', '120']);
   });
 
   it('todas las hojas llevan la cabecera inmovilizada', async () => {
@@ -313,14 +325,16 @@ describe('Excel de cuentas por pagar', () => {
     }
   });
 
-  it('la hoja del proveedor imprime un renglón por abono', async () => {
+  it('la hoja del proveedor imprime los pagos del lote en su orden', async () => {
     await downloadPayablesReportXlsx(FILAS);
     const wb = await ultimoLibro();
     const hoja = wb.worksheets.find((w) => w.name === 'DR. GRANADO')!;
-    const abono = buscarFila(hoja, 'ABONO LOTE 39');
-    expect(abono, 'falta el renglón del abono').not.toBeNull();
-    const valores = textoFila(hoja, abono!);
-    expect(valores).toContain('300');
+    // El abono ya no ocupa un renglón aparte: su referencia va en REF DEL PAGO
+    // de la orden del lote.
+    const orden = buscarFila(hoja, '5001');
+    expect(orden, 'falta el renglón de la orden').not.toBeNull();
+    const valores = textoFila(hoja, orden!);
+    expect(valores.some((v) => v.includes('REF 1542'))).toBe(true);
     // La referencia usa la abreviatura del banco entre paréntesis.
     expect(valores.some((v) => v.includes('BNC') && v.includes('1542'))).toBe(
       true,
@@ -490,14 +504,17 @@ describe('Excel de cuentas por cobrar', () => {
       debtorName: 'PREVISORA',
       debtorId: 'i1',
       targetUsd: 930,
-      state: 'uncollected',
+      state: 'partially_collected',
+      receivableId: 'ar1',
+      collectedUsd: 300,
     }),
     filaCobrable({
       orderId: 'r2',
       debtorName: 'PREVISORA',
       debtorId: 'i1',
       targetUsd: 50,
-      state: 'uncollected',
+      state: 'partially_collected',
+      receivableId: 'ar1',
     }),
     filaCobrable({
       orderId: 'r3',
@@ -506,7 +523,9 @@ describe('Excel de cuentas por cobrar', () => {
       useFixedRate: true,
       rateBs: 400,
       targetBs: 40000,
-      state: 'collected',
+      state: 'partially_collected',
+      receivableId: 'ar2',
+      collectedBs: 20000,
     }),
   ];
 
@@ -517,18 +536,24 @@ describe('Excel de cuentas por cobrar', () => {
     expect(resumen.name).toBe('CUENTAS POR COBRAR');
 
     const cab = buscarFila(resumen, 'SEGURO')!;
-    expect(textoFila(resumen, cab + 1)).toEqual(['PREVISORA', '980', '980']);
-    // Tasa fija: 40.000 Bs a 800 de hoy = 50 actualizados, sobre 100 facturados.
-    expect(textoFila(resumen, cab + 2)).toEqual(['ALTAMIRA', '100', '50']);
-    expect(textoFila(resumen, cab + 3)).toEqual(['TOTAL', '1080', '1030']);
+    // FACTURADO, COBRADO, POR COBRAR (980 − 300).
+    expect(textoFila(resumen, cab + 1)).toEqual(['PREVISORA', '980', '300', '680']);
+    // Tasa fija: 40.000 Bs facturados a 400; cobró 20.000 Bs = 50 USD.
+    expect(textoFila(resumen, cab + 2)).toEqual(['ALTAMIRA', '100', '50', '50']);
+    expect(textoFila(resumen, cab + 3)).toEqual(['TOTAL', '1080', '350', '730']);
   });
 
-  it('la cabecera del resumen muestra la tasa usada', async () => {
+  it('la cabecera del resumen trae POR COBRAR $, sin tasa del día', async () => {
     await downloadReceivablesReportXlsx(FILAS, 875.65);
     const wb = await ultimoLibro();
     const resumen = wb.worksheets[0];
     const cab = textoFila(resumen, buscarFila(resumen, 'SEGURO')!);
-    expect(cab.some((v) => v.includes('875'))).toBe(true);
+    expect(cab).toEqual([
+      'SEGURO',
+      'MONTO FACTURADO $',
+      'COBRADO $',
+      'POR COBRAR $',
+    ]);
   });
 
   it('crea una hoja por deudor con su total', async () => {

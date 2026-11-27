@@ -24,7 +24,7 @@ import { SortableHeader, type SortDir } from '@/components/ui/sortable-header';
 import { DataTableToolbar } from '@/components/ui/data-table-toolbar';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { SkeletonTableRows } from '@/components/ui/skeleton';
-import { formatCreated } from '@/lib/dates';
+import { formatCreated, formatDateOnly } from '@/lib/dates';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageBreadcrumbs } from '@/components/ui/page-breadcrumbs';
 import { Can } from '@/modules/auth/presentation/components/Can';
@@ -542,16 +542,19 @@ export function AccountsPayableList() {
                       TotalUSD
                     </TableHead>
                     <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      Fecha factura
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                       Creación
                     </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {pendingLoading ? (
-                    <SkeletonTableRows rows={5} columns={8} />
+                    <SkeletonTableRows rows={5} columns={9} />
                   ) : pending.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="p-0">
+                      <TableCell colSpan={9} className="p-0">
                         <EmptyState
                           icon={Wallet}
                           title={
@@ -596,6 +599,10 @@ export function AccountsPayableList() {
                         </TableCell>
                         <TableCell className="py-3.5 px-4 text-sm font-mono">
                           {formatMoney(p.grossUsd)} USD
+                        </TableCell>
+                        <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                          {/* Fecha de la factura; "No aplica" si la orden aún no se facturó. */}
+                          {p.invoiceDate ? formatDateOnly(p.invoiceDate) : 'No aplica'}
                         </TableCell>
                         <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
                           {formatCreated(p.createdAt)}
@@ -694,6 +701,9 @@ export function AccountsPayableList() {
                       Estado
                     </TableHead>
                     <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                      Fecha factura
+                    </TableHead>
+                    <TableHead className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                       <SortableHeader<SortBy>
                         column="createdAt"
                         activeColumn={filters.sortBy}
@@ -707,10 +717,10 @@ export function AccountsPayableList() {
                 </TableHeader>
                 <TableBody>
                   {batchesLoading ? (
-                    <SkeletonTableRows rows={5} columns={9} />
+                    <SkeletonTableRows rows={5} columns={10} />
                   ) : batches.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="p-0">
+                      <TableCell colSpan={10} className="p-0">
                         <EmptyState
                           icon={Wallet}
                           title={
@@ -775,6 +785,13 @@ export function AccountsPayableList() {
                         </TableCell>
                         <TableCell className="py-3.5 px-4">
                           {statusBadge(b.status)}
+                        </TableCell>
+                        <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
+                          {/* Fechas de factura de las órdenes del lote; un lote
+                              puede cubrir varias facturas (o ninguna). */}
+                          {b.invoiceDates?.length
+                            ? b.invoiceDates.map((d) => formatDateOnly(d)).join(', ')
+                            : 'No aplica'}
                         </TableCell>
                         <TableCell className="py-3.5 px-4 text-sm text-muted-foreground whitespace-nowrap">
                           {formatCreated(b.createdAt)}

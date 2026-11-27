@@ -394,11 +394,7 @@ export function ReportReceivablesList() {
                   <TableHead className={TH_CENTER}>Órdenes</TableHead>
                   <TableHead className={TH_CENTER}>Monto facturado $</TableHead>
                   <TableHead className={TH_CENTER}>Cobrado $</TableHead>
-                  <TableHead className={TH_CENTER}>
-                    {currentRateBs
-                      ? `Monto actualizado (Tasa: ${formatNumber(currentRateBs, 2)})`
-                      : 'Monto actualizado $'}
-                  </TableHead>
+                  <TableHead className={TH_CENTER}>Por cobrar $</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -438,7 +434,7 @@ export function ReportReceivablesList() {
                           {formatUsd(d.collectedUsd)}
                         </TableCell>
                         <TableCell className="py-3 px-3 text-sm font-mono text-center font-semibold">
-                          {formatUsd(d.updatedUsd)}
+                          {formatUsd(d.pendingUsd)}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -453,7 +449,7 @@ export function ReportReceivablesList() {
                         {formatUsd(debtorTotals.collectedUsd)}
                       </TableCell>
                       <TableCell className="py-3 px-3 text-sm font-mono text-center">
-                        {formatUsd(debtorTotals.updatedUsd)}
+                        {formatUsd(debtorTotals.pendingUsd)}
                       </TableCell>
                     </TableRow>
                   </>

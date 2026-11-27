@@ -284,8 +284,7 @@ function todayCell(): Date {
 function buildReceivablesSummarySheet(
   wb: ExcelJS.Workbook,
   logoId: number | null,
-  debtors: Array<{ name: string; usd: number; updatedUsd: number; collectedUsd: number }>,
-  currentRateBs: number | null,
+  debtors: Array<{ name: string; usd: number; collectedUsd: number; pendingUsd: number }>,
 ): void {
   const ws = wb.addWorksheet('CUENTAS POR COBRAR', {
     views: [{ showGridLines: false }],
@@ -324,12 +323,9 @@ function buildReceivablesSummarySheet(
   rif.value = `RIF ${COMPANY.rif}`;
   rif.font = F_RIF;
 
-  const rateLabel = currentRateBs
-    ? `MONTO ACTUALIZADO (Tasa: ${formatNumber2(currentRateBs)})`
-    : 'MONTO ACTUALIZADO $';
   const headerRow = ws.getRow(5);
   headerRow.height = 30;
-  ['SEGURO', 'MONTO FACTURADO $', 'COBRADO $', rateLabel].forEach((h, i) => {
+  ['SEGURO', 'MONTO FACTURADO $', 'COBRADO $', 'POR COBRAR $'].forEach((h, i) => {
     const cell = headerRow.getCell(i + 2);
     cell.value = h;
     cell.font = { ...F9B, color: { argb: 'FFFFFFFF' } };
@@ -345,11 +341,11 @@ function buildReceivablesSummarySheet(
 
   let rowNum = 6;
   let totalUsd = 0;
-  let totalUpdated = 0;
+  let totalPending = 0;
   let totalCollected = 0;
   for (const d of debtors) {
     totalUsd += d.usd;
-    totalUpdated += d.updatedUsd;
+    totalPending += d.pendingUsd;
     totalCollected += d.collectedUsd;
     const row = ws.getRow(rowNum);
     const name = row.getCell(2);
@@ -367,7 +363,7 @@ function buildReceivablesSummarySheet(
     };
     put(3, d.usd);
     put(4, d.collectedUsd);
-    put(5, d.updatedUsd);
+    put(5, d.pendingUsd);
     rowNum += 1;
   }
 
@@ -387,16 +383,10 @@ function buildReceivablesSummarySheet(
   };
   putTotal(3, totalUsd);
   putTotal(4, totalCollected);
-  putTotal(5, totalUpdated);
+  putTotal(5, totalPending);
 }
 
 /** Número con 2 decimales y separador de miles, estilo es-VE. */
-function formatNumber2(n: number): string {
-  return n.toLocaleString('es-VE', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
 
 /**
  * Hoja "EDO. DE CUENTA" de UN deudor: las órdenes que tiene pendientes (o
@@ -552,7 +542,7 @@ export async function downloadReceivablesReportXlsx(
   // Mismo cuadro que la pestaña Resumen en pantalla (una sola fuente).
   const debtors = receivablesSummaryByDebtor(rows, currentRateBs);
 
-  buildReceivablesSummarySheet(wb, logoId, debtors, currentRateBs);
+  buildReceivablesSummarySheet(wb, logoId, debtors);
 
   const used = new Set<string>(['cuentas por cobrar']);
   for (const g of groups.values()) {
@@ -758,7 +748,10 @@ async function buildProviderSheet(
       const cell = row.getCell(idx + FIRST);
       cell.value = value;
       cell.font = F9;
-      if (alignment) cell.alignment = alignment;
+      // Centrado vertical siempre: si la fila crece porque REF DEL PAGO trae
+      // varios pagos, el texto de las demás columnas queda al medio y no
+      // pegado abajo (alineación por defecto de Excel).
+      cell.alignment = { vertical: 'middle', ...alignment };
       if (numFmt && value !== '' && value != null) cell.numFmt = numFmt;
       cell.border = thin();
     });
@@ -1273,7 +1266,13 @@ export async function downloadMonthlyStatementXlsx(
       const cell = row.getCell(col);
       cell.font = F9;
       cell.border = thin();
-      cell.alignment = { horizontal: col === 7 ? 'left' : 'center', wrapText: col === 7 };
+      // Centrado vertical: filas altas (REF DEL PAGO con varios pagos) no
+      // dejan el resto de columnas pegado abajo.
+      cell.alignment = {
+        horizontal: col === 7 ? 'left' : 'center',
+        vertical: 'middle',
+        wrapText: col === 7,
+      };
     }
     for (const [col, value, numFmt] of cells) {
       const cell = row.getCell(col);

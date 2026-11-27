@@ -95,6 +95,8 @@ export interface PendingReceivable {
   orderNumber: string;
   /** N° de la factura VIGENTE de la orden; null si no tiene. */
   invoiceNumber: string | null;
+  /** Fecha de emisión de la factura vigente; null si aún no se facturó. */
+  invoiceDate: string | null;
   orderType: string;
   portion?: AroPortion;
   debtorType: AccountsReceivableDebtorType;
@@ -125,6 +127,8 @@ export interface AccountsReceivableBatch {
   orderCount?: number;
   /** N° de factura de las órdenes del lote, sin repetir (agregado por el BE). */
   invoiceNumbers?: string[];
+  /** Fechas de factura (YYYY-MM-DD) de las órdenes del lote, sin repetir. */
+  invoiceDates?: string[];
   payments: AccountsReceivablePayment[];
   /**
    * Ajuste firmado del total a cobrar, en la moneda del lote (Bs si el lote es
