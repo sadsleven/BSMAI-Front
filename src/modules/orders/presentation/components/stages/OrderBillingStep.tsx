@@ -154,6 +154,15 @@ export function OrderBillingStep({
   const invoiceLocked = isFinalized && !!invoiceActive;
   /** Orden finalizada cuya factura se anuló: puede emitir una nueva. */
   const canIssueInvoice = isFinalized && !invoiceActive;
+  /**
+   * ¿Esta orden es la EMISORA de la factura agrupada? Si la factura agrupa
+   * varias órdenes, solo la emisora puede editar los campos de factura. Las
+   * demás órdenes agrupadas ven la factura en modo solo lectura completo.
+   */
+  const isGroupedInvoice = invoiceActive && (invoiceActive.coveredOrders ?? []).length > 1;
+  const isIssuer = invoiceActive && invoiceActive.orderId === order.id;
+  /** Factura agrupada donde esta orden NO es la emisora: todo bloqueado. */
+  const isGroupedNonIssuer = !!isGroupedInvoice && !isIssuer;
 
   // N° de factura como ENTERO (se imprime con ceros a la izquierda). El N° de
   // control NO se captura: se deriva (número + 50, con dos ceros delante).
@@ -449,8 +458,10 @@ export function OrderBillingStep({
    * Factura vigente CORREGIBLE: de una factura ya emitida se pueden cambiar
    * sólo la fecha y la tasa con las que se imprime, sin anularla (el número y
    * el de control quedan igual). Todo lo demás sigue bloqueado.
+   * IMPORTANTE: Si la factura es agrupada y esta orden NO es la emisora, no
+   * puede editar nada (solo la emisora puede hacer correcciones).
    */
-  const canEditIssuedInvoice = invoiceLocked && canBilling;
+  const canEditIssuedInvoice = invoiceLocked && canBilling && !isGroupedNonIssuer;
   const issuedDateDirty =
     canEditIssuedInvoice &&
     !!invoiceDate &&
@@ -533,21 +544,6 @@ export function OrderBillingStep({
         : [],
     [canGroupInvoice, groupInvoice, groupedIds, candidates],
   );
-
-  /**
-   * La factura dice CONTADO sólo si TODAS sus órdenes son de contado. Si la
-   * selección mezcla tipos, se avisa para que nadie se sorprenda.
-   */
-  const mixedTypesWarning = useMemo(() => {
-    const selected = candidates.filter((c) => groupedSelection.includes(c.id));
-    if (!selected.length) return null;
-    const types = new Set<string>([order.type, ...selected.map((c) => c.orderType)]);
-    if (types.size <= 1) return null;
-    const labels = Array.from(types)
-      .map((t) => ORDER_TYPE_LABEL[t as keyof typeof ORDER_TYPE_LABEL] ?? t)
-      .join(', ');
-    return `La factura mezcla órdenes de ${labels}. Las condiciones de pago saldrán como CREDITO (sólo dice CONTADO si todas son de contado) y el encabezado usa los datos de esta orden.`;
-  }, [candidates, groupedSelection, order.type]);
 
   /** Total USD de la factura: esta orden + las agrupadas seleccionadas. */
   const groupedTotalUsd = useMemo(() => {
@@ -828,7 +824,7 @@ export function OrderBillingStep({
           ) : undefined
         }
       >
-        {!isInsurance && !isFinalized ? (
+        {!isInsurance && !isFinalized && !isGroupedNonIssuer ? (
           <div className="rounded-lg border bg-card p-3 mb-4">
             <FormSwitch
               id="generateInvoice"
@@ -840,7 +836,7 @@ export function OrderBillingStep({
           </div>
         ) : null}
 
-        {isCash ? (
+        {isCash && !isGroupedNonIssuer ? (
           <div className="rounded-lg border bg-card p-3 mb-4">
             <FormSwitch
               id="providerPaidOnSite"
@@ -896,7 +892,7 @@ export function OrderBillingStep({
         ) : null}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-[18px] mt-4">
-          {showInvoiceFields ? (
+          {showInvoiceFields && !isGroupedNonIssuer ? (
           <>
           <div className="space-y-1.5">
             <Label htmlFor="invoiceNumber">
@@ -1086,7 +1082,7 @@ export function OrderBillingStep({
             <FormSwitch
               id="groupInvoice"
               label="Agrupar otras órdenes en esta factura"
-              description="Emite una sola factura por varias órdenes del mismo titular que todavía no tengan factura, sin importar el tipo de orden ni la sucursal. Las órdenes que no estén finalizadas se finalizan automáticamente con los montos sugeridos. Sus servicios salen en este mismo documento, cada uno con su N° de orden. No cambia nada en cuentas por cobrar ni por pagar."
+              description={`Emite una sola factura por varias órdenes del mismo titular y mismo tipo (${ORDER_TYPE_LABEL[order.type]}) que todavía no tengan factura. La sucursal no importa. Las órdenes que no estén finalizadas se finalizan automáticamente con los montos sugeridos. Sus servicios salen en este mismo documento, cada uno con su N° de orden. No cambia nada en cuentas por cobrar ni por pagar.`}
               checked={groupInvoice}
               onCheckedChange={toggleGroupInvoice}
             />
@@ -1103,7 +1099,8 @@ export function OrderBillingStep({
             ) : candidates.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 No hay otras órdenes para agrupar. Aquí sólo aparecen las
-                órdenes del <span className="font-medium">mismo titular</span>{' '}
+                órdenes de tipo <span className="font-medium">{ORDER_TYPE_LABEL[order.type]}</span> del{' '}
+                <span className="font-medium">mismo titular</span>{' '}
                 que todavía{' '}
                 <span className="font-medium">no tengan factura</span> (en
                 atención, informe emitido o finalizada sin factura).
@@ -1165,12 +1162,6 @@ export function OrderBillingStep({
                     );
                   })}
                 </ul>
-                {mixedTypesWarning ? (
-                  <p className="text-xs text-warning flex items-start gap-1.5">
-                    <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                    {mixedTypesWarning}
-                  </p>
-                ) : null}
                 <p className="text-xs text-muted-foreground">
                   {groupedSelection.length === 0 ? (
                     'La factura sale sólo con esta orden.'
