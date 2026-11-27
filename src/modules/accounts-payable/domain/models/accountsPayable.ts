@@ -102,6 +102,8 @@ export interface PendingPayable {
   orderNumber: string;
   /** N° de la factura VIGENTE de la orden; null si no tiene. */
   invoiceNumber: string | null;
+  /** Fecha de emisión de la factura vigente; null si aún no se facturó. */
+  invoiceDate: string | null;
   providerType: RecipientType;
   doctorId: string | null;
   careCenterId: string | null;
@@ -167,6 +169,8 @@ export interface AccountsPayableBatch {
   orderCount?: number;
   /** N° de factura de las órdenes del lote, sin repetir (agregado por el BE). */
   invoiceNumbers?: string[];
+  /** Fechas de factura (YYYY-MM-DD) de las órdenes del lote, sin repetir. */
+  invoiceDates?: string[];
   /** Nº de abonos registrados. */
   settlementCount?: number;
   grossUsd?: number;
@@ -197,6 +201,8 @@ export interface PendingPayableQuery {
   doctorId?: string;
   careCenterId?: string;
   branchId?: string;
+  /** Antigüedad mínima en días (creación de la orden). Mínimo 10. */
+  ageDays?: number;
 }
 
 export interface AccountsPayableQuery {
@@ -207,6 +213,8 @@ export interface AccountsPayableQuery {
   doctorId?: string;
   careCenterId?: string;
   branchId?: string;
+  /** Antigüedad mínima en días (creación del lote). Mínimo 10. */
+  ageDays?: number;
   sortBy?: 'payableNumber' | 'createdAt' | 'updatedAt';
   sortDir?: 'ASC' | 'DESC';
 }

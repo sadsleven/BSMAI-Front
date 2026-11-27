@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  collectedUsdOf,
   costRowKeys,
   receivableAmounts,
   receivableDebtorKey,
-  receivableUpdatedUsd,
   receivablesSummaryByDebtor,
   receivablesSummaryTotals,
 } from './receivablesSummary';
@@ -38,6 +38,8 @@ function fila(partial: Partial<ReportReceivableRow>): ReportReceivableRow {
     receivableId: null,
     receivableNumber: null,
     state: 'uncollected',
+    collectedUsd: 0,
+    collectedBs: 0,
     ...partial,
   };
 }
@@ -64,28 +66,51 @@ describe('receivableDebtorKey', () => {
   });
 });
 
-describe('receivableUpdatedUsd', () => {
-  it('indexada: el monto de hoy es el mismo USD facturado', () => {
-    const r = fila({ useFixedRate: false, targetUsd: 100 });
-    expect(receivableUpdatedUsd(r, 800)).toBe(100);
+describe('collectedUsdOf', () => {
+  it('lote en USD: el cobro es el amountInUsd directo', () => {
+    const r = fila({ useFixedRate: false, collectedUsd: 250 });
+    expect(collectedUsdOf(r, 800)).toBe(250);
   });
 
-  it('tasa fija: reexpresa los bolívares del lote a la tasa de hoy', () => {
-    // Se facturó a 400 (100 USD) y hoy la tasa es 800 → vale 50.
-    const r = fila({ useFixedRate: true, rateBs: 400, targetBs: 40000 });
-    expect(receivableUpdatedUsd(r, 800)).toBe(50);
+  it('lote de tasa fija: convierte los Bs cobrados a la tasa del lote', () => {
+    // Pagó 20.000 Bs de un lote amarrado a 400 → 50 USD, no a la tasa de hoy.
+    const r = fila({
+      useFixedRate: true,
+      rateBs: 400,
+      targetBs: 40000,
+      collectedBs: 20000,
+    });
+    expect(collectedUsdOf(r, 800)).toBe(50);
   });
 
-  it('tasa fija sin tasa vigente deja el monto facturado', () => {
-    const r = fila({ useFixedRate: true, rateBs: 400, targetBs: 40000 });
-    expect(receivableUpdatedUsd(r, null)).toBe(100);
+  it('tasa fija sin tasa de lote cae a la vigente', () => {
+    const r = fila({ useFixedRate: true, rateBs: null, collectedBs: 40000 });
+    expect(collectedUsdOf(r, 800)).toBe(50);
+  });
+
+  it('sin cobros devuelve 0', () => {
+    expect(collectedUsdOf(fila({}), 800)).toBe(0);
   });
 });
 
 describe('receivablesSummaryByDebtor', () => {
   const FILAS = [
-    fila({ orderId: 'r1', debtorId: 'i1', debtorName: 'PREVISORA', targetUsd: 930 }),
-    fila({ orderId: 'r2', debtorId: 'i1', debtorName: 'PREVISORA', targetUsd: 50 }),
+    fila({
+      orderId: 'r1',
+      debtorId: 'i1',
+      debtorName: 'PREVISORA',
+      targetUsd: 930,
+      // Primera fila del lote: ahí vienen los pagos (300 USD cobrados).
+      receivableId: 'ar1',
+      collectedUsd: 300,
+    }),
+    fila({
+      orderId: 'r2',
+      debtorId: 'i1',
+      debtorName: 'PREVISORA',
+      targetUsd: 50,
+      receivableId: 'ar1',
+    }),
     fila({
       orderId: 'r3',
       debtorId: 'i2',
@@ -93,6 +118,9 @@ describe('receivablesSummaryByDebtor', () => {
       useFixedRate: true,
       rateBs: 400,
       targetBs: 40000,
+      // Lote fijo: los pagos vienen en Bs (20.000 a tasa 400 = 50 USD).
+      receivableId: 'ar2',
+      collectedBs: 20000,
     }),
     fila({
       orderId: 'r4',
@@ -110,13 +138,15 @@ describe('receivablesSummaryByDebtor', () => {
     expect(previsora.usd).toBe(980);
   });
 
-  it('el monto actualizado sólo cambia en las de tasa fija', () => {
+  it('por cobrar = facturado − pagos de los lotes', () => {
     const filas = receivablesSummaryByDebtor(FILAS, 800);
     const previsora = filas.find((f) => f.name === 'PREVISORA')!;
     const altamira = filas.find((f) => f.name === 'ALTAMIRA')!;
-    expect(previsora.updatedUsd).toBe(980); // indexada: igual
-    expect(altamira.usd).toBe(100); // facturado a su tasa
-    expect(altamira.updatedUsd).toBe(50); // 40.000 Bs a 800 de hoy
+    expect(previsora.collectedUsd).toBe(300);
+    expect(previsora.pendingUsd).toBe(680); // 980 − 300
+    expect(altamira.usd).toBe(100); // 40.000 Bs a su tasa 400
+    expect(altamira.collectedUsd).toBe(50); // 20.000 Bs a 400
+    expect(altamira.pendingUsd).toBe(50);
   });
 
   it('distingue seguros de titulares', () => {
@@ -138,7 +168,8 @@ describe('receivablesSummaryByDebtor', () => {
     const filas = receivablesSummaryByDebtor(FILAS, 800);
     const totales = receivablesSummaryTotals(filas);
     expect(totales.usd).toBe(1100); // 980 + 100 + 20
-    expect(totales.updatedUsd).toBe(1050); // 980 + 50 + 20
+    expect(totales.collectedUsd).toBe(350); // 300 + 50
+    expect(totales.pendingUsd).toBe(750); // 680 + 50 + 20
   });
 
   it('redondea a dos decimales y no arrastra error flotante', () => {
@@ -154,7 +185,7 @@ describe('receivablesSummaryByDebtor', () => {
 
   it('sin filas devuelve una lista vacía y totales en cero', () => {
     expect(receivablesSummaryByDebtor([], 800)).toEqual([]);
-    expect(receivablesSummaryTotals([])).toEqual({ usd: 0, updatedUsd: 0 });
+    expect(receivablesSummaryTotals([])).toEqual({ usd: 0, collectedUsd: 0, pendingUsd: 0 });
   });
 });
 

@@ -390,9 +390,10 @@ export function otherCoveredOrders(
 }
 
 /**
- * Candidata a agruparse en la misma factura: orden finalizada del **mismo
- * titular** que todavía no tiene factura vigente. El tipo de orden y la
- * sucursal no restringen (`GET /orders/:id/invoiceable`).
+ * Candidata a agruparse en la misma factura: orden del **mismo titular** que
+ * todavía no tiene factura vigente. Puede estar finalizada o en Paso 3/2
+ * (atendida/informe emitido): al agruparla se finaliza automáticamente con la
+ * misma factura. El tipo de orden y la sucursal no restringen.
  */
 export interface InvoiceableOrder {
   id: string;
@@ -407,6 +408,8 @@ export interface InvoiceableOrder {
   /** Sucursal de la orden candidata (puede no ser la de la emisora). */
   branchName: string | null;
   serviceTypesCount: number;
+  /** Estado actual: indica si ya está finalizada o falta su Paso 4. */
+  status: OrderStatus;
 }
 
 /** Disponibilidad de un N° de factura (Paso 4). */

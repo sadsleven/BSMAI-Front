@@ -21,6 +21,7 @@ function pendingParams(
     doctorId: q.doctorId,
     careCenterId: q.careCenterId,
     branchId: q.branchId,
+    ageDays: q.ageDays,
   };
 }
 
@@ -35,6 +36,7 @@ function batchParams(
     doctorId: q.doctorId,
     careCenterId: q.careCenterId,
     branchId: q.branchId,
+    ageDays: q.ageDays,
     sortBy: q.sortBy,
     sortDir: q.sortDir,
   };

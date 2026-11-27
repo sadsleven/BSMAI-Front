@@ -5,6 +5,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -29,6 +30,7 @@ import { ReportShell } from '../components/ReportShell';
 import { ReportViewTabs } from '../components/ReportViewTabs';
 import { ToggleFilter } from '../components/ToggleFilter';
 import { DateRangeFilter } from '../components/DateRangeFilter';
+import { AgeDaysFilter } from '../components/AgeDaysFilter';
 import { ReportDownloadButton } from '../components/ReportDownloadButton';
 import {
   downloadMonthlyStatementXlsx,
@@ -99,6 +101,8 @@ export function ReportPayablesList() {
       doctorId: sp.get('doctorId') ?? '',
       careCenterId: sp.get('careCenterId') ?? '',
       status: sp.get('status') ?? '',
+      // Antigüedad mínima (días desde la creación de la orden).
+      ageDays: sp.get('ageDays') ?? '',
     }),
     [sp],
   );
@@ -144,6 +148,7 @@ export function ReportPayablesList() {
           careCenterId: filters.careCenterId || undefined,
           status: filters.status || undefined,
           search: filters.search || undefined,
+          ageDays: filters.ageDays || undefined,
         });
         if (cancelled) return;
         setRows(res.rows);
@@ -164,6 +169,7 @@ export function ReportPayablesList() {
     filters.careCenterId,
     filters.status,
     filters.search,
+    filters.ageDays,
   ]);
 
   useEffect(() => {
@@ -194,7 +200,8 @@ export function ReportPayablesList() {
     !!filters.to ||
     !!filters.doctorId ||
     !!filters.careCenterId ||
-    !!filters.status;
+    !!filters.status ||
+    !!filters.ageDays;
   const clearFilters = () => {
     setSearchInput('');
     setSp(new URLSearchParams(), { replace: true });
@@ -235,6 +242,28 @@ export function ReportPayablesList() {
     () => rows.filter((r) => isMonthlyStatementProvider(r.providerName)),
     [rows],
   );
+
+  // Totales del detalle: se calculan sobre TODAS las filas (no sólo la página
+  // actual) para que el pie de tabla refleje el monto completo del reporte.
+  const detailTotals = useMemo(() => {
+    let porPagar = 0;
+    let pagadas = 0;
+    let abonado = 0;
+    // Lo abonado es del LOTE y se repite en cada fila: se cuenta una sola vez,
+    // en la última orden de cada lote (mismo criterio que el listado).
+    const lastIdxByBatch = new Map<string, number>();
+    rows.forEach((r, i) => {
+      if (r.payableId) lastIdxByBatch.set(r.payableId, i);
+    });
+    rows.forEach((r, i) => {
+      const paid = r.state === 'paid';
+      if (paid) pagadas += r.grossUsd ?? 0;
+      else porPagar += r.grossUsd ?? 0;
+      if (r.payableId && lastIdxByBatch.get(r.payableId) === i)
+        abonado += r.payableCoveredUsd ?? 0;
+    });
+    return { porPagar, pagadas, abonado };
+  }, [rows]);
 
   /**
    * Descarga el estado de cuenta mensual. Si hay fecha "desde", primero pide
@@ -353,6 +382,10 @@ export function ReportPayablesList() {
                 label="Incluir FACTURACION $"
                 checked={includeFacturacion}
                 onCheckedChange={setIncludeFacturacion}
+              />
+              <AgeDaysFilter
+                value={filters.ageDays}
+                onChange={(v) => updateParam({ ageDays: v })}
               />
             </>
           }
@@ -579,6 +612,23 @@ export function ReportPayablesList() {
               })
             )}
           </TableBody>
+          <TableFooter>
+            <TableRow className="bg-muted/40 font-semibold hover:bg-muted/40">
+              <TableCell colSpan={columnCount - 6} className="py-3 px-4 text-sm text-right">
+                TOTAL
+              </TableCell>
+              <TableCell className="py-3 px-4 text-sm font-mono text-right">
+                {formatUsd(detailTotals.porPagar)}
+              </TableCell>
+              <TableCell className="py-3 px-4 text-sm font-mono text-right">
+                {formatUsd(detailTotals.pagadas)}
+              </TableCell>
+              <TableCell className="py-3 px-4 text-sm font-mono text-right">
+                {formatUsd(detailTotals.abonado)}
+              </TableCell>
+              <TableCell className="py-3 px-4 text-sm" colSpan={3} />
+            </TableRow>
+          </TableFooter>
         </Table>
 
         <DataTablePagination

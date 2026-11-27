@@ -5,7 +5,6 @@ import type {
   ReportInvoiceRow,
   ReportPayablePayment,
   ReportPayableRow,
-  ReportPayableSettlement,
   ReportReceivableRow,
 } from '../../infrastructure/reportsGateway';
 import { formatBs } from '../../domain/format';
@@ -13,9 +12,9 @@ import {
   MONTHLY_STATEMENT_LABEL,
   isMonthlyStatementProvider,
 } from '../../domain/monthlyStatement';
-import { pendingUsdOf } from '../../domain/payablesSummary';
+import { pendingUsdOf, paidUsdOf } from '../../domain/payablesSummary';
 import {
-  receivableAmounts,
+  receivableAmountsAtInvoiceRate,
   receivablesSummaryByDebtor,
 } from '../../domain/receivablesSummary';
 
@@ -246,6 +245,18 @@ export function excelDateCell(iso: string | null | undefined): Date | null {
 // ===========================================================================
 
 /**
+ * Monto $, tasa y Bs de una fila para el Excel. Usa la tasa de la FACTURA
+ * (`r.rateBs`) en vez de la tasa del día: el Excel es un documento estático
+ * que debe reflejar los valores al momento de la emisión.
+ */
+function excelReceivableAmounts(
+  r: ReportReceivableRow,
+  fallbackRateBs: number | null,
+): { usd: number; rate: number | null; bs: number | null } {
+  return receivableAmountsAtInvoiceRate(r, fallbackRateBs);
+}
+
+/**
  * Monto $, tasa y Bs de una fila. Vive en el dominio para que la pantalla y
  * el Excel muestren exactamente lo mismo; se reexporta por comodidad.
  */
@@ -273,8 +284,7 @@ function todayCell(): Date {
 function buildReceivablesSummarySheet(
   wb: ExcelJS.Workbook,
   logoId: number | null,
-  debtors: Array<{ name: string; usd: number; updatedUsd: number }>,
-  currentRateBs: number | null,
+  debtors: Array<{ name: string; usd: number; collectedUsd: number; pendingUsd: number }>,
 ): void {
   const ws = wb.addWorksheet('CUENTAS POR COBRAR', {
     views: [{ showGridLines: false }],
@@ -282,7 +292,8 @@ function buildReceivablesSummarySheet(
   ws.getColumn(1).width = 4;
   ws.getColumn(2).width = 30;
   ws.getColumn(3).width = 20;
-  ws.getColumn(4).width = 24;
+  ws.getColumn(4).width = 20;
+  ws.getColumn(5).width = 24;
 
   if (logoId != null) {
     ws.addImage(logoId, {
@@ -291,7 +302,7 @@ function buildReceivablesSummarySheet(
     } as ExcelJS.ImagePosition);
   }
 
-  ws.mergeCells('C2:D2');
+  ws.mergeCells('C2:E2');
   const title = ws.getCell('C2');
   title.value = 'CUENTAS POR COBRAR';
   title.font = F11B;
@@ -302,7 +313,7 @@ function buildReceivablesSummarySheet(
   sub.font = F9B;
   sub.alignment = { horizontal: 'center' };
 
-  const emitted = ws.getCell('E2');
+  const emitted = ws.getCell('F2');
   emitted.value = todayCell();
   emitted.numFmt = 'dd/mm/yyyy';
   emitted.font = F9;
@@ -312,12 +323,9 @@ function buildReceivablesSummarySheet(
   rif.value = `RIF ${COMPANY.rif}`;
   rif.font = F_RIF;
 
-  const rateLabel = currentRateBs
-    ? `MONTO ACTUALIZADO (Tasa: ${formatNumber2(currentRateBs)})`
-    : 'MONTO ACTUALIZADO $';
   const headerRow = ws.getRow(5);
   headerRow.height = 30;
-  ['SEGURO', 'MONTO FACTURADO $', rateLabel].forEach((h, i) => {
+  ['SEGURO', 'MONTO FACTURADO $', 'COBRADO $', 'POR COBRAR $'].forEach((h, i) => {
     const cell = headerRow.getCell(i + 2);
     cell.value = h;
     cell.font = { ...F9B, color: { argb: 'FFFFFFFF' } };
@@ -333,10 +341,12 @@ function buildReceivablesSummarySheet(
 
   let rowNum = 6;
   let totalUsd = 0;
-  let totalUpdated = 0;
+  let totalPending = 0;
+  let totalCollected = 0;
   for (const d of debtors) {
     totalUsd += d.usd;
-    totalUpdated += d.updatedUsd;
+    totalPending += d.pendingUsd;
+    totalCollected += d.collectedUsd;
     const row = ws.getRow(rowNum);
     const name = row.getCell(2);
     name.value = d.name.toUpperCase();
@@ -352,7 +362,8 @@ function buildReceivablesSummarySheet(
       c.border = thin();
     };
     put(3, d.usd);
-    put(4, d.updatedUsd);
+    put(4, d.collectedUsd);
+    put(5, d.pendingUsd);
     rowNum += 1;
   }
 
@@ -371,16 +382,11 @@ function buildReceivablesSummarySheet(
     c.border = thin();
   };
   putTotal(3, totalUsd);
-  putTotal(4, totalUpdated);
+  putTotal(4, totalCollected);
+  putTotal(5, totalPending);
 }
 
 /** Número con 2 decimales y separador de miles, estilo es-VE. */
-function formatNumber2(n: number): string {
-  return n.toLocaleString('es-VE', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
 
 /**
  * Hoja "EDO. DE CUENTA" de UN deudor: las órdenes que tiene pendientes (o
@@ -454,7 +460,7 @@ function buildReceivableDebtorSheet(
   let totalUsd = 0;
   let totalBs = 0;
   for (const r of rows) {
-    const { usd, rate, bs } = receivableAmounts(r, currentRateBs);
+    const { usd, rate, bs } = excelReceivableAmounts(r, currentRateBs);
     totalUsd += usd;
     totalBs += bs ?? 0;
     const values: Array<[number, ExcelJS.CellValue, string?]> = [
@@ -536,7 +542,7 @@ export async function downloadReceivablesReportXlsx(
   // Mismo cuadro que la pestaña Resumen en pantalla (una sola fuente).
   const debtors = receivablesSummaryByDebtor(rows, currentRateBs);
 
-  buildReceivablesSummarySheet(wb, logoId, debtors, currentRateBs);
+  buildReceivablesSummarySheet(wb, logoId, debtors);
 
   const used = new Set<string>(['cuentas por cobrar']);
   for (const g of groups.values()) {
@@ -708,25 +714,23 @@ async function buildProviderSheet(
 
   freezeAt(ws, 5, false);
 
-  // Último renglón de CADA lote: ahí abajo se imprimen sus abonos, uno por
-  // renglón, de modo que los pagos parciales queden a la vista (antes sólo
-  // se mostraba el pago de los lotes ya saldados).
-  //
-  // Los abonos son del LOTE y el backend los repite en cada una de sus
-  // órdenes: se juntan de TODAS las filas y se deduplican por id, para no
-  // depender de cuál renglón los traiga ni imprimirlos por duplicado.
-  const lastIdxByBatch = new Map<string, number>();
-  const settlementsByBatch = new Map<string, ReportPayableSettlement[]>();
-  rows.forEach((r, i) => {
+  // Colectar todos los pagos de todos los abonos del lote para cada orden.
+  // Se escriben en la misma fila de la orden, separados por salto de línea.
+  const paymentsByOrder = new Map<string, ReportPayablePayment[]>();
+  rows.forEach((r) => {
     if (!r.payableId) return;
-    lastIdxByBatch.set(r.payableId, i);
-    let list = settlementsByBatch.get(r.payableId);
+    let list = paymentsByOrder.get(r.payableId);
     if (!list) {
       list = [];
-      settlementsByBatch.set(r.payableId, list);
+      paymentsByOrder.set(r.payableId, list);
     }
+    // Agregar todos los pagos de todos los abonos, deduplicados por referencia
     for (const st of r.settlements ?? []) {
-      if (!list.some((x) => x.id === st.id)) list.push(st);
+      for (const p of st.payments) {
+        if (!list.some((x) => x.reference && x.reference === p.reference && x.date === p.date)) {
+          list.push(p);
+        }
+      }
     }
   });
 
@@ -744,20 +748,30 @@ async function buildProviderSheet(
       const cell = row.getCell(idx + FIRST);
       cell.value = value;
       cell.font = F9;
-      if (alignment) cell.alignment = alignment;
+      // Centrado vertical siempre: si la fila crece porque REF DEL PAGO trae
+      // varios pagos, el texto de las demás columnas queda al medio y no
+      // pegado abajo (alineación por defecto de Excel).
+      cell.alignment = { vertical: 'middle', ...alignment };
       if (numFmt && value !== '' && value != null) cell.numFmt = numFmt;
       cell.border = thin();
     });
     rowNum += 1;
   };
 
-  rows.forEach((r, i) => {
+  rows.forEach((r) => {
     const paid = r.state === 'paid';
     const porPagar = paid ? null : (r.grossUsd ?? 0);
     const pagadas = paid ? (r.grossUsd ?? 0) : null;
     totFact += r.facturacionUsd ?? 0;
     totPorPagar += porPagar ?? 0;
     totPagadas += pagadas ?? 0;
+
+    // Obtener todos los pagos del lote para esta orden
+    const payments = r.payableId ? (paymentsByOrder.get(r.payableId) ?? []) : [];
+    const fechaPago = payments.length > 0 ? (payments[payments.length - 1].date ?? r.paymentDate) : r.paymentDate;
+    const refPago = payments.length > 0
+      ? payments.map((p) => formatPaymentRef(p)).join('\n')
+      : (r.paymentReference ?? '');
 
     writeRow({
       fecha: [dateCell(rowDate(r)), { horizontal: 'center' }, 'dd/mm/yyyy'],
@@ -768,32 +782,21 @@ async function buildProviderSheet(
       facturacion: [r.facturacionUsd ?? 0, { horizontal: 'center' }, '0.00'],
       porPagar: [porPagar ?? '', { horizontal: 'center' }, '0.00'],
       pagadas: [pagadas ?? '', { horizontal: 'center' }, '0.00'],
+      fechaPago: [fechaPago ? dateCell(fechaPago) : '', { horizontal: 'center' }, 'dd/mm/yyyy'],
+      refPago: [refPago || '', { horizontal: 'left', vertical: 'middle', wrapText: true }],
     });
-
-    // Abonos del lote, después de su último renglón.
-    if (!r.payableId || lastIdxByBatch.get(r.payableId) !== i) return;
-    for (const st of settlementsByBatch.get(r.payableId) ?? []) {
-      totAbonado += st.coveredUsd;
-      const refs = st.payments.map(formatPaymentRef);
-      writeRow({
-        fecha: [dateCell(st.settlementDate), { horizontal: 'center' }, 'dd/mm/yyyy'],
-        procedimiento: [
-          `ABONO LOTE ${r.payableNumber ?? ''}`.trim(),
-          { horizontal: 'center' },
-        ],
-        montoPagado: [st.coveredUsd, { horizontal: 'center' }, '0.00'],
-        fechaPago: [
-          dateCell(st.settlementDate),
-          { horizontal: 'center' },
-          'dd/mm/yyyy',
-        ],
-        refPago: [
-          refs.length > 0 ? refs.join('\n') : (r.paymentReference ?? ''),
-          { horizontal: 'center', vertical: 'middle', wrapText: true },
-        ],
-      });
-    }
   });
+
+  // Acumular totAbonado una sola vez por lote (usando un Set para rastrear lotes procesados)
+  const processedBatches = new Set<string>();
+  for (const r of rows) {
+    if (r.payableId && !processedBatches.has(r.payableId)) {
+      processedBatches.add(r.payableId);
+      for (const st of r.settlements ?? []) {
+        totAbonado += st.coveredUsd;
+      }
+    }
+  }
 
   // Totales.
   const totalsRow = ws.getRow(rowNum);
@@ -969,12 +972,14 @@ function sheetName(base: string, used: Set<string>): string {
 function buildPayablesSummarySheet(
   wb: ExcelJS.Workbook,
   logoId: number | null,
-  providers: Array<{ name: string; pendingUsd: number }>,
+  providers: Array<{ name: string; grossUsd: number; paidUsd: number; pendingUsd: number }>,
 ): void {
   const ws = wb.addWorksheet('RESUMEN', { views: [{ showGridLines: false }] });
   ws.getColumn(1).width = 4;
   ws.getColumn(2).width = 34;
   ws.getColumn(3).width = 22;
+  ws.getColumn(4).width = 22;
+  ws.getColumn(5).width = 24;
 
   if (logoId != null) {
     ws.addImage(logoId, {
@@ -983,7 +988,7 @@ function buildPayablesSummarySheet(
     } as ExcelJS.ImagePosition);
   }
 
-  ws.mergeCells('B4:C4');
+  ws.mergeCells('B4:E4');
   const title = ws.getCell('B4');
   title.value = 'RESUMEN CUENTAS POR PAGAR';
   title.font = F11B;
@@ -995,7 +1000,7 @@ function buildPayablesSummarySheet(
 
   const headerRow = ws.getRow(6);
   headerRow.height = 22;
-  ['NOMBRE', 'ORDENES POR PAGAR $'].forEach((h, i) => {
+  ['NOMBRE', 'TOTAL $', 'ABONADO $', 'ÓRDENES POR PAGAR $'].forEach((h, i) => {
     const cell = headerRow.getCell(i + 2);
     cell.value = h;
     cell.font = { ...F9B, color: { argb: 'FFFFFFFF' } };
@@ -1010,21 +1015,30 @@ function buildPayablesSummarySheet(
   freezeAt(ws, 6, false);
 
   let rowNum = 7;
-  let total = 0;
+  let totalGross = 0;
+  let totalPaid = 0;
+  let totalPending = 0;
   for (const prov of providers) {
-    total += prov.pendingUsd;
+    totalGross += prov.grossUsd;
+    totalPaid += prov.paidUsd;
+    totalPending += prov.pendingUsd;
     const row = ws.getRow(rowNum);
     const nameCell = row.getCell(2);
     nameCell.value = prov.name.toUpperCase();
     nameCell.font = F9;
     nameCell.alignment = { horizontal: 'center' };
     nameCell.border = thin();
-    const amountCell = row.getCell(3);
-    amountCell.value = round2(prov.pendingUsd);
-    amountCell.font = F9;
-    amountCell.numFmt = '#,##0.00';
-    amountCell.alignment = { horizontal: 'center' };
-    amountCell.border = thin();
+    const put = (col: number, val: number) => {
+      const c = row.getCell(col);
+      c.value = round2(val);
+      c.font = F9;
+      c.numFmt = '#,##0.00';
+      c.alignment = { horizontal: 'center' };
+      c.border = thin();
+    };
+    put(3, prov.grossUsd);
+    put(4, prov.paidUsd);
+    put(5, prov.pendingUsd);
     rowNum += 1;
   }
 
@@ -1034,12 +1048,17 @@ function buildPayablesSummarySheet(
   tLabel.font = F9B;
   tLabel.alignment = { horizontal: 'right' };
   tLabel.border = thin();
-  const tValue = totalsRow.getCell(3);
-  tValue.value = round2(total);
-  tValue.font = F9B;
-  tValue.numFmt = '#,##0.00';
-  tValue.alignment = { horizontal: 'center' };
-  tValue.border = thin();
+  const putTotal = (col: number, val: number) => {
+    const c = totalsRow.getCell(col);
+    c.value = round2(val);
+    c.font = F9B;
+    c.numFmt = '#,##0.00';
+    c.alignment = { horizontal: 'center' };
+    c.border = thin();
+  };
+  putTotal(3, totalGross);
+  putTotal(4, totalPaid);
+  putTotal(5, totalPending);
 }
 
 // ===========================================================================
@@ -1247,7 +1266,13 @@ export async function downloadMonthlyStatementXlsx(
       const cell = row.getCell(col);
       cell.font = F9;
       cell.border = thin();
-      cell.alignment = { horizontal: col === 7 ? 'left' : 'center', wrapText: col === 7 };
+      // Centrado vertical: filas altas (REF DEL PAGO con varios pagos) no
+      // dejan el resto de columnas pegado abajo.
+      cell.alignment = {
+        horizontal: col === 7 ? 'left' : 'center',
+        vertical: 'middle',
+        wrapText: col === 7,
+      };
     }
     for (const [col, value, numFmt] of cells) {
       const cell = row.getCell(col);
@@ -1338,7 +1363,12 @@ export async function downloadPayablesReportXlsx(
     wb,
     logoId,
     Array.from(groups.values())
-      .map((g) => ({ name: g.name, pendingUsd: pendingUsdOf(g.rows) }))
+      .map((g) => ({
+        name: g.name,
+        grossUsd: round2(g.rows.reduce((s, r) => s + (r.grossUsd ?? 0), 0)),
+        paidUsd: paidUsdOf(g.rows),
+        pendingUsd: pendingUsdOf(g.rows),
+      }))
       .sort((a, b) => b.pendingUsd - a.pendingUsd),
   );
 

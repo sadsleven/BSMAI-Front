@@ -383,7 +383,12 @@ export async function downloadBudgetApsPdf(budget: Budget): Promise<void> {
   const grid = new SheetGrid('aps');
   grid.setRowHeight(1, 38.25);
 
-  const servicio = data.lines.map((l) => l.name).join(' + ');
+  const servicio =
+    data.lines.length > 1
+      ? data.lines
+          .map((l) => `${l.name} ($${l.totalUsd.toFixed(2)})`)
+          .join(', ')
+      : data.lines.map((l) => l.name).join(', ');
   const referring = [budget.referringDoctorName, budget.referringSpecialtyName]
     .map((s) => (s ?? '').trim())
     .filter(Boolean)
@@ -394,6 +399,7 @@ export async function downloadBudgetApsPdf(budget: Budget): Promise<void> {
     value: string;
     bold?: boolean;
     blue?: boolean;
+    isService?: boolean;
   }> = [
     { label: 'NOMBRE DEL TITULAR:', value: data.holderName },
     { label: 'NUMERO DE CI:', value: data.holderId },
@@ -401,7 +407,7 @@ export async function downloadBudgetApsPdf(budget: Budget): Promise<void> {
     { label: 'NUMERO DE CI:', value: data.patientId },
     { label: 'NO. TELEFONICO DEL PACIENTE', value: data.patientPhone },
     { label: 'DIAGNOSTICO/SINTOMATOLOGIA', value: data.diagnosis },
-    { label: 'SERVICIO SOLICITADO:', value: servicio },
+    { label: 'SERVICIO SOLICITADO:', value: servicio, isService: true },
     {
       label: 'NOMBRE Y ESPECIALIDAD DEL MEDICO QUE REFIERE:',
       value: referring,
@@ -421,7 +427,10 @@ export async function downloadBudgetApsPdf(budget: Budget): Promise<void> {
     },
   ];
   const noteRow = 3 + rows.length;
-  for (let r = 2; r <= noteRow; r++) grid.setRowHeight(r, 25.5);
+  for (let r = 2; r <= noteRow; r++) {
+    const row = rows[r - 3];
+    grid.setRowHeight(r, row?.isService ? 45 : 25.5);
+  }
 
   /** Recuadro de una fila a lo ancho de B..C, con la línea que las separa. */
   const boxRow = (row: number, split = true) => {
@@ -463,7 +472,13 @@ export async function downloadBudgetApsPdf(budget: Budget): Promise<void> {
       valign: 'top',
       wrap: true,
     });
-    cell(doc, grid, r, 2, f.value, { size: 10, bold: f.bold, padding: 2 });
+    cell(doc, grid, r, 2, f.value, {
+      size: f.isService ? 9 : 10,
+      bold: f.bold,
+      padding: 2,
+      valign: 'top',
+      wrap: f.isService,
+    });
     boxRow(r);
   });
 

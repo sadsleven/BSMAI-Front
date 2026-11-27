@@ -9,13 +9,10 @@ export interface ReceivableDebtorSummary {
   count: number;
   /** Monto facturado en USD. */
   usd: number;
-  /**
-   * El mismo monto reexpresado a la tasa de HOY. En las órdenes indexadas
-   * coincide con el facturado (el dólar manda). En las de tasa fija el lote
-   * quedó amarrado a bolívares, así que se convierten esos Bs a la tasa
-   * vigente: es lo que realmente vale hoy ese cobro.
-   */
-  updatedUsd: number;
+  /** USD cobrados: pagos de los lotes (los lotes fijos convierten sus Bs a la tasa del lote). */
+  collectedUsd: number;
+  /** Lo que falta por cobrar: facturado − pagos de los lotes. */
+  pendingUsd: number;
 }
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
@@ -48,14 +45,45 @@ export function receivableAmounts(
   return { usd, rate, bs };
 }
 
-/** Monto de una fila llevado a la tasa de hoy (ver `updatedUsd`). */
-export function receivableUpdatedUsd(
+/**
+ * Monto $, tasa y Bs usando la tasa de la FACTURA cuando existe. Para reportes
+ * estáticos (Excel y tabla) que deben reflejar los valores al momento de la
+ * emisión, no la revaluación a la tasa vigente.
+ *
+ * - Tasa fija: igual que `receivableAmounts`.
+ * - Indexada: usa `r.rateBs` (tasa de la factura) en vez de la tasa actual.
+ */
+export function receivableAmountsAtInvoiceRate(
+  r: ReportReceivableRow,
+  fallbackRateBs: number | null,
+): { usd: number; rate: number | null; bs: number | null } {
+  const invoiceRate = r.rateBs && r.rateBs > 0 ? r.rateBs : null;
+  const rate = invoiceRate ?? (fallbackRateBs && fallbackRateBs > 0 ? fallbackRateBs : null);
+  if (r.useFixedRate) {
+    const bs = r.targetBs ?? null;
+    const usd = bs != null && rate ? bs / rate : (r.targetUsd ?? 0);
+    return { usd, rate, bs };
+  }
+  const usd = r.targetUsd ?? 0;
+  const bs = rate != null ? usd * rate : null;
+  return { usd, rate, bs };
+}
+
+/**
+ * USD cobrados de una fila. Los pagos vienen por LOTE y el backend sólo los
+ * imprime en la primera fila de cada lote. En lotes de tasa fija los cobros
+ * se registran en Bs (`collectedBs`): se convierten a USD a la tasa del lote
+ * (su `rateBs`), no a la de hoy — el cobro ya ocurrió a esa tasa.
+ */
+export function collectedUsdOf(
   r: ReportReceivableRow,
   currentRateBs: number | null,
 ): number {
-  if (r.useFixedRate && r.targetBs != null && currentRateBs)
-    return r.targetBs / currentRateBs;
-  return receivableAmounts(r, currentRateBs).usd;
+  if (r.useFixedRate && (r.collectedBs ?? 0) > 0) {
+    const rate = r.rateBs && r.rateBs > 0 ? r.rateBs : currentRateBs;
+    return rate && rate > 0 ? (r.collectedBs ?? 0) / rate : 0;
+  }
+  return r.collectedUsd ?? 0;
 }
 
 /**
@@ -71,12 +99,12 @@ export function receivablesSummaryByDebtor(
   for (const r of rows) {
     const key = receivableDebtorKey(r);
     const usd = receivableAmounts(r, currentRateBs).usd;
-    const updatedUsd = receivableUpdatedUsd(r, currentRateBs);
+    const collectedUsd = collectedUsdOf(r, currentRateBs);
     const g = groups.get(key);
     if (g) {
       g.count += 1;
       g.usd += usd;
-      g.updatedUsd += updatedUsd;
+      g.collectedUsd += collectedUsd;
     } else {
       groups.set(key, {
         key,
@@ -84,26 +112,39 @@ export function receivablesSummaryByDebtor(
         type: r.debtorType,
         count: 1,
         usd,
-        updatedUsd,
+        collectedUsd,
+        pendingUsd: 0,
       });
     }
   }
   return Array.from(groups.values())
-    .map((g) => ({ ...g, usd: round2(g.usd), updatedUsd: round2(g.updatedUsd) }))
+    .map((g) => ({
+      ...g,
+      usd: round2(g.usd),
+      collectedUsd: round2(g.collectedUsd),
+      // Lo que falta: facturado − pagos de los lotes (nunca negativo).
+      pendingUsd: Math.max(0, round2(g.usd - g.collectedUsd)),
+    }))
     .sort((a, b) => b.usd - a.usd);
 }
 
 /** Totales del pie del cuadro resumen. */
 export function receivablesSummaryTotals(
   debtors: ReceivableDebtorSummary[],
-): { usd: number; updatedUsd: number } {
+): { usd: number; collectedUsd: number; pendingUsd: number } {
   let usd = 0;
-  let updatedUsd = 0;
+  let collectedUsd = 0;
+  let pendingUsd = 0;
   for (const d of debtors) {
     usd += d.usd;
-    updatedUsd += d.updatedUsd;
+    collectedUsd += d.collectedUsd;
+    pendingUsd += d.pendingUsd;
   }
-  return { usd: round2(usd), updatedUsd: round2(updatedUsd) };
+  return {
+    usd: round2(usd),
+    collectedUsd: round2(collectedUsd),
+    pendingUsd: round2(pendingUsd),
+  };
 }
 
 /**
