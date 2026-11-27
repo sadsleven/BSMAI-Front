@@ -163,6 +163,8 @@ export interface PendingReceivableQuery {
   insuranceId?: string;
   holderId?: string;
   branchId?: string;
+  /** Antigüedad mínima en días (factura; fallback creación). Mínimo 10. */
+  ageDays?: number;
 }
 
 export interface AccountsReceivableQuery {
@@ -174,6 +176,8 @@ export interface AccountsReceivableQuery {
   holderId?: string;
   debtorType?: AccountsReceivableDebtorType;
   branchId?: string;
+  /** Antigüedad mínima en días (creación del lote). Mínimo 10. */
+  ageDays?: number;
   sortBy?: 'receivableNumber' | 'createdAt' | 'updatedAt';
   sortDir?: 'ASC' | 'DESC';
 }

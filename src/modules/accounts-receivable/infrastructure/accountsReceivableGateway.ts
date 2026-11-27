@@ -22,6 +22,7 @@ function pendingParams(
     insuranceId: q.insuranceId,
     holderId: q.holderId,
     branchId: q.branchId,
+    ageDays: q.ageDays,
   };
 }
 
@@ -37,6 +38,7 @@ function batchParams(
     holderId: q.holderId,
     debtorType: q.debtorType,
     branchId: q.branchId,
+    ageDays: q.ageDays,
     sortBy: q.sortBy,
     sortDir: q.sortDir,
   };

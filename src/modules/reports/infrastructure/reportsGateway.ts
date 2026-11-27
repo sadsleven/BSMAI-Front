@@ -11,6 +11,12 @@ export interface ReportQuery {
   holderId?: string;
   status?: string;
   search?: string;
+  /**
+   * Antigüedad mínima en días (intervalos de 10, mínimo 10). Por cobrar:
+   * fecha de factura (fallback: creación de la orden). Por pagar: creación
+   * de la orden.
+   */
+  ageDays?: number | string;
 }
 
 /** Filtros del reporte de cuentas por cobrar: deudor y estado son distintos. */
@@ -404,6 +410,7 @@ function params(
     holderId: q.holderId,
     status: q.status || undefined,
     search: q.search,
+    ageDays: q.ageDays ? String(q.ageDays) : undefined,
     groupBy: q.groupBy,
     clientType: q.clientType || undefined,
     debtorType: q.debtorType || undefined,

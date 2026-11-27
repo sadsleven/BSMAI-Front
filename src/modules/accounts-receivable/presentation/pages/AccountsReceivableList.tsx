@@ -49,6 +49,7 @@ import {
   type PendingReceivable,
 } from '../../domain/models/accountsReceivable';
 import { insuranceGateway } from '@/modules/insurances/infrastructure/insuranceGateway';
+import { AgeDaysFilter } from '@/modules/reports/presentation/components/AgeDaysFilter';
 import {
   reportsGateway,
   type ReportReceivableDebtorRow,
@@ -110,6 +111,7 @@ export function AccountsReceivableList() {
       status: (sp.get('status') ?? '') as '' | AccountsReceivableStatus,
       debtorType: (sp.get('debtorType') ?? '') as '' | AccountsReceivableDebtorType,
       insuranceId: sp.get('insuranceId') ?? '',
+      ageDays: sp.get('ageDays') ?? '',
       sortBy: (sp.get('sortBy') ?? 'createdAt') as SortBy,
       sortDir: (sp.get('sortDir') ?? 'DESC') as SortDir,
     }),
@@ -148,7 +150,8 @@ export function AccountsReceivableList() {
     filters.search ||
     filters.status ||
     filters.debtorType ||
-    filters.insuranceId
+    filters.insuranceId ||
+    filters.ageDays
   );
   const clearFilters = () => {
     setSearchInput('');
@@ -174,6 +177,7 @@ export function AccountsReceivableList() {
         search: filters.search || undefined,
         debtorType: filters.debtorType || undefined,
         insuranceId: filters.insuranceId || undefined,
+        ageDays: filters.ageDays ? Number(filters.ageDays) : undefined,
       });
       setPending(res.data);
       setPendingMeta(res.metadata);
@@ -201,6 +205,7 @@ export function AccountsReceivableList() {
         status: filters.status || undefined,
         debtorType: filters.debtorType || undefined,
         insuranceId: filters.insuranceId || undefined,
+        ageDays: filters.ageDays ? Number(filters.ageDays) : undefined,
         sortBy: filters.sortBy,
         sortDir: filters.sortDir,
       });
@@ -233,6 +238,7 @@ export function AccountsReceivableList() {
             ? filters.debtorType
             : undefined,
         search: filters.search || undefined,
+        ageDays: filters.ageDays || undefined,
       });
       setSummaryRows(res.rows);
     } catch (e) {
@@ -240,7 +246,7 @@ export function AccountsReceivableList() {
     } finally {
       setSummaryLoading(false);
     }
-  }, [filters.insuranceId, filters.debtorType, filters.search]);
+  }, [filters.insuranceId, filters.debtorType, filters.search, filters.ageDays]);
 
   const summaryTotals = useMemo(() => {
     let target = 0;
@@ -353,6 +359,10 @@ export function AccountsReceivableList() {
           ))}
         </SelectContent>
       </Select>
+      <AgeDaysFilter
+        value={filters.ageDays}
+        onChange={(v) => updateParam({ ageDays: v })}
+      />
     </>
   );
 

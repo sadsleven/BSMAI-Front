@@ -197,6 +197,8 @@ export interface PendingPayableQuery {
   doctorId?: string;
   careCenterId?: string;
   branchId?: string;
+  /** Antigüedad mínima en días (creación de la orden). Mínimo 10. */
+  ageDays?: number;
 }
 
 export interface AccountsPayableQuery {
@@ -207,6 +209,8 @@ export interface AccountsPayableQuery {
   doctorId?: string;
   careCenterId?: string;
   branchId?: string;
+  /** Antigüedad mínima en días (creación del lote). Mínimo 10. */
+  ageDays?: number;
   sortBy?: 'payableNumber' | 'createdAt' | 'updatedAt';
   sortDir?: 'ASC' | 'DESC';
 }

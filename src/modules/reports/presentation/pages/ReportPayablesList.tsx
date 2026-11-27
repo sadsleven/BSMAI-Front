@@ -30,6 +30,7 @@ import { ReportShell } from '../components/ReportShell';
 import { ReportViewTabs } from '../components/ReportViewTabs';
 import { ToggleFilter } from '../components/ToggleFilter';
 import { DateRangeFilter } from '../components/DateRangeFilter';
+import { AgeDaysFilter } from '../components/AgeDaysFilter';
 import { ReportDownloadButton } from '../components/ReportDownloadButton';
 import {
   downloadMonthlyStatementXlsx,
@@ -100,6 +101,8 @@ export function ReportPayablesList() {
       doctorId: sp.get('doctorId') ?? '',
       careCenterId: sp.get('careCenterId') ?? '',
       status: sp.get('status') ?? '',
+      // Antigüedad mínima (días desde la creación de la orden).
+      ageDays: sp.get('ageDays') ?? '',
     }),
     [sp],
   );
@@ -145,6 +148,7 @@ export function ReportPayablesList() {
           careCenterId: filters.careCenterId || undefined,
           status: filters.status || undefined,
           search: filters.search || undefined,
+          ageDays: filters.ageDays || undefined,
         });
         if (cancelled) return;
         setRows(res.rows);
@@ -165,6 +169,7 @@ export function ReportPayablesList() {
     filters.careCenterId,
     filters.status,
     filters.search,
+    filters.ageDays,
   ]);
 
   useEffect(() => {
@@ -195,7 +200,8 @@ export function ReportPayablesList() {
     !!filters.to ||
     !!filters.doctorId ||
     !!filters.careCenterId ||
-    !!filters.status;
+    !!filters.status ||
+    !!filters.ageDays;
   const clearFilters = () => {
     setSearchInput('');
     setSp(new URLSearchParams(), { replace: true });
@@ -376,6 +382,10 @@ export function ReportPayablesList() {
                 label="Incluir FACTURACION $"
                 checked={includeFacturacion}
                 onCheckedChange={setIncludeFacturacion}
+              />
+              <AgeDaysFilter
+                value={filters.ageDays}
+                onChange={(v) => updateParam({ ageDays: v })}
               />
             </>
           }

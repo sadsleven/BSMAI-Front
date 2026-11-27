@@ -44,6 +44,7 @@ import {
 } from '../../domain/models/accountsPayable';
 import { doctorGateway } from '@/modules/doctors/infrastructure/doctorGateway';
 import { careCenterGateway } from '@/modules/care-centers/infrastructure/careCenterGateway';
+import { AgeDaysFilter } from '@/modules/reports/presentation/components/AgeDaysFilter';
 import {
   fullName as doctorFullName,
   type Doctor,
@@ -117,6 +118,7 @@ export function AccountsPayableList() {
       status: (sp.get('status') ?? '') as '' | AccountsPayableStatus,
       doctorId: sp.get('doctorId') ?? '',
       careCenterId: sp.get('careCenterId') ?? '',
+      ageDays: sp.get('ageDays') ?? '',
       sortBy: (sp.get('sortBy') ?? 'createdAt') as SortBy,
       sortDir: (sp.get('sortDir') ?? 'DESC') as SortDir,
     }),
@@ -155,7 +157,8 @@ export function AccountsPayableList() {
     filters.search ||
     filters.status ||
     filters.doctorId ||
-    filters.careCenterId
+    filters.careCenterId ||
+    filters.ageDays
   );
   const clearFilters = () => {
     setSearchInput('');
@@ -181,6 +184,7 @@ export function AccountsPayableList() {
         search: filters.search || undefined,
         doctorId: filters.doctorId || undefined,
         careCenterId: filters.careCenterId || undefined,
+        ageDays: filters.ageDays ? Number(filters.ageDays) : undefined,
       });
       setPending(res.data);
       setPendingMeta(res.metadata);
@@ -208,6 +212,7 @@ export function AccountsPayableList() {
         status: filters.status || undefined,
         doctorId: filters.doctorId || undefined,
         careCenterId: filters.careCenterId || undefined,
+        ageDays: filters.ageDays ? Number(filters.ageDays) : undefined,
         sortBy: filters.sortBy,
         sortDir: filters.sortDir,
       });
@@ -234,6 +239,7 @@ export function AccountsPayableList() {
         doctorId: filters.doctorId || undefined,
         careCenterId: filters.careCenterId || undefined,
         search: filters.search || undefined,
+        ageDays: filters.ageDays || undefined,
       });
       setSummaryRows(res.rows);
     } catch (e) {
@@ -241,7 +247,7 @@ export function AccountsPayableList() {
     } finally {
       setSummaryLoading(false);
     }
-  }, [filters.doctorId, filters.careCenterId, filters.search]);
+  }, [filters.doctorId, filters.careCenterId, filters.search, filters.ageDays]);
 
   const summaryTotals = useMemo(() => {
     let gross = 0;
@@ -350,6 +356,10 @@ export function AccountsPayableList() {
           ))}
         </SelectContent>
       </Select>
+      <AgeDaysFilter
+        value={filters.ageDays}
+        onChange={(v) => updateParam({ ageDays: v })}
+      />
     </>
   );
 

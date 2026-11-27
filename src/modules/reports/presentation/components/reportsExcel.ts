@@ -12,9 +12,8 @@ import {
   MONTHLY_STATEMENT_LABEL,
   isMonthlyStatementProvider,
 } from '../../domain/monthlyStatement';
-import { pendingUsdOf } from '../../domain/payablesSummary';
+import { pendingUsdOf, paidUsdOf } from '../../domain/payablesSummary';
 import {
-  receivableAmounts,
   receivableAmountsAtInvoiceRate,
   receivablesSummaryByDebtor,
 } from '../../domain/receivablesSummary';

@@ -28,6 +28,7 @@ import { ReportShell } from '../components/ReportShell';
 import { ReportViewTabs } from '../components/ReportViewTabs';
 import { ToggleFilter } from '../components/ToggleFilter';
 import { DateRangeFilter } from '../components/DateRangeFilter';
+import { AgeDaysFilter } from '../components/AgeDaysFilter';
 import { ReportDownloadButton } from '../components/ReportDownloadButton';
 import {
   downloadReceivablesReportXlsx,
@@ -35,7 +36,6 @@ import {
 } from '../components/reportsExcel';
 import {
   costRowKeys,
-  receivableAmounts,
   receivableAmountsAtInvoiceRate,
   receivablesSummaryByDebtor,
   receivablesSummaryTotals,
@@ -116,6 +116,8 @@ export function ReportReceivablesList() {
       // `debtorType` filtra seguro/titular; `state`, el estado de cobro.
       debtorType: sp.get('debtorType') ?? '',
       state: sp.get('state') ?? '',
+      // Antigüedad mínima (días desde la factura; fallback creación).
+      ageDays: sp.get('ageDays') ?? '',
     }),
     [sp],
   );
@@ -157,6 +159,7 @@ export function ReportReceivablesList() {
             | undefined,
           state: (filters.state || undefined) as ReceivableOrderState | undefined,
           search: filters.search || undefined,
+          ageDays: filters.ageDays || undefined,
         });
         if (cancelled) return;
         setRows(res.rows);
@@ -177,6 +180,7 @@ export function ReportReceivablesList() {
     filters.debtorType,
     filters.state,
     filters.search,
+    filters.ageDays,
   ]);
 
   useEffect(() => {
@@ -207,7 +211,8 @@ export function ReportReceivablesList() {
     !!filters.to ||
     !!filters.insuranceId ||
     !!filters.debtorType ||
-    !!filters.state;
+    !!filters.state ||
+    !!filters.ageDays;
   const clearFilters = () => {
     setSearchInput('');
     setSp(new URLSearchParams(), { replace: true });
@@ -353,6 +358,10 @@ export function ReportReceivablesList() {
                 onCheckedChange={(checked) =>
                   updateParam({ state: checked ? 'uncollected' : undefined })
                 }
+              />
+              <AgeDaysFilter
+                value={filters.ageDays}
+                onChange={(v) => updateParam({ ageDays: v })}
               />
             </>
           }
